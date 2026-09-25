@@ -8,8 +8,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.health import router as health_router
+from app.api.discovery import router as discovery_router
 
 app = FastAPI(
+
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description="Deterministic Digital Twin engine for pre-deployment risk and test impact analysis.",
@@ -38,8 +40,9 @@ def root():
         "ready": "/ready",
     }
 
-# Register health router
+# Register health and discovery routers
 app.include_router(health_router)
+app.include_router(discovery_router)
 
 if __name__ == "__main__":
     import uvicorn

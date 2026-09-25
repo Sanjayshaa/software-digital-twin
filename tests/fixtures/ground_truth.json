@@ -1,0 +1,82 @@
+{
+  "python_fastapi_pytest": {
+    "expected_languages": ["python"],
+    "expected_frameworks": ["fastapi"],
+    "expected_build_systems": [],
+    "expected_package_managers": ["pip"],
+    "expected_testing": ["pytest"],
+    "expected_databases": ["postgresql"],
+    "expected_infrastructure": ["docker"],
+    "expected_api": ["rest"]
+  },
+  "java_spring_maven_junit": {
+    "expected_languages": ["java", "xml"],
+    "expected_frameworks": ["spring-boot"],
+    "expected_build_systems": ["maven"],
+    "expected_package_managers": ["maven"],
+    "expected_testing": ["junit"],
+    "expected_databases": ["postgresql"],
+    "expected_infrastructure": [],
+    "expected_api": ["rest"]
+  },
+  "typescript_react_vitest": {
+    "expected_languages": ["typescript", "json"],
+    "expected_frameworks": ["react"],
+    "expected_build_systems": ["npm"],
+    "expected_package_managers": ["npm"],
+    "expected_testing": ["vitest"],
+    "expected_databases": [],
+    "expected_infrastructure": [],
+    "expected_api": []
+  },
+  "go_modules_gotest": {
+    "expected_languages": ["go"],
+    "expected_frameworks": ["gin"],
+    "expected_build_systems": ["go-build"],
+    "expected_package_managers": ["go-modules"],
+    "expected_testing": ["gotest"],
+    "expected_databases": [],
+    "expected_infrastructure": [],
+    "expected_api": []
+  },
+  "cpp_cmake": {
+    "expected_languages": ["cpp", "cmake"],
+    "expected_frameworks": [],
+    "expected_build_systems": ["cmake"],
+    "expected_package_managers": [],
+    "expected_testing": ["ctest"],
+    "expected_databases": [],
+    "expected_infrastructure": [],
+    "expected_api": []
+  },
+  "cobol_legacy": {
+    "expected_languages": ["cobol"],
+    "expected_frameworks": [],
+    "expected_build_systems": [],
+    "expected_package_managers": [],
+    "expected_testing": [],
+    "expected_databases": [],
+    "expected_infrastructure": [],
+    "expected_api": []
+  },
+  "c_makefile": {
+    "expected_languages": ["c"],
+    "expected_frameworks": [],
+    "expected_build_systems": ["make"],
+    "expected_package_managers": [],
+    "expected_testing": [],
+    "expected_databases": [],
+    "expected_infrastructure": [],
+    "expected_api": []
+  },
+  "polyglot_microservice": {
+    "expected_languages": ["go", "python", "java", "sql", "yaml"],
+    "expected_frameworks": ["fastapi", "spring-boot"],
+    "expected_build_systems": ["maven", "go-build"],
+    "expected_package_managers": ["maven", "go-modules", "pip"],
+    "expected_testing": ["pytest"],
+    "expected_databases": ["postgresql", "redis"],
+    "expected_infrastructure": ["docker-compose", "github-actions"],
+    "expected_architecture_signals": ["microservice-like structure"]
+  }
+}

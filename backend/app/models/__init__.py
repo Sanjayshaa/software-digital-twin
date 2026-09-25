@@ -24,6 +24,13 @@ from app.models.entities import (
     AgentRun,
     Evidence,
     AnalysisRun,
+    Technology,
+    TechnologyEvidence,
+    ProjectTechnology,
+    Capability,
+    Analyzer,
+    ProjectCapability,
+    AnalysisPlan,
 )
 
 __all__ = [
@@ -52,4 +59,12 @@ __all__ = [
     "AgentRun",
     "Evidence",
     "AnalysisRun",
+    "Technology",
+    "TechnologyEvidence",
+    "ProjectTechnology",
+    "Capability",
+    "Analyzer",
+    "ProjectCapability",
+    "AnalysisPlan",
 ]
+

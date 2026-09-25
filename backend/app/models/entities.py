@@ -474,3 +474,120 @@ class Evidence(Base):
     # Relationships
     project = relationship("Project", back_populates="evidence_items")
     analysis_run = relationship("AnalysisRun", back_populates="evidence_items")
+
+
+# ====================================================================
+# 7. SOFTWARE DISCOVERY & INTELLIGENCE BRAIN ENTITIES
+# ====================================================================
+
+class Technology(Base):
+    __tablename__ = "technologies"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(100), nullable=False, unique=True, index=True)
+    category = Column(String(50), nullable=False, index=True)  # language, framework, build_system, package_manager, database, api, testing, infrastructure, architecture_signal
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    project_technologies = relationship("ProjectTechnology", back_populates="technology", cascade="all, delete-orphan")
+    evidence_items = relationship("TechnologyEvidence", back_populates="technology", cascade="all, delete-orphan")
+
+
+class TechnologyEvidence(Base):
+    __tablename__ = "technology_evidence"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    technology_id = Column(String(36), ForeignKey("technologies.id", ondelete="CASCADE"), nullable=False, index=True)
+    evidence_type = Column(String(20), nullable=False, index=True)  # OBSERVED, INFERRED, UNKNOWN
+    file_path = Column(String(1024), nullable=True, index=True)
+    line_number = Column(Integer, nullable=True)
+    snippet = Column(Text, nullable=True)
+    confidence = Column(Float, default=1.0, nullable=False)
+    detection_rule = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    technology = relationship("Technology", back_populates="evidence_items")
+
+
+class ProjectTechnology(Base):
+    __tablename__ = "project_technologies"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    technology_id = Column(String(36), ForeignKey("technologies.id", ondelete="CASCADE"), nullable=False, index=True)
+    version = Column(String(100), nullable=True)
+    percentage = Column(Float, default=0.0, nullable=False)
+    confidence = Column(Float, default=1.0, nullable=False)
+    detection_status = Column(String(20), default="OBSERVED", nullable=False)  # OBSERVED, INFERRED, UNKNOWN
+    metadata_payload = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    technology = relationship("Technology", back_populates="project_technologies")
+
+
+class Capability(Base):
+    __tablename__ = "capabilities"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(100), nullable=False, unique=True, index=True)
+    description = Column(Text, nullable=True)
+    capability_level = Column(Integer, default=0, nullable=False)  # 0: Detection, 1: Structure, 2: Dependency, 3: Framework/API/Test, 4: Deep Semantic
+    category = Column(String(50), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    project_capabilities = relationship("ProjectCapability", back_populates="capability", cascade="all, delete-orphan")
+
+
+class Analyzer(Base):
+    __tablename__ = "analyzers"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(100), nullable=False, unique=True, index=True)
+    display_name = Column(String(255), nullable=False)
+    supported_languages = Column(JSON, default=list, nullable=False)
+    supported_frameworks = Column(JSON, default=list, nullable=False)
+    capability_level = Column(Integer, default=0, nullable=False)
+    is_available = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    project_capabilities = relationship("ProjectCapability", back_populates="analyzer", cascade="all, delete-orphan")
+
+
+class ProjectCapability(Base):
+    __tablename__ = "project_capabilities"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    capability_id = Column(String(36), ForeignKey("capabilities.id", ondelete="CASCADE"), nullable=False, index=True)
+    analyzer_id = Column(String(36), ForeignKey("analyzers.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(String(50), default="SUPPORTED", nullable=False)  # SUPPORTED, PARTIAL, UNSUPPORTED
+    confidence = Column(Float, default=1.0, nullable=False)
+    details = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    capability = relationship("Capability", back_populates="project_capabilities")
+    analyzer = relationship("Analyzer", back_populates="project_capabilities")
+
+
+class AnalysisPlan(Base):
+    __tablename__ = "analysis_plans"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String(50), default="GENERATED", nullable=False)  # GENERATED, EXECUTING, COMPLETED
+    plan_steps = Column(JSON, default=list, nullable=False)
+    total_steps = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    executed_at = Column(DateTime, nullable=True)
+
