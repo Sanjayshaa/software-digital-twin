@@ -1,0 +1,32 @@
+# Core Backend & API
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.8.0
+pydantic-settings>=2.4.0
+
+# Database & ORM
+SQLAlchemy>=2.0.30
+alembic>=1.13.0
+psycopg2-binary>=2.9.9
+psycopg[binary]>=3.2.0
+
+# Graph & Analysis
+networkx>=3.3
+
+# Git & Repository Ingestion
+GitPython>=3.1.43
+
+# CLI & Terminal Output
+typer>=0.12.3
+rich>=13.7.1
+
+# Environment & Config
+python-dotenv>=1.0.1
+pyyaml>=6.0.1
+
+# HTTP client & LLM abstractions
+httpx>=0.27.0
+
+# Testing
+pytest>=8.3.0
+pytest-asyncio>=0.24.0

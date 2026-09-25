@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: digital_twin_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-digitaltwin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-digitaltwin_secret_password}
+      POSTGRES_DB: ${POSTGRES_DB:-digitaltwin_db}
+    ports:
+      - "${POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - digital_twin_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-digitaltwin} -d ${POSTGRES_DB:-digitaltwin_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: digital_twin_backend
+    restart: unless-stopped
+    environment:
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-digitaltwin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-digitaltwin_secret_password}
+      POSTGRES_DB: ${POSTGRES_DB:-digitaltwin_db}
+      APP_ENV: ${APP_ENV:-development}
+      PROJECT_NAME: ${PROJECT_NAME:-AI-Powered Software Digital Twin}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  digital_twin_pgdata:
+    name: digital_twin_pgdata
