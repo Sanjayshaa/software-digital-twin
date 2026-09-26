@@ -1,0 +1,168 @@
+version: "1.0.0"
+project: "AI-Powered Software Digital Twin for Pre-Deployment Risk and Test Impact Analysis"
+description: "Machine-readable architectural baseline defining layers, module boundaries, allowed/forbidden dependencies, and drift rules."
+
+layers:
+  presentation:
+    description: "API routes, controllers, and CLI entry points"
+    modules:
+      - "app.api"
+      - "cli"
+      - "presentation"
+    allowed_dependencies:
+      - "app.services"
+      - "app.models"
+      - "app.schemas"
+      - "app.core"
+      - "application"
+    forbidden_dependencies:
+      - "app.services.analysis.parsers"
+      - "infrastructure"
+
+  services:
+    description: "Core business logic, intelligence orchestrators, analyzers, and query services"
+    modules:
+      - "app.services"
+    allowed_dependencies:
+      - "app.models"
+      - "app.schemas"
+      - "app.core"
+    forbidden_dependencies:
+      - "app.api"
+      - "cli"
+
+  discovery:
+    description: "Phase 2 Software Discovery Brain and technology profiling"
+    modules:
+      - "app.services.discovery"
+    allowed_dependencies:
+      - "app.models"
+      - "app.core"
+    forbidden_dependencies:
+      - "app.services.analysis"
+      - "app.services.architecture"
+      - "app.services.graph"
+      - "app.services.risk"
+      - "app.services.impact"
+      - "app.services.ai"
+      - "app.api"
+      - "cli"
+
+  analysis:
+    description: "Phase 3 Structural Intelligence, AST parsers, analyzers, and twin builder"
+    modules:
+      - "app.services.analysis"
+    allowed_dependencies:
+      - "app.services.discovery.scanner"
+      - "app.services.discovery.registry"
+      - "app.services.discovery.models"
+      - "app.models"
+      - "app.core"
+    forbidden_dependencies:
+      - "app.services.architecture"
+      - "app.services.risk"
+      - "app.services.impact"
+      - "app.services.ai"
+      - "app.api"
+      - "cli"
+
+  architecture:
+    description: "Architecture drift detection engine and baseline validation"
+    modules:
+      - "app.services.architecture"
+    allowed_dependencies:
+      - "app.models"
+      - "app.core"
+      - "app.services.discovery.scanner"
+    forbidden_dependencies:
+      - "app.services.risk"
+      - "app.services.impact"
+      - "app.services.ai"
+      - "app.api"
+      - "cli"
+
+  domain:
+    description: "Digital Twin source of truth entities, schemas, and domain models"
+    modules:
+      - "app.models"
+      - "app.schemas"
+    allowed_dependencies:
+      - "app.core.database"
+    forbidden_dependencies:
+      - "app.services"
+      - "app.api"
+      - "cli"
+
+  core:
+    description: "Core infrastructure, database connection pool, and application configuration"
+    modules:
+      - "app.core"
+    allowed_dependencies: []
+    forbidden_dependencies:
+      - "app.models"
+      - "app.services"
+      - "app.api"
+      - "cli"
+
+rules:
+  - id: "RULE-01"
+    name: "Discovery Isolation"
+    category: "LAYER_VIOLATION"
+    severity: "CRITICAL"
+    source: "app.services.discovery"
+    target: "app.services.analysis"
+    forbidden: true
+    description: "Software Discovery Brain must remain strictly decoupled from Structural Analysis and downstream engines."
+
+  - id: "RULE-02"
+    name: "Domain Decoupling"
+    category: "LAYER_VIOLATION"
+    severity: "CRITICAL"
+    source: "app.models"
+    target: "app.services"
+    forbidden: true
+    description: "Digital Twin domain models must not import or depend on application services."
+
+  - id: "RULE-03"
+    name: "Infrastructure Independence"
+    category: "LAYER_VIOLATION"
+    severity: "HIGH"
+    source: "app.core"
+    target: "app.models"
+    forbidden: true
+    description: "Core infrastructure must not depend on higher-level domain models."
+
+  - id: "RULE-04"
+    name: "Presentation Direct Parser Bypass"
+    category: "ARCHITECTURE_BYPASS"
+    severity: "HIGH"
+    source: "app.api"
+    target: "app.services.analysis.parsers"
+    forbidden: true
+    description: "API presentation layer must use analysis services or query services rather than invoking raw AST parsers."
+
+  - id: "RULE-05"
+    name: "Circular Dependency Ban"
+    category: "CIRCULAR_DEPENDENCY"
+    severity: "CRITICAL"
+    forbidden: true
+    description: "Circular dependencies are forbidden across all modules in the codebase."
+
+  - id: "RULE-06"
+    name: "Direct Vendor DB API Prohibition"
+    category: "UNEXPECTED_EXTERNAL_DEPENDENCY"
+    severity: "HIGH"
+    forbidden_imports:
+      - "supabase"
+      - "boto3"
+      - "google.cloud"
+    description: "Core application must rely on standard SQLAlchemy and PostgreSQL drivers, not vendor-locked cloud SDKs."
+
+  - id: "RULE-07"
+    name: "Presentation Infrastructure Decoupling"
+    category: "LAYER_VIOLATION"
+    severity: "HIGH"
+    source: "presentation"
+    target: "infrastructure"
+    forbidden: true
+    description: "Presentation layer must not directly depend on infrastructure layer; it must depend on application services."

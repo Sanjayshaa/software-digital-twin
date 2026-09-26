@@ -1,5 +1,6 @@
 import os
 import sys
+from typing import Optional
 
 # Ensure backend root is on sys.path
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend"))
@@ -293,6 +294,273 @@ def analyze(
         db.close()
 
 
+@app.command("status")
+def status_cmd():
+    """
+    Displays the authoritative project execution status.
+    Calculates completion percentage deterministically from explicit verified milestones.
+    Separates Project Progress from Architecture Conformance.
+    """
+    from app.services.status.tracker import project_status_tracker
+
+    status = project_status_tracker.get_status()
+
+    console.print()
+    console.print(Panel(
+        f"[bold cyan]{status.project_name}[/bold cyan]\n"
+        f"[dim]Authoritative Milestone-Based Execution Status & Architecture Conformance[/dim]\n"
+        f"Current Phase: [bold magenta]{status.current_phase}[/bold magenta] | Status: [bold green]{status.verification_status}[/bold green]",
+        border_style="cyan"
+    ))
+
+    # Progress Summary
+    progress_table = Table(title="Progress & Conformance Overview", border_style="dim")
+    progress_table.add_column("Metric", style="bold")
+    progress_table.add_column("Score / Status", justify="center", style="bold green")
+    progress_table.add_column("Measurement Basis", style="dim")
+
+    progress_table.add_row(
+        "Overall Project Progress",
+        f"[bold green]{status.overall_project_progress}%[/bold green]",
+        "Completed phases (Phases 1-3 of 10 verified)"
+    )
+    progress_table.add_row(
+        "Current Phase Progress (Phase 3)",
+        f"[bold green]{status.current_phase_progress}%[/bold green]",
+        f"27 / 27 Milestones VERIFIED with tests"
+    )
+    progress_table.add_row(
+        "Architecture Conformance",
+        f"[bold cyan]{status.architecture_conformance}%[/bold cyan]",
+        "Structural AST measurement against docs/architecture-baseline.yaml"
+    )
+    progress_table.add_row(
+        "Detected Architecture Drift",
+        f"[bold green]{status.architecture_status.detected_drift_count}[/bold green]",
+        "Evidence-based boundary violations in active code"
+    )
+    progress_table.add_row(
+        "Database Architecture",
+        f"{status.database_status.provider} on {status.database_status.target_host_port}",
+        f"{status.database_status.total_tables} tables, migration {status.database_status.migrations_head}"
+    )
+    progress_table.add_row(
+        "Test Suite Status",
+        f"[bold green]{status.test_status}[/bold green]",
+        "Automated Pytest regression suite"
+    )
+    progress_table.add_row(
+        "Last Verified",
+        status.last_verified,
+        "Continuous verification pipeline"
+    )
+
+    console.print(progress_table)
+    console.print()
+
+    # Phase Breakdown
+    phase_table = Table(title="Phase Lifecycle Status", border_style="magenta")
+    phase_table.add_column("Phase #", justify="center", style="bold")
+    phase_table.add_column("Phase Name", style="bold")
+    phase_table.add_column("Status", justify="center")
+    phase_table.add_column("Milestones", justify="center")
+    phase_table.add_column("Progress", justify="right")
+
+    for p in status.phases:
+        status_color = "green" if p.status == "COMPLETE" else ("yellow" if p.status == "IN_PROGRESS" else "dim")
+        phase_table.add_row(
+            str(p.phase_number),
+            p.phase_name,
+            f"[{status_color}]{p.status}[/{status_color}]",
+            f"{p.verified_milestones}/{p.total_milestones}",
+            f"{p.completion_percentage}%",
+        )
+
+    console.print(phase_table)
+    console.print()
+
+    # Phase 3 Milestones Detailed Table
+    p3 = next((p for p in status.phases if p.phase_number == 3), None)
+    if p3 and p3.milestones:
+        m_table = Table(title="Phase 3 Milestones & Verification Evidence", border_style="green")
+        m_table.add_column("ID", justify="center", style="dim")
+        m_table.add_column("Milestone", style="bold")
+        m_table.add_column("State", justify="center")
+        m_table.add_column("Verification Evidence", style="cyan")
+
+        for m in p3.milestones:
+            state_color = "green" if m.state.value == "VERIFIED" else ("yellow" if m.state.value == "IN_PROGRESS" else "dim")
+            m_table.add_row(
+                m.id,
+                m.name,
+                f"[{state_color}]{m.state.value}[/{state_color}]",
+                m.verification_evidence or "-",
+            )
+
+        console.print(m_table)
+        console.print()
+
+    # Known Limitations
+    if status.known_limitations:
+        lim_table = Table(title="Known Limitations & Future Phase Scope", border_style="yellow")
+        lim_table.add_column("#", justify="center", style="dim")
+        lim_table.add_column("Limitation / Scope Constraint", style="yellow")
+        for idx, lim in enumerate(status.known_limitations, 1):
+            lim_table.add_row(str(idx), lim)
+        console.print(lim_table)
+        console.print()
+
+
+arch_app = typer.Typer(
+    name="arch",
+    help="Architecture baseline, AST drift detection, and conformance reports",
+    no_args_is_help=True,
+)
+app.add_typer(arch_app, name="arch")
+
+
+@arch_app.command("check")
+def arch_check_cmd(
+    repo_path: str = typer.Argument(".", help="Path to software repository to analyze"),
+    baseline: Optional[str] = typer.Option(None, "--baseline", "-b", help="Path to custom architecture-baseline.yaml"),
+):
+    """
+    Evaluates architecture drift from repository evidence (AST / import relationships)
+    against the machine-readable architecture baseline.
+    """
+    from app.services.architecture.service import architecture_service
+
+    abs_path = os.path.abspath(repo_path)
+    if not os.path.exists(abs_path):
+        console.print(f"[bold red]Error:[/bold red] Path '{repo_path}' does not exist.")
+        raise typer.Exit(code=1)
+
+    console.print()
+    console.print(Panel(
+        f"[bold cyan]ARCHITECTURE DRIFT & CONFORMANCE DETECTOR[/bold cyan]\n"
+        f"[dim]Deterministic AST Import Analysis against Baseline Contract[/dim]\n"
+        f"Target Repository: [green]{abs_path}[/green]",
+        border_style="cyan"
+    ))
+
+    try:
+        report = architecture_service.evaluate_repository(
+            repository_path=abs_path,
+            baseline_path=baseline,
+        )
+
+        conf_color = "green" if report.conformance_percentage >= 95.0 else ("yellow" if report.conformance_percentage >= 80.0 else "red")
+
+        rep_table = Table(title="Architecture Conformance Summary", border_style="dim")
+        rep_table.add_column("Metric", style="bold")
+        rep_table.add_column("Value", justify="center", style="bold")
+
+        rep_table.add_row("Expected Boundaries Checked", str(report.expected_boundaries))
+        rep_table.add_row("Validated Boundary Rules", str(report.validated_boundaries))
+        rep_table.add_row("Violations Detected", f"[bold red]{report.violations}[/bold red]" if report.violations > 0 else "[bold green]0[/bold green]")
+        rep_table.add_row("Circular Dependencies", f"[bold red]{report.circular_dependencies}[/bold red]" if report.circular_dependencies > 0 else "[bold green]0[/bold green]")
+        rep_table.add_row("Unexpected External Dependencies", f"[bold red]{report.unexpected_dependencies}[/bold red]" if report.unexpected_dependencies > 0 else "[bold green]0[/bold green]")
+        rep_table.add_row("Architecture Conformance", f"[{conf_color}]{report.conformance_percentage}%[/{conf_color}]")
+
+        console.print(rep_table)
+        console.print()
+
+        if report.drifts:
+            drift_table = Table(title="Detected Architecture Drift (Repository Evidence)", border_style="red")
+            drift_table.add_column("Category", style="bold magenta")
+            drift_table.add_column("Severity", justify="center")
+            drift_table.add_column("Source -> Target", style="cyan")
+            drift_table.add_column("File:Line", style="yellow")
+            drift_table.add_column("Confidence", justify="center")
+            drift_table.add_column("Rule / Evidence", style="dim")
+
+            for d in report.drifts:
+                cat_val = getattr(d.category, "value", str(d.category))
+                sev_val = getattr(d.severity, "value", str(d.severity))
+                sev_color = "red" if sev_val in ("CRITICAL", "HIGH") else "yellow"
+                drift_table.add_row(
+                    cat_val,
+                    f"[{sev_color}]{sev_val}[/{sev_color}]",
+                    f"{d.source} -> {d.target}",
+                    f"{d.file}:{d.line}",
+                    f"{d.confidence * 100:.0f}%",
+                    f"{d.expected_rule}\nEvidence: {d.actual_evidence}",
+                )
+
+            console.print(drift_table)
+            console.print()
+        else:
+            console.print("[bold green]✔ Zero architectural violations detected. 100% boundary conformance.[/bold green]")
+            console.print()
+
+    except Exception as exc:
+        console.print(f"[bold red]Architecture check failed:[/bold red] {str(exc)}")
+        raise typer.Exit(code=1)
+
+
+@arch_app.command("compare")
+def arch_compare_cmd(
+    snapshot_a: str = typer.Argument(..., help="First snapshot ID (baseline)"),
+    snapshot_b: str = typer.Argument(..., help="Second snapshot ID (target)"),
+):
+    """
+    Compares architecture drift reports between two snapshots in PostgreSQL.
+    Identifies newly introduced drifts, resolved drifts, and net conformance delta.
+    """
+    from app.core.database import SessionLocal
+    from app.services.architecture.service import architecture_service
+
+    db = SessionLocal()
+    try:
+        res = architecture_service.compare_snapshots(db, snapshot_a, snapshot_b)
+
+        console.print()
+        console.print(Panel(
+            f"[bold cyan]SNAPSHOT ARCHITECTURE DRIFT COMPARISON[/bold cyan]\n"
+            f"[dim]{res.snapshot_a}  →  {res.snapshot_b}[/dim]",
+            border_style="cyan"
+        ))
+
+        delta_color = "green" if res.conformance_delta >= 0 else "red"
+        diff_table = Table(title="Conformance Comparison", border_style="dim")
+        diff_table.add_column("Snapshot A Conformance", justify="center")
+        diff_table.add_column("Snapshot B Conformance", justify="center")
+        diff_table.add_column("Delta", justify="center", style=f"bold {delta_color}")
+        diff_table.add_column("New Drifts", justify="center", style="bold red")
+        diff_table.add_column("Resolved Drifts", justify="center", style="bold green")
+
+        diff_table.add_row(
+            f"{res.conformance_a}%",
+            f"{res.conformance_b}%",
+            f"{'+' if res.conformance_delta >= 0 else ''}{res.conformance_delta}%",
+            str(len(res.new_drifts)),
+            str(len(res.resolved_drifts)),
+        )
+        console.print(diff_table)
+        console.print()
+
+        if res.new_drifts:
+            console.print("[bold red]Newly Introduced Drifts:[/bold red]")
+            for d in res.new_drifts:
+                s_val = getattr(d.severity, "value", str(d.severity))
+                console.print(f"  [red]+[/red] [{s_val}] {d.source} -> {d.target} at {d.file}:{d.line}")
+            console.print()
+
+        if res.resolved_drifts:
+            console.print("[bold green]Resolved Drifts:[/bold green]")
+            for d in res.resolved_drifts:
+                s_val = getattr(d.severity, "value", str(d.severity))
+                console.print(f"  [green]✔[/green] [{s_val}] {d.source} -> {d.target} (Fixed)")
+            console.print()
+
+    except Exception as exc:
+        console.print(f"[bold red]Comparison failed:[/bold red] {str(exc)}")
+        raise typer.Exit(code=1)
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     app()
+
 

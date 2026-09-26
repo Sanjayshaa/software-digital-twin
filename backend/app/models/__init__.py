@@ -36,6 +36,8 @@ from app.models.entities import (
     ProcessDefinition,
     ProcessStep,
     ProcessTransition,
+    ArchitectureReportEntity,
+    ArchitectureDriftEntity,
 )
 
 __all__ = [
@@ -76,6 +78,8 @@ __all__ = [
     "ProcessDefinition",
     "ProcessStep",
     "ProcessTransition",
+    "ArchitectureReportEntity",
+    "ArchitectureDriftEntity",
 ]
 
 

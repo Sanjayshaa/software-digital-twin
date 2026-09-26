@@ -263,3 +263,83 @@ def get_analysis_run(
         "started_at": run.created_at,
         "completed_at": run.completed_at,
     }
+
+
+# ====================================================================
+# ARCHITECTURE BASELINE & DRIFT ENDPOINTS
+# ====================================================================
+
+@router.get("/{repository_id}/architecture/conformance")
+def get_architecture_conformance(
+    repository_id: str,
+    snapshot_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Returns deterministic architecture conformance report for a snapshot."""
+    from app.services.architecture.drift_detector import architecture_drift_detector
+
+    if not snapshot_id:
+        snapshots = twin_query_service.get_snapshots_by_repo(db, repository_id)
+        if not snapshots:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No snapshots found for repository")
+        snapshot_id = snapshots[0].id
+
+    report = architecture_drift_detector.detect_drift_for_snapshot(
+        db=db,
+        repository_id=repository_id,
+        snapshot_id=snapshot_id,
+        persist=True,
+    )
+    return report.model_dump()
+
+
+@router.get("/{repository_id}/architecture/drifts")
+def get_architecture_drifts(
+    repository_id: str,
+    snapshot_id: Optional[str] = None,
+    category: Optional[str] = None,
+    severity: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Returns detected architectural drifts and boundary violations."""
+    from app.services.architecture.drift_detector import architecture_drift_detector
+
+    if not snapshot_id:
+        snapshots = twin_query_service.get_snapshots_by_repo(db, repository_id)
+        if not snapshots:
+            return []
+        snapshot_id = snapshots[0].id
+
+    report = architecture_drift_detector.detect_drift_for_snapshot(
+        db=db,
+        repository_id=repository_id,
+        snapshot_id=snapshot_id,
+        persist=False,
+    )
+
+    drifts = report.drifts
+    if category:
+        drifts = [d for d in drifts if d.category.upper() == category.upper()]
+    if severity:
+        drifts = [d for d in drifts if d.severity.upper() == severity.upper()]
+
+    return [d.model_dump() for d in drifts]
+
+
+@router.get("/{repository_id}/architecture/compare")
+def compare_architecture_snapshots(
+    repository_id: str,
+    from_snapshot: str = Query(..., description="Source baseline snapshot ID"),
+    to_snapshot: str = Query(..., description="Target candidate snapshot ID"),
+    db: Session = Depends(get_db),
+):
+    """Compares architectural state between two snapshots, identifying new and resolved drifts."""
+    from app.services.architecture.drift_detector import architecture_drift_detector
+
+    comparison = architecture_drift_detector.compare_snapshots(
+        db=db,
+        repository_id=repository_id,
+        from_snapshot_id=from_snapshot,
+        to_snapshot_id=to_snapshot,
+    )
+    return comparison.model_dump()

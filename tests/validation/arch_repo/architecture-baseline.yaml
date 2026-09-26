@@ -1,0 +1,50 @@
+version: "1.0.0"
+project: "Real Architecture Validation Repository"
+description: "Architecture baseline for layered architecture validation"
+
+layers:
+  presentation:
+    modules:
+      - "presentation"
+    allowed_dependencies:
+      - "application"
+    forbidden_dependencies:
+      - "infrastructure"
+      - "domain"
+
+  application:
+    modules:
+      - "application"
+    allowed_dependencies:
+      - "domain"
+      - "infrastructure"
+    forbidden_dependencies:
+      - "presentation"
+
+  domain:
+    modules:
+      - "domain"
+    allowed_dependencies: []
+    forbidden_dependencies:
+      - "presentation"
+      - "application"
+      - "infrastructure"
+
+  infrastructure:
+    modules:
+      - "infrastructure"
+    allowed_dependencies:
+      - "domain"
+    forbidden_dependencies:
+      - "presentation"
+      - "application"
+
+rules:
+  - id: "RULE-ARCH-01"
+    name: "Presentation to Infrastructure Prohibition"
+    category: "LAYER_VIOLATION"
+    severity: "HIGH"
+    source: "presentation"
+    target: "infrastructure"
+    forbidden: true
+    description: "Presentation layer cannot directly import infrastructure components."

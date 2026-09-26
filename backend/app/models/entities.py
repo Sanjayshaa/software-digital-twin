@@ -721,7 +721,57 @@ class ProcessTransition(Base):
     process = relationship("ProcessDefinition", back_populates="transitions")
 
 
+class ArchitectureReportEntity(Base):
+    __tablename__ = "architecture_reports"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    snapshot_id = Column(String(36), ForeignKey("repository_snapshots.id", ondelete="CASCADE"), nullable=True, index=True)
+    baseline_version = Column(String(50), default="1.0.0", nullable=False)
+    expected_boundaries = Column(Integer, default=0, nullable=False)
+    validated_boundaries = Column(Integer, default=0, nullable=False)
+    violations_count = Column(Integer, default=0, nullable=False)
+    circular_count = Column(Integer, default=0, nullable=False)
+    unexpected_count = Column(Integer, default=0, nullable=False)
+    conformance_percentage = Column(Float, default=100.0, nullable=False)
+    summary = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    repository = relationship("Repository")
+    snapshot = relationship("RepositorySnapshot")
+    drifts = relationship("ArchitectureDriftEntity", back_populates="report", cascade="all, delete-orphan")
+
+
+class ArchitectureDriftEntity(Base):
+    __tablename__ = "architecture_drifts"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    report_id = Column(String(36), ForeignKey("architecture_reports.id", ondelete="CASCADE"), nullable=True, index=True)
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    snapshot_id = Column(String(36), ForeignKey("repository_snapshots.id", ondelete="CASCADE"), nullable=True, index=True)
+    category = Column(String(50), nullable=False, index=True)
+    severity = Column(String(20), default="HIGH", nullable=False, index=True)
+    source = Column(String(255), nullable=False)
+    target = Column(String(255), nullable=False)
+    relationship_type = Column(String(50), default="import", nullable=False)
+    expected_rule = Column(Text, nullable=False)
+    actual_evidence = Column(Text, nullable=False)
+    file_path = Column(String(512), nullable=False)
+    line_number = Column(Integer, nullable=False)
+    confidence = Column(Float, default=0.98, nullable=False)
+    status = Column(String(30), default="DETECTED", nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    resolved_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    report = relationship("ArchitectureReportEntity", back_populates="drifts")
+    repository = relationship("Repository")
+    snapshot = relationship("RepositorySnapshot")
+
+
 # Compatibility Aliases
 Snapshot = RepositorySnapshot
+
 
 

@@ -31,7 +31,7 @@ class StructuralTwinEngine:
         profile, plan = discovery_engine.discover(repo.local_path)
 
         # 2. Derive Snapshot ID deterministically from commit/repo
-        clean_commit = commit_hash[:12] if commit_hash != "HEAD" else "head"
+        clean_commit = commit_hash.strip() if commit_hash else "head"
         snap_raw = f"{repo.id}::{clean_commit}::{branch_name}"
         snapshot_id = f"snap_{hashlib.sha256(snap_raw.encode('utf-8')).hexdigest()[:16]}"
 
@@ -61,6 +61,20 @@ class StructuralTwinEngine:
             commit_hash=commit_hash,
             branch_name=branch_name,
         )
+
+        # 7. Continuous Architecture Drift Detection
+        try:
+            from app.services.architecture.drift_detector import architecture_drift_detector
+            arch_report = architecture_drift_detector.detect_drift_for_snapshot(
+                db=db,
+                repository_id=repo.id,
+                snapshot_id=snapshot_id,
+                persist=True,
+            )
+            result.summary["architecture_conformance"] = arch_report.conformance_percentage
+            result.summary["architecture_drifts_count"] = arch_report.violations_count
+        except Exception as exc:
+            result.warnings.append(f"Architecture drift detection note: {str(exc)}")
 
         return snapshot_id, result
 
