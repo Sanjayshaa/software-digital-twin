@@ -178,5 +178,121 @@ def discover(
     console.print()
 
 
+@app.command("analyze")
+def analyze(
+    repo_path: str = typer.Argument(".", help="Path to software repository to analyze"),
+    commit_hash: str = typer.Option("HEAD", "--commit", "-c", help="Commit hash for snapshot"),
+    branch_name: str = typer.Option("main", "--branch", "-b", help="Branch name"),
+):
+    """
+    Executes Phase 3 Structural Intelligence & Digital Twin Builder.
+    Parses code with Tree-sitter, extracts artifacts & relationships, and builds a snapshot-aware Twin.
+    """
+    from app.core.database import SessionLocal
+    from app.models.entities import Project, Repository
+    from app.services.analysis.engine import structural_twin_engine
+
+    abs_path = os.path.abspath(repo_path)
+    if not os.path.exists(abs_path):
+        console.print(f"[bold red]Error:[/bold red] Path '{repo_path}' does not exist.")
+        raise typer.Exit(code=1)
+
+    repo_name = os.path.basename(abs_path.rstrip("/\\")) or "repo"
+
+    console.print()
+    console.print(Panel(
+        f"[bold magenta]DIGITAL TWIN STRUCTURAL INTELLIGENCE & BUILDER[/bold magenta]\n"
+        f"[dim]Deterministic AST Parsing, Snapshot Modeling & Relationship Graph[/dim]\n"
+        f"Target Repository: [green]{abs_path}[/green] | Commit: [cyan]{commit_hash}[/cyan] | Branch: [cyan]{branch_name}[/cyan]",
+        border_style="magenta"
+    ))
+
+    db = SessionLocal()
+    try:
+        # Find or create Project & Repository records for CLI run
+        proj = db.query(Project).filter_by(name=f"CLI-{repo_name}").first()
+        if not proj:
+            proj = Project(name=f"CLI-{repo_name}", description="Project created via CLI analyze")
+            db.add(proj)
+            db.commit()
+            db.refresh(proj)
+
+        repo = db.query(Repository).filter_by(local_path=abs_path).first()
+        if not repo:
+            repo = Repository(
+                project_id=proj.id,
+                name=repo_name,
+                local_path=abs_path,
+                default_branch=branch_name,
+            )
+            db.add(repo)
+            db.commit()
+            db.refresh(repo)
+
+        snapshot_id, result = structural_twin_engine.build_structural_twin(
+            db=db,
+            repository_id=repo.id,
+            commit_hash=commit_hash,
+            branch_name=branch_name,
+        )
+
+        # Print Execution Table
+        summary_table = Table(title="Digital Twin Analysis Summary", border_style="cyan")
+        summary_table.add_column("Metric", style="bold")
+        summary_table.add_column("Value", style="green")
+
+        summary_table.add_row("Repository", repo_name)
+        summary_table.add_row("Snapshot ID", snapshot_id)
+        summary_table.add_row("Status", f"[bold green]{result.status}[/bold green]" if result.status == "COMPLETED" else f"[bold yellow]{result.status}[/bold yellow]")
+        summary_table.add_row("Files Analyzed", str(result.files_scanned))
+        summary_table.add_row("Structural Artifacts", str(len(result.artifacts)))
+        summary_table.add_row("Typed Relationships", str(len(result.relationships)))
+        summary_table.add_row("Evidence Records", str(len(result.evidence_items)))
+        summary_table.add_row("Analyzers Executed", ", ".join(result.analyzer_names))
+        summary_table.add_row("Warnings", str(len(result.warnings)))
+        summary_table.add_row("Errors", str(len(result.errors)))
+
+        console.print(summary_table)
+        console.print()
+
+        # Artifact Breakdown Table
+        type_counts = {}
+        for a in result.artifacts:
+            type_counts[a.artifact_type.value] = type_counts.get(a.artifact_type.value, 0) + 1
+
+        if type_counts:
+            art_table = Table(title="Extracted Artifacts by Category", border_style="green")
+            art_table.add_column("Artifact Type", style="bold")
+            art_table.add_column("Count", justify="right", style="cyan")
+            for t, c in sorted(type_counts.items()):
+                art_table.add_row(t, str(c))
+            console.print(art_table)
+            console.print()
+
+        # Relationship Breakdown Table
+        rel_counts = {}
+        for r in result.relationships:
+            rel_counts[r.relationship_type.value] = rel_counts.get(r.relationship_type.value, 0) + 1
+
+        if rel_counts:
+            rel_table = Table(title="Extracted Relationships by Semantic Type", border_style="yellow")
+            rel_table.add_column("Relationship Type", style="bold")
+            rel_table.add_column("Count", justify="right", style="magenta")
+            for t, c in sorted(rel_counts.items()):
+                rel_table.add_row(t, str(c))
+            console.print(rel_table)
+            console.print()
+
+        console.print(f"[bold green]✔ Digital Twin snapshot '{snapshot_id}' built and persisted successfully.[/bold green]")
+        console.print()
+
+    except Exception as exc:
+        console.print(f"[bold red]Analysis failed:[/bold red] {str(exc)}")
+        raise typer.Exit(code=1)
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     app()
+

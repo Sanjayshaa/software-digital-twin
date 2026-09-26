@@ -9,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.health import router as health_router
 from app.api.discovery import router as discovery_router
+from app.api.analysis import router as analysis_router
 
 app = FastAPI(
+
 
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
@@ -40,9 +42,11 @@ def root():
         "ready": "/ready",
     }
 
-# Register health and discovery routers
+# Register health, discovery, and analysis routers
 app.include_router(health_router)
 app.include_router(discovery_router)
+app.include_router(analysis_router)
+
 
 if __name__ == "__main__":
     import uvicorn

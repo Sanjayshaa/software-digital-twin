@@ -149,3 +149,92 @@ This document serves as the single immutable audit log and chronological record 
 
 ### 2. Files Created & Modified
 - `PROJECT_EXECUTION_LOG.md`: Dedicated single tracking document created.
+
+---
+
+## Log Entry #4: Phase 3 — Structural Intelligence & Digital Twin Builder
+
+- **Timestamp**: `2026-09-26T10:43:07+05:30`
+- **Originating Prompt**:
+  > *"Sure. Based on the Phase 1 foundation + Phase 2 Discovery Brain we already established, Phase 3 should be Structural Intelligence & Digital Twin Builder... PRIMARY OBJECTIVE: Convert the repository discovered by Phase 2 into a structured, evidence-backed, snapshot-aware Software Digital Twin... CORE ARCHITECTURAL PRINCIPLE: Do NOT make the LLM responsible for understanding source-code structure... For Phase 3: NO LLM dependency. NO RAG. NO autonomous agents. NO risk scoring yet. NO blast-radius calculation yet. NO test-impact calculation yet. NO web scraping. NO runtime instrumentation yet. Integrate Tree-sitter as primary structural parsing layer where appropriate... Deep language support: Python, Java, JavaScript, TypeScript... Secondary language support: COBOL, C/C++, SQL, Docker... Normalized Digital Twin model... Snapshot-aware Digital Twin... Typed relationship model... Evidence model... Process & Test foundation... CLI analyze command... APIs... NetworkX graph projection."*
+
+### 1. Architectural Decisions & Principles
+- **Strictly Deterministic Static Analysis**: AST extraction is 100% deterministic using Tree-sitter 0.21+ language bindings for primary languages and specialized syntactic parsers for secondary languages. Zero LLM hallucinations.
+- **Parser Abstraction Boundary**: Decoupled domain models from raw Tree-sitter AST nodes via `ParserAdapter`, `ParserResult`, and `SyntaxNode` wrappers so additional parsers can be plugged in without refactoring.
+- **Snapshot Isolation**: All artifacts, relationships, and runs are linked to immutable `RepositorySnapshot` entities identified deterministically by commit/branch (`snap_<sha256(repo_id:commit:branch)>`).
+- **Stable Identity & Idempotency**: Normalized IDs (`art_<sha256(...)>`, `rel_<sha256(...)>`) ensure re-running analysis on the same snapshot never duplicates records in PostgreSQL.
+- **Typed Relationships**: 17 explicit semantic edge types (`CONTAINS`, `IMPORTS`, `EXPORTS`, `CALLS`, `EXTENDS`, `IMPLEMENTS`, `REFERENCES`, `DEPENDS_ON`, `EXPOSES`, `TESTS`, `COPY_DEPENDS_ON`, etc.).
+- **Reproducible Graph Projections**: PostgreSQL is the single source of truth; on-demand NetworkX `MultiDiGraph` projections are generated dynamically for algorithmic analysis.
+- **Process Twin & Test Foundation**: Added database schemas and interfaces for `ProcessDefinition`, `ProcessStep`, `ProcessTransition` and test source mappings.
+
+### 2. Dependencies Introduced
+- `tree-sitter>=0.21.3` (MIT)
+- `tree-sitter-python>=0.21.0` (MIT)
+- `tree-sitter-java>=0.21.0` (MIT)
+- `tree-sitter-javascript>=0.21.0` (MIT)
+- `tree-sitter-typescript>=0.21.0` (MIT)
+- `networkx>=3.2.1` (BSD 3-Clause)
+Updated in both `requirements.txt` and `backend/requirements.txt`.
+
+### 3. Database Schema Migration (Alembic Migration #3)
+- Created migration `backend/migrations/versions/6823e0fea4e4_structural_digital_twin_schema.py`:
+  - `structural_artifacts` table (snapshot-aware, typed, source location, confidence, metadata)
+  - `artifact_relationships` table (typed semantic edges with foreign keys to artifacts)
+  - `process_definitions`, `process_steps`, `process_transitions` tables (Process Twin foundation)
+  - Extended `analysis_runs` with `repository_id`, `snapshot_id`, `analyzer_names`, `files_scanned`, `artifacts_created`, `relationships_created`, `warnings`, `errors`
+  - Total verified database tables: 37.
+
+### 4. Files Created & Modified
+- **Domain Models & Entities**:
+  - `backend/app/models/entities.py`: Added `StructuralArtifact`, `ArtifactRelationship`, `ProcessDefinition`, `ProcessStep`, `ProcessTransition`, and compatibility alias `Snapshot = RepositorySnapshot`.
+  - `backend/app/models/__init__.py`: Exported new models.
+- **Parser Abstraction**:
+  - `backend/app/services/analysis/parsers/base.py`: Abstract `ParserAdapter`, `ParserResult`, and decoupled `SyntaxNode`.
+  - `backend/app/services/analysis/parsers/treesitter_adapter.py`: Production Tree-sitter adapter for Python, Java, JavaScript, and TypeScript.
+- **Normalizers & Identity**:
+  - `backend/app/services/analysis/normalizers/identity.py`: Deterministic hash generators `build_artifact_id` and `build_relationship_id`.
+- **Analyzers**:
+  - `backend/app/services/analysis/analyzers/base.py`: Abstract `StructuralAnalyzerBase` extending Phase 2 `AnalyzerInterface`.
+  - `backend/app/services/analysis/analyzers/python_analyzer.py`: AST extraction for modules, classes, functions, calls, FastAPI routes (`API_ENDPOINT` + `EXPOSES`), pytest cases (`TEST_CASE` + `TESTS`).
+  - `backend/app/services/analysis/analyzers/java_analyzer.py`: AST extraction for packages, classes, interfaces, superclasses, Spring annotations (`@RestController`, `@GetMapping`, `@PostMapping`), JUnit `@Test`.
+  - `backend/app/services/analysis/analyzers/typescript_analyzer.py`: AST extraction for TypeScript/React, modules, exports, Vitest/Jest blocks.
+  - `backend/app/services/analysis/analyzers/javascript_analyzer.py`: AST extraction for Node.js/CommonJS/ESM.
+  - `backend/app/services/analysis/analyzers/secondary_analyzers.py`: `CobolStructuralAnalyzer` (divisions, copybooks), `CppStructuralAnalyzer` (includes, structs), `DatabaseStructuralAnalyzer` (SQL DDL tables/views), `DockerStructuralAnalyzer` (docker-compose services, Dockerfile stages).
+- **Runtime Execution & Persistence**:
+  - `backend/app/services/analysis/runtime/context.py`: `AnalysisContext`.
+  - `backend/app/services/analysis/runtime/result.py`: `ArtifactType`, `RelationshipType`, `ExtractedArtifact`, `ExtractedRelationship`, `ExtractedEvidence`, `AnalysisRunResult`.
+  - `backend/app/services/analysis/runtime/dispatcher.py`: Maps Phase 2 plan to active structural analyzers.
+  - `backend/app/services/analysis/runtime/runner.py`: Safe execution and result aggregation.
+  - `backend/app/services/analysis/persistence/twin_writer.py`: Idempotent PostgreSQL persistence with external dependency resolution.
+  - `backend/app/services/analysis/query/twin_query_service.py`: Service querying snapshots, artifacts, dependencies, dependents, component structures.
+  - `backend/app/services/analysis/graph/projection.py`: NetworkX `MultiDiGraph` projection and ego-network subgraphs.
+  - `backend/app/services/analysis/foundation/process.py`: Process Twin foundation hooks.
+  - `backend/app/services/analysis/engine.py`: Central `StructuralTwinEngine`.
+  - `backend/app/services/analysis/__init__.py`: Package re-exports.
+- **APIs & CLI**:
+  - `backend/app/api/analysis.py`: Endpoints for analyze, twin, artifacts, relationships, evidence, snapshots, analysis runs.
+  - `backend/main.py`: Mounted analysis router at `/repositories`.
+  - `cli/main.py`: Extended CLI with `analyze` command and Rich reporting tables.
+- **Fixtures & Tests**:
+  - `tests/fixtures/javascript_node/`: Node.js Express fixture (`package.json`, `index.js`).
+  - `tests/fixtures/python_fastapi_pytest/`: Updated with `OrderService`, `create_order`, `calculate_total`, `test_create_order`.
+  - `tests/fixtures/cobol_legacy/`: Updated with `COPY COPYBOOK.` copybook statement.
+  - `backend/tests/test_analysis.py`: Comprehensive test suite (Tree-sitter parsing, deterministic identity, deep extractors, secondary analyzers, idempotency, twin queries, graph projection).
+- **Documentation**:
+  - `docs/STRUCTURAL_TWIN.md`
+  - `docs/ANALYZER_RUNTIME.md`
+  - `docs/EVIDENCE_MODEL.md`
+  - `docs/GRAPH_MODEL.md`
+  - `THIRD-PARTY-NOTICES.md`
+
+### 5. Verification Results
+- **Pytest Suite**: Ran 26 tests across Phase 1, Phase 2, and Phase 3:
+  - **26 passed in 0.37s (100% pass rate, zero regressions)**.
+- **CLI Verification**:
+  - `./digital-twin analyze tests/fixtures/polyglot_microservice`: Analyzed 8 files across Docker, Java, Python, SQL; extracted 16 artifacts, 7 relationships, status `COMPLETED`.
+  - `./digital-twin analyze tests/fixtures/python_fastapi_pytest`: Analyzed 4 files; extracted 19 artifacts, 16 relationships, 2 API endpoints, 2 test links.
+  - `./digital-twin analyze tests/fixtures/cobol_legacy`: Analyzed 2 files; extracted 7 artifacts, 4 divisions, 1 copybook relationship.
+- **Docker Verification**:
+  - Rebuilt backend container image `digitaltwin-backend` (28.2s).
+  - Started containers with `docker compose up -d`.
+  - Live `/health` and `/ready` endpoints confirmed `200 OK` (PostgreSQL connected).

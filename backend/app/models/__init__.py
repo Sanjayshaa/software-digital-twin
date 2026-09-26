@@ -31,6 +31,11 @@ from app.models.entities import (
     Analyzer,
     ProjectCapability,
     AnalysisPlan,
+    StructuralArtifact,
+    ArtifactRelationship,
+    ProcessDefinition,
+    ProcessStep,
+    ProcessTransition,
 )
 
 __all__ = [
@@ -66,5 +71,11 @@ __all__ = [
     "Analyzer",
     "ProjectCapability",
     "AnalysisPlan",
+    "StructuralArtifact",
+    "ArtifactRelationship",
+    "ProcessDefinition",
+    "ProcessStep",
+    "ProcessTransition",
 ]
+
 

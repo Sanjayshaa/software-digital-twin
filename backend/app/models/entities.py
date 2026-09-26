@@ -406,9 +406,17 @@ class AnalysisRun(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=True, index=True)
+    snapshot_id = Column(String(36), ForeignKey("repository_snapshots.id", ondelete="SET NULL"), nullable=True, index=True)
     change_id = Column(String(36), ForeignKey("changes.id", ondelete="SET NULL"), nullable=True, index=True)
     run_type = Column(String(100), default="full_analysis", nullable=False)
-    status = Column(String(50), default="running", nullable=False)
+    status = Column(String(50), default="running", nullable=False)  # PENDING, RUNNING, COMPLETED, PARTIAL, FAILED
+    analyzer_names = Column(JSON, default=list, nullable=False)
+    files_scanned = Column(Integer, default=0, nullable=False)
+    artifacts_created = Column(Integer, default=0, nullable=False)
+    relationships_created = Column(Integer, default=0, nullable=False)
+    warnings = Column(JSON, default=list, nullable=False)
+    errors = Column(JSON, default=list, nullable=False)
     summary = Column(JSON, default=dict, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     completed_at = Column(DateTime, nullable=True)
@@ -416,6 +424,7 @@ class AnalysisRun(Base):
     # Relationships
     project = relationship("Project", back_populates="analysis_runs")
     change = relationship("Change", back_populates="analysis_runs")
+
     risk_assessments = relationship("RiskAssessment", back_populates="analysis_run")
     agent_runs = relationship("AgentRun", back_populates="analysis_run", cascade="all, delete-orphan")
     evidence_items = relationship("Evidence", back_populates="analysis_run", cascade="all, delete-orphan")
@@ -590,4 +599,129 @@ class AnalysisPlan(Base):
     total_steps = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     executed_at = Column(DateTime, nullable=True)
+
+
+# ====================================================================
+# 8. STRUCTURAL DIGITAL TWIN & RELATIONSHIP GRAPH ENTITIES (PHASE 3)
+# ====================================================================
+
+class StructuralArtifact(Base):
+    __tablename__ = "structural_artifacts"
+
+    id = Column(String(128), primary_key=True)  # Deterministic stable identifier: sha256 or repo:snap:file:type:qualname
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    snapshot_id = Column(String(36), ForeignKey("repository_snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_id = Column(String(36), ForeignKey("files.id", ondelete="SET NULL"), nullable=True, index=True)
+    artifact_type = Column(String(50), nullable=False, index=True)  # MODULE, PACKAGE, CLASS, INTERFACE, FUNCTION, METHOD, CONSTRUCTOR, API_ENDPOINT, DATABASE_ENTITY, CONFIG_ENTITY, TEST_CASE, COBOL_DIVISION, DOCKER_STAGE, etc.
+    language = Column(String(50), nullable=False, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    qualified_name = Column(String(1024), nullable=False, index=True)
+    signature = Column(Text, nullable=True)
+    docstring = Column(Text, nullable=True)
+    location = Column(String(1024), nullable=True)
+    line_start = Column(Integer, nullable=True)
+    line_end = Column(Integer, nullable=True)
+    source_hash = Column(String(64), nullable=True)
+    analyzer_source = Column(String(100), nullable=True)
+    confidence = Column(Float, default=1.0, nullable=False)
+    metadata_payload = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    out_relationships = relationship(
+        "ArtifactRelationship",
+        foreign_keys="ArtifactRelationship.source_artifact_id",
+        back_populates="source_artifact",
+        cascade="all, delete-orphan",
+    )
+    in_relationships = relationship(
+        "ArtifactRelationship",
+        foreign_keys="ArtifactRelationship.target_artifact_id",
+        back_populates="target_artifact",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index("idx_art_snap_type", "snapshot_id", "artifact_type"),
+        Index("idx_art_snap_qual", "snapshot_id", "qualified_name"),
+    )
+
+
+class ArtifactRelationship(Base):
+    __tablename__ = "artifact_relationships"
+
+    id = Column(String(128), primary_key=True)  # Deterministic stable identifier: hash(snap:source:rel:target)
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    snapshot_id = Column(String(36), ForeignKey("repository_snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_artifact_id = Column(String(128), ForeignKey("structural_artifacts.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_artifact_id = Column(String(128), ForeignKey("structural_artifacts.id", ondelete="CASCADE"), nullable=False, index=True)
+    relationship_type = Column(String(50), nullable=False, index=True)  # CONTAINS, IMPORTS, EXPORTS, CALLS, EXTENDS, IMPLEMENTS, REFERENCES, DEPENDS_ON, EXPOSES, CONSUMES, PERSISTS_TO, CONFIGURES, TESTS, PART_OF, INCLUDES, COPY_DEPENDS_ON, USES
+    confidence = Column(Float, default=1.0, nullable=False)
+    detection_method = Column(String(100), nullable=False)
+    source_location = Column(String(1024), nullable=True)
+    metadata_payload = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    source_artifact = relationship("StructuralArtifact", foreign_keys=[source_artifact_id], back_populates="out_relationships")
+    target_artifact = relationship("StructuralArtifact", foreign_keys=[target_artifact_id], back_populates="in_relationships")
+
+    __table_args__ = (
+        Index("idx_rel_snap_type", "snapshot_id", "relationship_type"),
+        Index("idx_rel_src_tgt", "source_artifact_id", "target_artifact_id"),
+    )
+
+
+class ProcessDefinition(Base):
+    __tablename__ = "process_definitions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    snapshot_id = Column(String(36), ForeignKey("repository_snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    process_type = Column(String(100), default="business_process", nullable=False)
+    metadata_payload = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    steps = relationship("ProcessStep", back_populates="process", cascade="all, delete-orphan")
+    transitions = relationship("ProcessTransition", back_populates="process", cascade="all, delete-orphan")
+
+
+class ProcessStep(Base):
+    __tablename__ = "process_steps"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    process_id = Column(String(36), ForeignKey("process_definitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_order = Column(Integer, default=0, nullable=False)
+    name = Column(String(255), nullable=False)
+    component_artifact_id = Column(String(128), ForeignKey("structural_artifacts.id", ondelete="SET NULL"), nullable=True, index=True)
+    step_type = Column(String(50), default="action", nullable=False)
+    metadata_payload = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    process = relationship("ProcessDefinition", back_populates="steps")
+
+
+class ProcessTransition(Base):
+    __tablename__ = "process_transitions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    process_id = Column(String(36), ForeignKey("process_definitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_step_id = Column(String(36), ForeignKey("process_steps.id", ondelete="CASCADE"), nullable=False, index=True)
+    to_step_id = Column(String(36), ForeignKey("process_steps.id", ondelete="CASCADE"), nullable=False, index=True)
+    transition_condition = Column(String(255), nullable=True)
+    metadata_payload = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    process = relationship("ProcessDefinition", back_populates="transitions")
+
+
+# Compatibility Aliases
+Snapshot = RepositorySnapshot
+
 
