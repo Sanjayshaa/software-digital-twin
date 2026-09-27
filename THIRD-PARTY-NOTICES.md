@@ -14,7 +14,7 @@ This project incorporates open-source third-party software components. This docu
 ---
 
 ### 2. Tree-sitter Python Grammar (`tree-sitter-python`)
-- **Version**: `>=0.21.0`
+- **Version**: `>=0.23.0`
 - **Repository**: [https://github.com/tree-sitter/tree-sitter-python](https://github.com/tree-sitter/tree-sitter-python)
 - **License**: MIT License
 - **Copyright**: (c) 2017 Max Brunsfeld
@@ -23,7 +23,7 @@ This project incorporates open-source third-party software components. This docu
 ---
 
 ### 3. Tree-sitter Java Grammar (`tree-sitter-java`)
-- **Version**: `>=0.21.0`
+- **Version**: `>=0.23.0`
 - **Repository**: [https://github.com/tree-sitter/tree-sitter-java](https://github.com/tree-sitter/tree-sitter-java)
 - **License**: MIT License
 - **Copyright**: (c) 2017 Max Brunsfeld
@@ -32,7 +32,7 @@ This project incorporates open-source third-party software components. This docu
 ---
 
 ### 4. Tree-sitter JavaScript Grammar (`tree-sitter-javascript`)
-- **Version**: `>=0.21.0`
+- **Version**: `>=0.23.0`
 - **Repository**: [https://github.com/tree-sitter/tree-sitter-javascript](https://github.com/tree-sitter/tree-sitter-javascript)
 - **License**: MIT License
 - **Copyright**: (c) 2014 Max Brunsfeld
@@ -41,7 +41,7 @@ This project incorporates open-source third-party software components. This docu
 ---
 
 ### 5. Tree-sitter TypeScript Grammar (`tree-sitter-typescript`)
-- **Version**: `>=0.21.0`
+- **Version**: `>=0.23.0`
 - **Repository**: [https://github.com/tree-sitter/tree-sitter-typescript](https://github.com/tree-sitter/tree-sitter-typescript)
 - **License**: MIT License
 - **Copyright**: (c) 2017 Max Brunsfeld
@@ -50,7 +50,7 @@ This project incorporates open-source third-party software components. This docu
 ---
 
 ### 6. NetworkX (`networkx`)
-- **Version**: `>=3.2.1`
+- **Version**: `>=3.3`
 - **Repository**: [https://github.com/networkx/networkx](https://github.com/networkx/networkx)
 - **License**: BSD 3-Clause License
 - **Copyright**: (c) 2004-2024 NetworkX Developers
