@@ -42,3 +42,64 @@ NetworkX MultiDiGraph (In-Memory Analysis Engine)
 - **Reproducibility**: The graph projection is constructed deterministically from `StructuralArtifact` nodes and `ArtifactRelationship` edges for any given snapshot.
 - **Graph Topology**: Directed multi-graph (`MultiDiGraph`) supporting multiple typed edges between the same pair of nodes (e.g. `CALLS` and `REFERENCES`).
 - **Graph Algorithms**: Enables cycle detection, ego-network extraction, shortest-path dependency traversal, and centrality calculation for future blast-radius and change-impact analysis.
+
+---
+
+## 3. Phase 3.X — Interactive Visualization Layer (Obsidian-Style Architecture View)
+
+```
+                    ┌─────────────────────┐
+                    │   REAL REPOSITORY   │
+                    └──────────┬──────────┘
+                               ↓
+                    ┌─────────────────────┐
+                    │  DISCOVERY BRAIN    │
+                    └──────────┬──────────┘
+                               ↓
+                    ┌─────────────────────┐
+                    │  STRUCTURAL TWIN    │
+                    └──────────┬──────────┘
+                               ↓
+             ┌─────────────────┴─────────────────┐
+             ↓                                   ↓
+     ┌───────────────┐                   ┌───────────────┐
+     │ PROCESS TWIN  │                   │ EVIDENCE TWIN │
+     └───────┬───────┘                   └───────┬───────┘
+             └─────────────────┬─────────────────┘
+                               ↓
+                    ┌─────────────────────┐
+                    │   GRAPH PROJECTION  │
+                    │ (TwinGraphProjection)│
+                    └──────────┬──────────┘
+                               ↓
+                 ┌───────────────────────────┐
+                 │   INTERACTIVE TWIN VIEW   │
+                 │                           │
+                 │  📁 Repo Explorer         │
+                 │  🕸 Architecture Graph    │
+                 │  🔄 Process Graph         │
+                 │  🔍 Dependency Explorer   │
+                 │  🆚 Snapshot Diff          │
+                 │  ⚠️ Drift Overlay         │
+                 └───────────────────────────┘
+```
+
+### 3.1. Main Views
+1. **Architecture Graph (Primary)**: Interactive node-edge graph powered by force-directed physics.
+2. **Repository Explorer**: Dual-pane file-tree synchronized with graph node spotlighting.
+3. **Process Graph**: Statically inferred and observed execution flows with evidence tags (`OBSERVED`, `STATICALLY_INFERRED`, `HEURISTIC`, `UNKNOWN`).
+4. **Dependency Explorer**: Inward/outward dependency trees with hop counts.
+5. **Snapshot Diff**: Side-by-side structural diffing with `+` ADDED, `-` REMOVED, and `~` MODIFIED markers.
+6. **Architecture Drift Overlay**: Rule violation badges and red dashed edges linking to file/line evidence.
+
+### 3.2. Progressive Hierarchical Disclosure
+- **Level 1**: Packages and Major Modules
+- **Level 2**: Classes, Services, API Endpoints, Databases, Tests
+- **Level 3**: Methods, Functions, Constructors, Detailed Calls
+- **Level 4**: Complete fine-grained source locations and AST evidence
+
+### 3.3. REST API Contract
+- `GET /repositories/{id}/graph`: Query parameters: `snapshot_id`, `level`, `depth`, `focus`, `artifact_type`, `relationship_type`, `diff_snapshot_id`, `impact_artifact_id`.
+- `GET /repositories/{id}/process-graph`: Query parameters: `snapshot_id`.
+- `GET /repositories/{id}/file-tree`: Query parameters: `snapshot_id`.
+- `GET /repositories/{id}/graph/snapshots`: Lists available immutable snapshots with metrics.

@@ -22,24 +22,44 @@ wheels/
 
 # Virtual Environments
 .venv/
-env/
 venv/
+env/
 ENV/
 
-# Environment Variables
+# Environment Variables & Secrets
 .env
+.env.*
 !.env.example
+*.pem
+*.key
+*.cert
+*.crt
 
-# IDEs
+# IDEs & Editors
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+.DS_Store
 
-# Testing & Coverage
+# Testing, Type Checking & Coverage
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
+coverage/
 
-# Logs
+# Node / Web
+node_modules/
+
+# Logs & Database Dumps
 *.log
+*.sql
+*.dump
+
+# Temporary & Scratch Files
+tmp/
+scratch/
+real_validation_repo/

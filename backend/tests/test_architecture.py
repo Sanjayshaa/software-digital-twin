@@ -218,3 +218,73 @@ class TestStatusAndArchitectureAPI:
         assert "conformance_percentage" in data
         assert data["conformance_percentage"] == 100.0
         assert data["violations"] == 0
+
+    def test_circular_dependency_detection(self, tmp_path):
+        """Verifies deterministic detection of circular import cycles (A -> B -> C -> A)."""
+        pkg = tmp_path / "cyclic_pkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        (pkg / "module_a.py").write_text("import cyclic_pkg.module_b\n")
+        (pkg / "module_b.py").write_text("import cyclic_pkg.module_c\n")
+        (pkg / "module_c.py").write_text("import cyclic_pkg.module_a\n")
+
+        baseline_file = tmp_path / "baseline.yaml"
+        baseline_file.write_text(
+            "version: '1.0.0'\nlayers:\n  cyclic:\n    modules: ['cyclic_pkg.*']\n    allowed_dependencies: ['cyclic_pkg.*']\nrules: []\n"
+        )
+
+        spec = architecture_drift_detector.load_baseline(str(baseline_file))
+        report = architecture_drift_detector.detect_drift(
+            repository_path=str(tmp_path),
+            baseline=spec,
+        )
+
+        assert report.circular_dependencies > 0
+        cycle_drift = next(
+            (d for d in report.drifts if d.category == DriftCategory.CIRCULAR_DEPENDENCY or str(d.category) == "CIRCULAR_DEPENDENCY"),
+            None
+        )
+        assert cycle_drift is not None
+        assert cycle_drift.severity in (DriftSeverity.CRITICAL, "CRITICAL")
+        assert cycle_drift.confidence == 1.0
+        assert "Cycle:" in cycle_drift.actual_evidence
+
+    def test_real_repo_outside_fixtures_validation(self, db_session: Session):
+        """Validates real repository analysis against real_validation_repo outside fixtures."""
+        from app.services.analysis.engine import structural_twin_engine
+        import uuid
+
+        real_repo_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "real_validation_repo")
+        )
+        if not os.path.exists(real_repo_path):
+            real_repo_path = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "tmp", "real_validation_repo")
+            )
+
+        uid = uuid.uuid4().hex[:8]
+        proj = Project(name=f"RealRepo-Project-{uid}", description="Real repo test")
+        db_session.add(proj)
+        db_session.flush()
+
+        repo = Repository(
+            project_id=proj.id,
+            name=f"real-repo-{uid}",
+            local_path=real_repo_path,
+        )
+        db_session.add(repo)
+        db_session.commit()
+
+        snapshot_id, result = structural_twin_engine.build_structural_twin(
+            db=db_session,
+            repository_id=repo.id,
+            commit_hash="commit_test_real",
+            branch_name="main",
+        )
+
+        assert result.status == "COMPLETED"
+        assert result.files_scanned == 2
+        assert len(result.artifacts) >= 5
+        art_names = [a.qualified_name for a in result.artifacts]
+        assert "calculator.Calculator" in art_names
+        assert "test_calculator.test_add" in art_names

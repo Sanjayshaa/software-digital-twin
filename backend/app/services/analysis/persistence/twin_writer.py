@@ -220,19 +220,7 @@ class TwinPersistenceWriter:
                     )
                     db.add(db_rel)
 
-        # 5. Write Evidence
-        for ev in result.evidence_items:
-            db.add(EvidenceModel(
-                project_id=repo.project_id,
-                analysis_run_id=None,  # will link to analysis run below
-                source_type="DIRECT",
-                source_reference=ev.source_reference,
-                description=ev.description,
-                confidence=ev.confidence,
-                payload=ev.payload,
-            ))
-
-        # 6. Write AnalysisRun
+        # 5. Write AnalysisRun
         analysis_run = AnalysisRunModel(
             id=result.run_id,
             project_id=repo.project_id,
@@ -251,6 +239,19 @@ class TwinPersistenceWriter:
             completed_at=result.completed_at,
         )
         db.add(analysis_run)
+        db.flush()
+
+        # 6. Write Evidence linked to AnalysisRun
+        for ev in result.evidence_items:
+            db.add(EvidenceModel(
+                project_id=repo.project_id,
+                analysis_run_id=analysis_run.id,
+                source_type="DIRECT",
+                source_reference=ev.source_reference,
+                description=ev.description,
+                confidence=ev.confidence,
+                payload=ev.payload,
+            ))
 
         db.commit()
         return analysis_run

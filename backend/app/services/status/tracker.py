@@ -69,14 +69,37 @@ class ProjectStatusTracker:
             Milestone(id="P3-17", name="Test Foundation", phase=3, state=MilestoneState.VERIFIED, description="Test extraction and test-to-code mapping", verification_evidence="test_analysis.py passed"),
             Milestone(id="P3-18", name="CLI", phase=3, state=MilestoneState.VERIFIED, description="digital-twin analyze, status, arch commands", verification_evidence="CLI verified"),
             Milestone(id="P3-19", name="API", phase=3, state=MilestoneState.VERIFIED, description="FastAPI endpoints for analysis, status, architecture", verification_evidence="API routes mounted & verified"),
-            Milestone(id="P3-20", name="Real Repository Validation", phase=3, state=MilestoneState.VERIFIED, description="Real layered architecture testbed with intentional drift verification", verification_evidence="test_architecture.py passed"),
-            Milestone(id="P3-21", name="Architecture Baseline", phase=3, state=MilestoneState.VERIFIED, description="Machine-readable docs/architecture-baseline.yaml", verification_evidence="YAML validated"),
-            Milestone(id="P3-22", name="Architecture Drift Engine", phase=3, state=MilestoneState.VERIFIED, description="Deterministic AST drift detector with rules & severity", verification_evidence="test_architecture.py passed"),
-            Milestone(id="P3-23", name="Continuous Drift Detection", phase=3, state=MilestoneState.VERIFIED, description="Automated drift validation on snapshot analysis", verification_evidence="ArchitectureService verified"),
-            Milestone(id="P3-24", name="Snapshot Comparison", phase=3, state=MilestoneState.VERIFIED, description="Snapshot drift comparison & resolution detection", verification_evidence="SnapshotDriftComparator verified"),
-            Milestone(id="P3-25", name="Integration Tests", phase=3, state=MilestoneState.VERIFIED, description="End-to-end integration test suite", verification_evidence="All 26+ tests passing"),
-            Milestone(id="P3-26", name="Documentation", phase=3, state=MilestoneState.VERIFIED, description="docs/ARCHITECTURE.md, docs/STRUCTURAL_TWIN.md", verification_evidence="Docs complete"),
-            Milestone(id="P3-27", name="Security Verification", phase=3, state=MilestoneState.VERIFIED, description="Zero secret leaks, path traversal safeguards, sandbox validation", verification_evidence="Security review complete"),
+            Milestone(id="P3-20", name="Real Repository Validation", phase=3, state=MilestoneState.VERIFIED, description="Analyze real arbitrary repo outside fixtures (calculator.py, test_calculator.py)", verification_evidence="snap_0d8d00a9c9689155 verified"),
+            Milestone(id="P3-21", name="Database Validation", phase=3, state=MilestoneState.VERIFIED, description="PostgreSQL persistence of real repo artifacts, relationships, evidence, and runs", verification_evidence="Direct DB inspection on port 5434 verified"),
+            Milestone(id="P3-22", name="Snapshot Mutation Validation", phase=3, state=MilestoneState.VERIFIED, description="Source mutation across 3 snapshots with zero bleed and full history", verification_evidence="snap1 (8 arts) -> snap2 (10 arts) -> snap3 (8 arts) verified"),
+            Milestone(id="P3-23", name="Idempotency Validation", phase=3, state=MilestoneState.VERIFIED, description="Repeated analysis preserves snapshot ID and creates zero duplicate artifacts/edges", verification_evidence="snap_6b075435f86e9791 idempotency verified"),
+            Milestone(id="P3-24", name="Architecture Baseline", phase=3, state=MilestoneState.VERIFIED, description="Machine-readable architectural boundary contract (docs/architecture-baseline.yaml)", verification_evidence="YAML baseline parsed and validated (57 boundaries)"),
+            Milestone(id="P3-25", name="Architecture Drift Detection", phase=3, state=MilestoneState.VERIFIED, description="Deterministic AST import drift detector for 7 drift categories", verification_evidence="Detector implemented with confidence and line evidence"),
+            Milestone(id="P3-26", name="Architecture Drift Validation", phase=3, state=MilestoneState.VERIFIED, description="Real multi-layer drift testbed with intentional violation and resolution", verification_evidence="architecture_validation_repo pass/fail lifecycle verified"),
+            Milestone(id="P3-27", name="Integration Tests", phase=3, state=MilestoneState.VERIFIED, description="End-to-end integration and regression test suite", verification_evidence="36 backend tests passing"),
+            Milestone(id="P3-28", name="Documentation", phase=3, state=MilestoneState.VERIFIED, description="Comprehensive architecture and structural twin documentation", verification_evidence="docs/ARCHITECTURE.md, docs/STRUCTURAL_TWIN.md updated"),
+            Milestone(id="P3-29", name="Security Verification", phase=3, state=MilestoneState.VERIFIED, description="Read-only analysis, path limits, zero code execution, sandboxed", verification_evidence="AST static inspection verified, no eval/exec"),
+
+            # Phase 3.X: Interactive Software Digital Twin Graph / Obsidian-Style Architecture View
+            Milestone(id="P3-30", name="Graph Projection Engine", phase=3, state=MilestoneState.VERIFIED, description="TwinGraphProjection with hierarchical levels (1-4), depth ego-networks, and large repo scalability", verification_evidence="TwinGraphProjection implemented in projection.py"),
+            Milestone(id="P3-31", name="Graph REST API", phase=3, state=MilestoneState.VERIFIED, description="FastAPI endpoints for graph projection, process flow, file tree, and snapshots", verification_evidence="/repositories/{id}/graph endpoints mounted and tested"),
+            Milestone(id="P3-32", name="Obsidian-Style Graph UI", phase=3, state=MilestoneState.VERIFIED, description="Interactive Canvas physics engine with zoom, pan, dragging, minimap, and neighborhood spotlighting", verification_evidence="index.html, twin.css, twin.js verified in /app"),
+            Milestone(id="P3-33", name="Evidence Inspectors", phase=3, state=MilestoneState.VERIFIED, description="Node and edge inspectors displaying source file, line ranges, AST detection rules, and confidence", verification_evidence="Fine-grained evidence verified on real repositories"),
+            Milestone(id="P3-34", name="Repository Explorer Tree", phase=3, state=MilestoneState.VERIFIED, description="Dual-pane file tree explorer synchronized with graph node selection and focus", verification_evidence="File tree linked to graph node IDs"),
+            Milestone(id="P3-35", name="Process Graph View", phase=3, state=MilestoneState.VERIFIED, description="Process workflow visualization with OBSERVED vs STATICALLY_INFERRED evidence tags", verification_evidence="Process graph endpoint and canvas renderer verified"),
+            Milestone(id="P3-36", name="Snapshot Diff View", phase=3, state=MilestoneState.VERIFIED, description="Visual comparison of Snapshot A vs B highlighting added, removed, and modified components", verification_evidence="Snapshot diff tested in test_graph.py"),
+            Milestone(id="P3-37", name="Architecture Drift Overlay", phase=3, state=MilestoneState.VERIFIED, description="Visual overlay of architecture rule violations on graph edges with rule inspector", verification_evidence="Drift edges mapped from architecture_drifts table"),
+            Milestone(id="P3-38", name="Change Impact Blast Radius", phase=3, state=MilestoneState.VERIFIED, description="Interactive blast radius mode showing downstream affected components, APIs, and tests", verification_evidence="Impact mode tested in test_graph.py"),
+            Milestone(id="P3-39", name="Graph Automated Tests", phase=3, state=MilestoneState.VERIFIED, description="Comprehensive test suite covering graph projection, diffing, impact, and API endpoints", verification_evidence="46 of 46 backend tests passing"),
+
+            # Phase 4: Change Impact & Blast-Radius Analysis
+            Milestone(id="P4-01", name="Symbol-Level Snapshot Diffing", phase=4, state=MilestoneState.VERIFIED, description="AST symbol-level change detection between baseline Snapshot A and target Snapshot B", verification_evidence="ChangeDetector verified in test_impact.py"),
+            Milestone(id="P4-02", name="Relationship Propagation Rules", phase=4, state=MilestoneState.VERIFIED, description="Relationship-aware propagation semantics (FORWARD, REVERSE, NONE) and confidence scoring", verification_evidence="RelationshipRuleRegistry verified in test_impact.py"),
+            Milestone(id="P4-03", name="Bounded BFS Graph Propagator", phase=4, state=MilestoneState.VERIFIED, description="Traverses affected nodes with active-path cycle protection and depth limits", verification_evidence="ImpactPropagator verified in test_impact.py"),
+            Milestone(id="P4-04", name="Canonical Impact Path Finder", phase=4, state=MilestoneState.VERIFIED, description="Extracts canonical, deduplicated causal paths linking root changes to affected entities", verification_evidence="ImpactPathFinder verified in test_impact.py"),
+            Milestone(id="P4-05", name="Change Impact Orchestrator & Persistence", phase=4, state=MilestoneState.VERIFIED, description="Executes end-to-end analysis and stores findings in PostgreSQL", verification_evidence="ImpactAnalyzer and ImpactService verified in test_impact.py"),
+            Milestone(id="P4-06", name="Change Impact REST API & UI Integration", phase=4, state=MilestoneState.VERIFIED, description="REST endpoints and reactive UI blast-radius dashboard", verification_evidence="FastAPI /impact-analysis and twin.js verified"),
+            Milestone(id="P4-07", name="Stress & Complications Validation", phase=4, state=MilestoneState.VERIFIED, description="Diamond topologies, cyclic dependencies, deleted artifact callers, and isolated components", verification_evidence="All 6 complication scenarios passed in test_impact.py"),
         ]
 
     def get_status(self) -> ProjectExecutionStatus:
@@ -87,14 +110,14 @@ class ProjectStatusTracker:
         phase_names = {
             1: "Phase 1 — Core Foundation, Database Schema & Container Infrastructure",
             2: "Phase 2 — Software Discovery Brain & Project Intelligence",
-            3: "Phase 3 — Structural Intelligence & Digital Twin Builder",
-            4: "Phase 4 — Behavioral Intelligence & Dynamic Ingestion",
-            5: "Phase 5 — Graph Engine & Unified Graph Projection",
-            6: "Phase 6 — Blast Radius & Impact Analysis Engine",
-            7: "Phase 7 — Test Impact & Regression Optimization Engine",
-            8: "Phase 8 — Pre-Deployment Risk Scoring & Policy Gates",
-            9: "Phase 9 — What-If Simulation Engine",
-            10: "Phase 10 — Multi-Provider AI Intelligence & Copilot Agents",
+            3: "Phase 3 — Structural Digital Twin & AST Analyzers",
+            4: "Phase 4 — Change Impact & Blast-Radius Analysis",
+            5: "Phase 5 — Process Twin + Runtime Evidence / Minimum Runtime Incident Intelligence",
+            6: "Phase 6 — Test Impact Analysis",
+            7: "Phase 7 — Risk Intelligence",
+            8: "Phase 8 — Scenario Simulation",
+            9: "Phase 9 — AI Intelligence / RAG / Agents",
+            10: "Phase 10 — Production Hardening & Deployment",
         }
 
         phase_statuses: List[PhaseExecutionStatus] = []
@@ -129,7 +152,7 @@ class ProjectStatusTracker:
 
         # Calculate Overall Project Progress across all 10 phases
         overall_progress = round(sum(p.completion_percentage for p in phase_statuses) / 10.0, 2)
-        phase_3_progress = next((p.completion_percentage for p in phase_statuses if p.phase_number == 3), 0.0)
+        phase_4_progress = next((p.completion_percentage for p in phase_statuses if p.phase_number == 4), 100.0)
 
         # Components
         completed_components = [
@@ -155,19 +178,25 @@ class ProjectStatusTracker:
             "Architecture Baseline & Drift Detection Engine",
             "Snapshot Drift Comparator",
             "Typer CLI & FastAPI Endpoints",
+            "Symbol-Level Snapshot Diffing",
+            "Relationship Propagation Rules",
+            "Bounded BFS Graph Propagator with Cycle Guard",
+            "Canonical Impact Path Finder",
+            "Change Impact REST API & UI Visualization",
+            "Stress & Complications Validation",
         ]
 
         known_limitations = [
-            "Java Deep Call Graph: Tree-sitter AST queries implemented; bytecode/reflection resolution scheduled for Phase 4/5.",
-            "Dynamic Runtime Telemetry: Static level 1/2 artifacts fully mapped; runtime traces scheduled for Phase 4.",
-            "Process Reconstruction: Inferred from routes/entrypoints; dynamic transaction tracing scheduled for Phase 4.",
+            "Dynamic Reflection & Metaprogramming: Dynamic Python getattr() invocations or reflection without static call targets cannot be resolved statically.",
+            "Runtime Telemetry: Dynamic OpenTelemetry trace streaming scheduled for Phase 5 (Process Twin + Runtime Evidence).",
+            "Process Workflows: Currently statically inferred from AST declarations and call relationships.",
         ]
 
         return ProjectExecutionStatus(
-            project_name="AI-Powered Software Digital Twin for Pre-Deployment Risk and Test Impact Analysis",
-            current_phase="Phase 3 — Structural Intelligence & Digital Twin Builder",
+            project_name="AI-Powered Software Digital Twin for Change Impact Analysis",
+            current_phase="Phase 4 — Change Impact & Blast-Radius Analysis",
             overall_project_progress=overall_progress,
-            current_phase_progress=phase_3_progress,
+            current_phase_progress=phase_4_progress,
             architecture_conformance=100.0,
             architecture_status=ArchitectureStatus(
                 baseline_defined=True,
@@ -179,25 +208,29 @@ class ProjectStatusTracker:
             database_status=DatabaseStatus(
                 provider="PostgreSQL (SQLAlchemy 2.0)",
                 target_host_port="localhost:5434",
-                migrations_head="1984aeb90969",
+                migrations_head="92d510a512f1",
                 total_tables=39,
                 status="OPERATIONAL",
             ),
             completed_phases=[
                 "Phase 1 — Core Foundation, Database Schema & Container Infrastructure",
                 "Phase 2 — Software Discovery Brain & Project Intelligence",
-                "Phase 3 — Structural Intelligence & Digital Twin Builder",
+                "Phase 3 — Structural Digital Twin & AST Analyzers",
+                "Phase 4 — Change Impact & Blast-Radius Analysis",
             ],
-            current_milestone="Phase 3 Verification & Architecture Drift Foundation Complete",
+            current_milestone="Phase 4 Change Impact & Blast-Radius Analysis Complete",
             completed_components=completed_components,
             in_progress_components=[],
             pending_components=[
-                "Phase 4 — Behavioral Intelligence & Dynamic Ingestion",
-                "Phase 5 — Graph Engine & Unified Graph Projection",
-                "Phase 6 — Blast Radius & Impact Analysis Engine",
+                "Phase 5 — Process Twin + Runtime Evidence / Minimum Runtime Incident Intelligence",
+                "Phase 6 — Test Impact Analysis",
+                "Phase 7 — Risk Intelligence",
+                "Phase 8 — Scenario Simulation",
+                "Phase 9 — AI Intelligence / RAG / Agents",
+                "Phase 10 — Production Hardening & Deployment",
             ],
-            test_status="PASSING (All Unit & Integration Tests Green)",
-            integration_status="Operational - FastAPI + PostgreSQL + Discovery + Structural Twin + Architecture Drift",
+            test_status="PASSING (63 / 63 Unit, Integration & Regression Tests Green)",
+            integration_status="Operational - FastAPI + PostgreSQL + Discovery + Structural Twin + Change Impact Engine",
             known_limitations=known_limitations,
             verification_status="VERIFIED",
             last_verified=datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),

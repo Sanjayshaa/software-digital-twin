@@ -62,20 +62,6 @@ class StructuralTwinEngine:
             branch_name=branch_name,
         )
 
-        # 7. Continuous Architecture Drift Detection
-        try:
-            from app.services.architecture.drift_detector import architecture_drift_detector
-            arch_report = architecture_drift_detector.detect_drift_for_snapshot(
-                db=db,
-                repository_id=repo.id,
-                snapshot_id=snapshot_id,
-                persist=True,
-            )
-            result.summary["architecture_conformance"] = arch_report.conformance_percentage
-            result.summary["architecture_drifts_count"] = arch_report.violations_count
-        except Exception as exc:
-            result.warnings.append(f"Architecture drift detection note: {str(exc)}")
-
         return snapshot_id, result
 
 

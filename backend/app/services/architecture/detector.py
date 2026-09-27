@@ -325,12 +325,16 @@ class ArchitectureDriftDetector:
         return clean
 
     def _resolve_layer(self, module_name: str, layers: Dict[str, LayerDefinition]) -> Optional[str]:
-        """Resolves which defined layer a given module belongs to."""
+        """Resolves which defined layer a given module belongs to (picks most specific match)."""
+        best_layer: Optional[str] = None
+        best_len = 0
         for layer_name, layer_def in layers.items():
             for m in layer_def.modules:
                 if self._matches_pattern(module_name, m):
-                    return layer_name
-        return None
+                    if len(m) > best_len:
+                        best_layer = layer_name
+                        best_len = len(m)
+        return best_layer
 
     def _matches_pattern(self, name: str, pattern: str) -> bool:
         """Checks if a module matches a layer module definition or prefix."""

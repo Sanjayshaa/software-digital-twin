@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Digital Twin — Software Architecture & Structural Intelligence Platform</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2338bdf8'><circle cx='12' cy='12' r='8'/></svg>">
+  <link rel="stylesheet" href="/static/twin.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="theme-dark">
+  <div id="app" class="app-layout">
+    <!-- Top Header -->
+    <header class="top-nav">
+      <div class="nav-brand">
+        <div class="brand-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <circle cx="4" cy="6" r="2"></circle>
+            <circle cx="20" cy="6" r="2"></circle>
+            <circle cx="4" cy="18" r="2"></circle>
+            <circle cx="20" cy="18" r="2"></circle>
+            <line x1="6" y1="7" x2="10" y2="10.5"></line>
+            <line x1="18" y1="7" x2="14" y2="10.5"></line>
+            <line x1="6" y1="17" x2="10" y2="13.5"></line>
+            <line x1="18" y1="17" x2="14" y2="13.5"></line>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <span class="brand-title">Software Digital Twin</span>
+          <span class="brand-sub">Engineering Intelligence Platform</span>
+        </div>
+      </div>
+
+      <!-- Repo & Snapshot Context Selector -->
+      <div class="nav-context" id="nav-context-bar">
+        <div class="context-pill">
+          <span class="pill-label">REPO</span>
+          <select id="repo-select" class="context-select"></select>
+        </div>
+        <div class="context-pill">
+          <span class="pill-label">SNAPSHOT</span>
+          <select id="snapshot-select" class="context-select"></select>
+        </div>
+        <div class="context-pill branch-pill" id="branch-badge">
+          <span class="branch-icon">⌥</span>
+          <span id="branch-name">main</span>
+        </div>
+      </div>
+
+      <!-- Primary Navigation Tabs (7 Top-Level Views) -->
+      <nav class="view-tabs" id="main-view-tabs">
+        <button class="view-tab active" data-view="overview" id="tab-btn-overview">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Overview
+        </button>
+        <button class="view-tab" data-view="architecture" id="tab-btn-architecture">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><circle cx="6" cy="18" r="3"/><line x1="9" y1="6" x2="18" y2="15"/><line x1="6" y1="9" x2="6" y2="15"/></svg>
+          Architecture
+        </button>
+        <button class="view-tab" data-view="processes" id="tab-btn-processes">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Processes
+        </button>
+        <button class="view-tab" data-view="dependencies" id="tab-btn-dependencies">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1"/><path d="M18 8h4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-4"/><circle cx="8" cy="12" r="2"/></svg>
+          Dependencies
+        </button>
+        <button class="view-tab" data-view="tests" id="tab-btn-tests">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14 2 8 8-12 12-8-8 12-12Z"/><path d="m18 6-3-3"/><path d="m9 15-3-3"/></svg>
+          Tests
+        </button>
+        <button class="view-tab" data-view="changes" id="tab-btn-changes">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          Changes
+        </button>
+        <button class="view-tab" data-view="evidence" id="tab-btn-evidence">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+          Evidence
+        </button>
+      </nav>
+
+      <!-- Actions -->
+      <div class="nav-actions">
+        <button id="btn-open-connect-modal" class="primary-btn header-connect-btn">
+          <span>+</span> Connect Repository
+        </button>
+        <button id="btn-reanalyze" class="action-btn" title="Re-run Analysis on Active Repository">
+          <span>↻</span> Re-Analyze
+        </button>
+        <button id="theme-toggle-btn" class="icon-btn" title="Toggle Light/Dark Theme">
+          <svg id="theme-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Global Twin Context Header Bar (Persistent Across All Views) -->
+    <div class="twin-context-strip" id="twin-global-context-strip">
+      <div class="context-strip-left">
+        <div class="strip-item">
+          <span class="strip-icon">📁</span>
+          <span class="strip-label">REPO:</span>
+          <strong id="strip-repo-name" class="strip-strong">-</strong>
+        </div>
+        <div class="strip-sep">/</div>
+        <div class="strip-item">
+          <span class="strip-badge-branch">⌥ <span id="strip-branch-name">main</span></span>
+        </div>
+        <div class="strip-sep">•</div>
+        <div class="strip-item">
+          <span class="strip-label">SNAPSHOT:</span>
+          <code id="strip-snap-id" class="strip-code">-</code>
+        </div>
+        <div class="strip-sep">•</div>
+        <div class="strip-item">
+          <span class="strip-label">COMMIT:</span>
+          <code id="strip-commit-hash" class="strip-code">-</code>
+        </div>
+      </div>
+      <div class="context-strip-right">
+        <div class="strip-metric-pill" title="Source files parsed by AST analyzers">
+          <span class="pill-dot dot-emerald"></span> <strong id="strip-files-count">0</strong> <span class="pill-unit">files</span>
+        </div>
+        <div class="strip-metric-pill" title="Extracted classes, modules, and functions">
+          <span class="pill-dot dot-indigo"></span> <strong id="strip-artifacts-count">0</strong> <span class="pill-unit">artifacts</span>
+        </div>
+        <div class="strip-metric-pill" title="Calls, imports, and inheritance linkages">
+          <span class="pill-dot dot-cyan"></span> <strong id="strip-relationships-count">0</strong> <span class="pill-unit">relationships</span>
+        </div>
+        <div class="strip-status-badge sync-status-badge" id="strip-sync-status">
+          <span class="status-pulse"></span> SYNCHRONIZED
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="main-body" id="main-content-area">
+
+      <!-- ======================================================== -->
+      <!-- VIEW 0: NO-REPOSITORY / ONBOARDING HERO STATE           -->
+      <!-- ======================================================== -->
+      <div id="view-no-repo" class="content-view-panel" style="display:none;">
+        <div class="onboarding-hero">
+          <div class="hero-badge">DIGITAL TWIN PLATFORM</div>
+          <h1 class="hero-title">Understand your software before it changes.</h1>
+          <p class="hero-desc">
+            Connect a codebase to construct a persistent Digital Twin of its architecture,
+            dependencies, processes, tests, and source evidence.
+          </p>
+          <div class="hero-cta-row">
+            <button id="hero-btn-connect-local" class="primary-btn hero-cta-btn">
+              <span>+</span> Connect Local Repository
+            </button>
+          </div>
+
+          <!-- Provider Cards -->
+          <div class="provider-cards-grid">
+            <div class="provider-card active-provider" id="card-provider-local">
+              <div class="provider-icon">📁</div>
+              <div class="provider-title">Local Directory</div>
+              <div class="provider-status active-status">ACTIVE · SUPPORTED</div>
+              <p class="provider-desc">Direct AST extraction and dependency mapping for local repositories accessible to the server.</p>
+            </div>
+            <div class="provider-card coming-soon-card">
+              <div class="provider-icon">🐙</div>
+              <div class="provider-title">GitHub Integration</div>
+              <div class="provider-status coming-status">PLANNED FUTURE CAPABILITY</div>
+              <p class="provider-desc">Remote git clone and webhook synchronization are planned future capabilities.</p>
+            </div>
+            <div class="provider-card coming-soon-card">
+              <div class="provider-icon">📦</div>
+              <div class="provider-title">ZIP Archive</div>
+              <div class="provider-status coming-status">COMING SOON</div>
+              <p class="provider-desc">Direct upload and unpacking of repository zip bundles.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======================================================== -->
+      <!-- VIEW 1: OVERVIEW (ENGINEERING COMMAND CENTER)           -->
+      <!-- ======================================================== -->
+      <div id="view-overview" class="content-view-panel" style="display:block;">
+
+        <!-- System Identity Bar -->
+        <div class="command-center-identity-card" id="ov-identity-card">
+          <div class="cc-id-left">
+            <div class="cc-badge-row">
+              <span class="cc-live-badge"><span class="status-pulse"></span> DIGITAL TWIN ACTIVE</span>
+              <span class="cc-provenance-tag">AST Verified · PostgreSQL 16</span>
+            </div>
+            <h2 id="ov-repo-name" class="cc-repo-title">Software Digital Twin</h2>
+            <div class="cc-location-row">
+              <span class="cc-meta-label">SOURCE PATH:</span>
+              <code id="ov-path" class="cc-path-code">-</code>
+            </div>
+          </div>
+          <div class="cc-id-right">
+            <div class="cc-info-box">
+              <div class="cc-info-label">SNAPSHOT ID</div>
+              <div class="cc-info-val text-cyan" id="ov-snapshot">-</div>
+            </div>
+            <div class="cc-info-box">
+              <div class="cc-info-label">COMMIT HASH</div>
+              <div class="cc-info-val text-mono" id="ov-commit">-</div>
+            </div>
+            <div class="cc-info-box">
+              <div class="cc-info-label">BRANCH</div>
+              <div class="cc-info-val" id="ov-branch">main</div>
+            </div>
+            <div class="cc-action-box">
+              <button id="ov-btn-view-graph" class="primary-btn" style="background:#7c3aed;padding:8px 16px;">
+                <span>⬡</span> Open Architecture Graph
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Real Metrics Grid (7 Indicators from PostgreSQL) -->
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-label">FILES</div>
+            <div class="metric-value" id="metric-files">0</div>
+            <div class="metric-sub">Analyzed Source Files</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">ARTIFACTS</div>
+            <div class="metric-value text-indigo" id="metric-artifacts">0</div>
+            <div class="metric-sub">Classes, Modules, Functions</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">RELATIONSHIPS</div>
+            <div class="metric-value text-cyan" id="metric-relationships">0</div>
+            <div class="metric-sub">Calls, Imports, Contains</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">TESTS</div>
+            <div class="metric-value text-emerald" id="metric-tests">0</div>
+            <div class="metric-sub">Mapped Test Suites</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">PROCESSES</div>
+            <div class="metric-value text-purple" id="metric-processes">0</div>
+            <div class="metric-sub">Inferred Execution Paths</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">APIs</div>
+            <div class="metric-value text-amber" id="metric-apis">0</div>
+            <div class="metric-sub">HTTP Endpoints Detected</div>
+          </div>
+          <div class="metric-card" id="card-drift-metric">
+            <div class="metric-label">DRIFT</div>
+            <div class="metric-value" id="metric-drift">0</div>
+            <div class="metric-sub" id="metric-drift-sub">Architecture Violations</div>
+          </div>
+        </div>
+
+        <!-- Upper Dual Column Row: Architecture Macro-Structure + Analysis Pipeline -->
+        <div class="overview-details-row">
+          <!-- Left: Architecture Macro-Structure (Packages & Modules) -->
+          <div class="overview-card flex-2">
+            <div class="card-header">
+              <div class="card-header-left">
+                <h3 class="card-title">Architecture Macro-Structure</h3>
+                <span class="card-sub-label">Aggregated Packages, Services & Component Distribution</span>
+              </div>
+              <span class="card-tag">AST Verified</span>
+            </div>
+            <div class="card-body">
+              <!-- Component Breakdown Pills -->
+              <div class="comp-dist-grid" id="comp-breakdown-grid"></div>
+
+              <!-- Aggregated Package Grid -->
+              <div class="arch-packages-section" style="margin-top:16px;">
+                <div class="section-micro-heading">AGGREGATED STRUCTURAL MODULES</div>
+                <div class="arch-packages-grid" id="ov-packages-grid">
+                  <!-- Populated dynamically from backend architecture_packages -->
+                </div>
+              </div>
+
+              <!-- Conformance Banner -->
+              <div class="conformance-banner" id="conformance-alert-box" style="margin-top:16px;">
+                <div class="conf-icon" id="conf-icon">✓</div>
+                <div class="conf-info">
+                  <div class="conf-title" id="conf-title">100% Architecture Conformance</div>
+                  <div class="conf-desc" id="conf-desc">All structural dependencies comply with declared architectural boundaries.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Analysis Pipeline Status & Execution Provenance -->
+          <div class="overview-card flex-1">
+            <div class="card-header">
+              <div class="card-header-left">
+                <h3 class="card-title">Analysis Pipeline Status</h3>
+                <span class="card-sub-label">Intelligence engines executed for snapshot</span>
+              </div>
+              <span class="card-tag" id="run-status-badge">Complete</span>
+            </div>
+            <div class="card-body">
+              <div class="pipeline-status-list">
+                <div class="pipe-item">
+                  <span class="pipe-check">✓</span>
+                  <span class="pipe-label">Discovery Brain</span>
+                  <span class="pipe-val text-green">Complete</span>
+                </div>
+                <div class="pipe-item">
+                  <span class="pipe-check">✓</span>
+                  <span class="pipe-label">Technology Profiling</span>
+                  <span class="pipe-val text-green">Complete</span>
+                </div>
+                <div class="pipe-item">
+                  <span class="pipe-check">✓</span>
+                  <span class="pipe-label">Structural Twin Engine</span>
+                  <span class="pipe-val text-green">Complete</span>
+                </div>
+                <div class="pipe-item">
+                  <span class="pipe-check">✓</span>
+                  <span class="pipe-label">Dependency Mapping</span>
+                  <span class="pipe-val text-green">Complete</span>
+                </div>
+                <div class="pipe-item">
+                  <span class="pipe-check" id="pipe-test-check">✓</span>
+                  <span class="pipe-label">Test Mapping</span>
+                  <span class="pipe-val text-green" id="pipe-test-val">Complete</span>
+                </div>
+                <div class="pipe-item">
+                  <span class="pipe-check" id="pipe-proc-check">✓</span>
+                  <span class="pipe-label">Process Model</span>
+                  <span class="pipe-val text-cyan" id="pipe-proc-val">Statically Inferred</span>
+                </div>
+                <div class="pipe-item">
+                  <span class="pipe-check" id="pipe-arch-check">✓</span>
+                  <span class="pipe-label">Architecture Validation</span>
+                  <span class="pipe-val text-green" id="pipe-arch-val">Evaluated</span>
+                </div>
+              </div>
+
+              <div class="latest-snapshot-box" style="margin-top:16px;">
+                <div class="snap-box-title">LATEST SNAPSHOT ANALYSIS</div>
+                <div class="snap-box-row"><span>Analyzers:</span> <strong id="ov-run-analyzers">-</strong></div>
+                <div class="snap-box-row"><span>Execution:</span> <strong id="ov-run-time">-</strong></div>
+                <div class="snap-box-row"><span>Storage:</span> <strong class="text-cyan">PostgreSQL 16 Twin</strong></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lower Dual Column Row: Latest Change Impact + Evidence Summary -->
+        <div class="overview-details-row" style="margin-top:16px;">
+          <!-- Left: Latest Change Impact Intelligence -->
+          <div class="overview-card flex-1">
+            <div class="card-header">
+              <div class="card-header-left">
+                <h3 class="card-title">Latest Change Impact Intelligence</h3>
+                <span class="card-sub-label">Deterministic blast-radius evaluation across snapshots</span>
+              </div>
+              <span class="card-tag tag-purple" id="ov-impact-status-tag">Deterministic</span>
+            </div>
+            <div class="card-body" id="ov-impact-container">
+              <div class="empty-state-box" id="ov-impact-empty">
+                <div class="empty-icon">🎯</div>
+                <p>No change impact analysis has been computed for this repository yet.</p>
+                <button class="secondary-btn" id="ov-btn-goto-changes" style="margin-top:10px;">
+                  ⚡ Compare Snapshots & Run Blast Radius
+                </button>
+              </div>
+              <div id="ov-impact-content" style="display:none;">
+                <div class="impact-mini-metrics-row">
+                  <div class="impact-mini-pill"><span class="imp-mini-label">CHANGED</span><strong class="text-amber" id="ov-imp-changed">0</strong></div>
+                  <div class="impact-mini-pill"><span class="imp-mini-label">DIRECT IMPACT</span><strong class="text-rose" id="ov-imp-direct">0</strong></div>
+                  <div class="impact-mini-pill"><span class="imp-mini-label">INDIRECT</span><strong class="text-pink" id="ov-imp-indirect">0</strong></div>
+                  <div class="impact-mini-pill"><span class="imp-mini-label">TESTS</span><strong class="text-emerald" id="ov-imp-tests">0</strong></div>
+                  <div class="impact-mini-pill"><span class="imp-mini-label">COMPONENTS</span><strong class="text-cyan" id="ov-imp-comps">0</strong></div>
+                </div>
+                <div class="impact-mini-footer">
+                  <span id="ov-imp-meta-text" class="text-secondary text-sm">Execution Time: 0 ms</span>
+                  <button class="action-btn" id="ov-btn-view-impact-full" style="font-size:11px;padding:4px 10px;">
+                    Open Blast Radius in Changes View →
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Evidence & Empirical Provenance Summary -->
+          <div class="overview-card flex-1">
+            <div class="card-header">
+              <div class="card-header-left">
+                <h3 class="card-title">Evidence & Provenance Summary</h3>
+                <span class="card-sub-label">Empirical traceability breakdown</span>
+              </div>
+              <span class="card-tag">Strict Provenance</span>
+            </div>
+            <div class="card-body">
+              <div class="evidence-summary-list">
+                <div class="ev-sum-row">
+                  <div class="ev-sum-left">
+                    <span class="badge-evidence">DIRECT_AST</span>
+                    <span>Direct AST Parser Extractions</span>
+                  </div>
+                  <strong class="text-cyan" id="ev-sum-ast">-</strong>
+                </div>
+                <div class="ev-sum-row">
+                  <div class="ev-sum-left">
+                    <span class="badge-evidence" style="background:rgba(56,189,248,0.15);color:#38bdf8;">STATIC_LINK</span>
+                    <span>Static Imports & Call Graph Edges</span>
+                  </div>
+                  <strong class="text-indigo" id="ev-sum-links">-</strong>
+                </div>
+                <div class="ev-sum-row">
+                  <div class="ev-sum-left">
+                    <span class="badge-evidence" style="background:rgba(16,185,129,0.15);color:#10b981;">TEST_MAPPING</span>
+                    <span>Assertion & Test Surface Mappings</span>
+                  </div>
+                  <strong class="text-emerald" id="ev-sum-tests">-</strong>
+                </div>
+                <div class="ev-sum-row">
+                  <div class="ev-sum-left">
+                    <span class="badge-evidence" style="background:rgba(168,85,247,0.15);color:#c084fc;">STATICALLY_INFERRED</span>
+                    <span>Workflow Transitions</span>
+                  </div>
+                  <strong class="text-purple" id="ev-sum-proc">-</strong>
+                </div>
+              </div>
+              <div class="ev-trust-disclaimer">
+                Zero synthetic hallucinations. Every node, path, and impact finding maps directly to concrete source lines and relationship records.
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ======================================================== -->
+      <!-- VIEW 2: ARCHITECTURE (GRAPH + COMPONENTS + APIS + DRIFT) -->
+      <!-- ======================================================== -->
+      <div id="view-architecture" class="content-view-panel" style="display:none;">
+        <!-- Architecture Sub-Navbar -->
+        <div class="sub-nav-bar">
+          <div class="sub-nav-title">
+            <h3>Architecture</h3>
+            <span class="sub-nav-desc">Structural relationships and design boundaries extracted from Digital Twin snapshot.</span>
+          </div>
+          <div class="sub-nav-tabs">
+            <button class="sub-tab active" data-subtab="graph" id="subtab-btn-graph">
+              <span>⬡</span> Graph Workspace
+            </button>
+            <button class="sub-tab" data-subtab="components" id="subtab-btn-components">
+              <span>▦</span> Components
+            </button>
+            <button class="sub-tab" data-subtab="apis" id="subtab-btn-apis">
+              <span>⇄</span> APIs & Endpoints
+            </button>
+            <button class="sub-tab" data-subtab="drift" id="subtab-btn-drift">
+              <span>⚠️</span> Conformance & Drift
+            </button>
+          </div>
+        </div>
+
+        <!-- Sub-View: Graph Workspace (Existing Obsidian-style Canvas Engine) -->
+        <div id="subview-arch-graph" class="subview-panel" style="display:flex;">
+          <!-- Left Sidebar: Explorer & Filter Controls -->
+          <aside class="sidebar-left" id="sidebar-left">
+            <div class="sidebar-tabs">
+              <button class="sb-tab active" data-sb-tab="tree">Files</button>
+              <button class="sb-tab" data-sb-tab="filters">Filters</button>
+              <button class="sb-tab" data-sb-tab="diff-select" id="diff-tab-btn" style="display:none;">Diff Target</button>
+            </div>
+
+            <!-- File Tree Tab -->
+            <div id="sb-panel-tree" class="sb-panel active">
+              <div class="tree-search-bar">
+                <input type="text" id="tree-search-input" placeholder="Search components..." class="search-input">
+                <button id="clear-search-btn" class="clear-btn">&times;</button>
+              </div>
+              <div class="tree-container" id="file-tree-container">
+                <div class="tree-loading">Loading file structure...</div>
+              </div>
+            </div>
+
+            <!-- Filters Tab -->
+            <div id="sb-panel-filters" class="sb-panel">
+              <div class="filter-section">
+                <label class="filter-heading">DISCLOSURE LEVEL</label>
+                <div class="level-btn-group">
+                  <button class="level-btn" data-level="1" title="Level 1: Packages & Modules">L1</button>
+                  <button class="level-btn active" data-level="2" title="Level 2: Components & Classes">L2</button>
+                  <button class="level-btn" data-level="3" title="Level 3: Methods & Functions">L3</button>
+                  <button class="level-btn" data-level="4" title="Level 4: Fine-grained Source">L4</button>
+                </div>
+              </div>
+
+              <div class="filter-section">
+                <label class="filter-heading">EGO-NETWORK DEPTH</label>
+                <div class="slider-row">
+                  <input type="range" id="depth-range" min="1" max="5" value="2" class="range-slider">
+                  <span id="depth-display" class="range-val">2</span>
+                </div>
+              </div>
+
+              <div class="filter-section">
+                <label class="filter-heading">ARTIFACT TYPES</label>
+                <div class="checkbox-grid" id="type-filter-grid">
+                  <label class="cb-label"><input type="checkbox" value="CLASS" checked> Class</label>
+                  <label class="cb-label"><input type="checkbox" value="MODULE" checked> Module</label>
+                  <label class="cb-label"><input type="checkbox" value="METHOD" checked> Method</label>
+                  <label class="cb-label"><input type="checkbox" value="FUNCTION" checked> Function</label>
+                  <label class="cb-label"><input type="checkbox" value="API_ENDPOINT" checked> API</label>
+                  <label class="cb-label"><input type="checkbox" value="TEST_CASE" checked> Test</label>
+                </div>
+              </div>
+
+              <div class="filter-section">
+                <label class="filter-heading">RELATIONSHIP TYPES</label>
+                <div class="checkbox-grid" id="rel-filter-grid">
+                  <label class="cb-label"><input type="checkbox" value="CALLS" checked> Calls</label>
+                  <label class="cb-label"><input type="checkbox" value="IMPORTS" checked> Imports</label>
+                  <label class="cb-label"><input type="checkbox" value="CONTAINS" checked> Contains</label>
+                  <label class="cb-label"><input type="checkbox" value="TESTS" checked> Tests</label>
+                  <label class="cb-label"><input type="checkbox" value="EXPOSES" checked> Exposes</label>
+                </div>
+              </div>
+
+              <div style="margin-top:14px;">
+                <button id="reset-filters-btn" class="secondary-btn" style="width:100%;">Reset Filters</button>
+              </div>
+            </div>
+
+            <!-- Diff Selection Tab -->
+            <div id="sb-panel-diff-select" class="sb-panel">
+              <label class="filter-heading">COMPARE AGAINST PRIOR SNAPSHOT</label>
+              <select id="diff-snapshot-select" class="context-select" style="width:100%; margin-top:8px;"></select>
+              <div style="margin-top:16px;">
+                <button id="run-diff-btn" class="primary-btn" style="width:100%;">Execute Snapshot Diff</button>
+              </div>
+            </div>
+          </aside>
+
+          <!-- Center Canvas -->
+          <section class="canvas-workspace" id="canvas-workspace">
+            <div class="canvas-toolbar">
+              <button id="zoom-in-btn" class="control-btn" title="Zoom In">+</button>
+              <button id="zoom-out-btn" class="control-btn" title="Zoom Out">−</button>
+              <button id="fit-screen-btn" class="control-btn" title="Fit to Screen">⛶ Fit</button>
+              <button id="toggle-physics-btn" class="control-btn active" title="Toggle Physics Simulation">⚡ Physics</button>
+
+              <!-- Progressive Disclosure Level Selector directly in toolbar -->
+              <div class="toolbar-level-group" style="display:flex;align-items:center;gap:4px;margin-left:8px;background:var(--bg-surface);padding:2px 6px;border-radius:6px;border:1px solid var(--border-color);">
+                <span style="font-size:10px;font-weight:700;color:var(--text-muted);margin-right:4px;">LEVEL:</span>
+                <button class="level-btn" data-level="1" title="Level 1: Packages & Modules">L1 Macro</button>
+                <button class="level-btn active" data-level="2" title="Level 2: Classes, APIs & Components">L2 Components</button>
+                <button class="level-btn" data-level="3" title="Level 3: Methods & Functions">L3 Micro</button>
+              </div>
+
+              <button id="toggle-isolated-btn" class="control-btn" title="Toggle Isolated Components" style="margin-left:8px;">
+                📦 Isolated (<span id="isolated-count">0</span>)
+              </button>
+
+              <button id="reset-focus-btn" class="control-btn" title="Clear Focus / Selection" style="display:none;margin-left:6px;">✕ Clear Focus</button>
+
+              <button id="impact-mode-btn" class="control-btn impact-btn" title="Toggle Change Impact Mode" style="margin-left:auto;">
+                <span class="btn-dot"></span> Impact Mode
+              </button>
+            </div>
+
+            <div id="graph-status-banner" class="status-banner" style="display:none;"></div>
+
+            <div id="graph-container" class="graph-canvas-wrapper">
+              <canvas id="twin-canvas"></canvas>
+              <svg id="twin-svg" class="overlay-svg"></svg>
+            </div>
+
+            <!-- Minimap -->
+            <div class="minimap-container" id="minimap-container">
+              <canvas id="minimap-canvas" width="140" height="100"></canvas>
+              <div id="minimap-viewport" class="minimap-vp"></div>
+            </div>
+
+            <!-- Bottom Canvas Footer / Legend -->
+            <footer class="canvas-footer">
+              <div class="footer-stats">
+                <span class="stat-item"><strong id="stat-nodes">0</strong> nodes</span>
+                <span class="stat-sep">•</span>
+                <span class="stat-item"><strong id="stat-edges">0</strong> relationships</span>
+                <span class="stat-sep">•</span>
+                <span class="stat-item"><strong id="stat-drifts">0</strong> drift violations</span>
+                <span class="stat-sep">•</span>
+                <span class="stat-item" id="focus-info-pill" style="display:none;">Focus: <strong id="focus-name">-</strong></span>
+              </div>
+
+              <div class="footer-legend">
+                <span class="leg-pill leg-class"><span class="leg-dot"></span> Class</span>
+                <span class="leg-pill leg-method"><span class="leg-dot"></span> Method</span>
+                <span class="leg-pill leg-module"><span class="leg-dot"></span> Module</span>
+                <span class="leg-pill leg-api"><span class="leg-dot"></span> API</span>
+                <span class="leg-pill leg-test"><span class="leg-dot"></span> Test</span>
+                <span class="leg-pill leg-drift"><span class="leg-dot"></span> Drift Violation</span>
+              </div>
+            </footer>
+          </section>
+
+          <!-- Right Sidebar: Inspector Panel -->
+          <aside class="sidebar-right" id="sidebar-right">
+            <div class="inspector-header">
+              <h3 id="inspector-title" class="inspector-title">Inspector</h3>
+              <button id="close-inspector-btn" class="close-btn" title="Close Panel">&times;</button>
+            </div>
+            <div class="inspector-content" id="inspector-content">
+              <div class="empty-inspector">
+                <div class="empty-icon">⬡</div>
+                <p>Select a node or relationship in the graph to inspect verified source evidence, dependencies, tests, and architecture status.</p>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <!-- Sub-View: Components Table -->
+        <div id="subview-arch-components" class="subview-panel table-view-panel" style="display:none;">
+          <div class="table-toolbar">
+            <input type="text" id="components-search-input" placeholder="Search components by name or package..." class="search-input" style="max-width:320px;">
+            <div class="table-meta" id="components-count-display">0 components</div>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="components-table">
+              <thead>
+                <tr>
+                  <th>Component Name</th>
+                  <th>Type</th>
+                  <th>Qualified Path</th>
+                  <th>Location</th>
+                  <th>Language</th>
+                  <th>Confidence</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="components-table-body">
+                <tr><td colspan="7" class="td-loading">Loading components...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Sub-View: APIs Table -->
+        <div id="subview-arch-apis" class="subview-panel table-view-panel" style="display:none;">
+          <div class="table-toolbar">
+            <input type="text" id="apis-search-input" placeholder="Search endpoints..." class="search-input" style="max-width:320px;">
+            <div class="table-meta" id="apis-count-display">0 endpoints</div>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="apis-table">
+              <thead>
+                <tr>
+                  <th>HTTP Method & Path</th>
+                  <th>Handler Name</th>
+                  <th>Source Location</th>
+                  <th>Detection Method</th>
+                  <th>Confidence</th>
+                </tr>
+              </thead>
+              <tbody id="apis-table-body">
+                <tr><td colspan="5" class="td-loading">Loading endpoints...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Sub-View: Conformance & Drift -->
+        <div id="subview-arch-drift" class="subview-panel table-view-panel" style="display:none;">
+          <div class="drift-summary-header" id="drift-summary-header"></div>
+          <div class="table-responsive" style="margin-top:16px;">
+            <table class="data-table" id="drift-violations-table">
+              <thead>
+                <tr>
+                  <th>Severity</th>
+                  <th>Category</th>
+                  <th>Source Component</th>
+                  <th>Target Component</th>
+                  <th>Forbidden Rule</th>
+                  <th>Source Evidence</th>
+                </tr>
+              </thead>
+              <tbody id="drift-table-body">
+                <tr><td colspan="6" class="td-loading">Loading architecture violations...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======================================================== -->
+      <!-- VIEW 3: PROCESSES                                        -->
+      <!-- ======================================================== -->
+      <div id="view-processes" class="content-view-panel" style="display:none;">
+        <div class="page-header-row">
+          <div>
+            <h2 class="page-title">Process & Workflow Synthesis</h2>
+            <div class="disclaimer-pill">
+              <span class="disc-icon">ℹ</span>
+              <span><strong>EVIDENCE LEVEL: STATICALLY INFERRED</strong> — Workflow execution chains are statically synthesized from AST entry points and call expressions. No runtime telemetry is implied.</span>
+            </div>
+          </div>
+          <div class="process-filter-tabs" id="process-filter-tabs">
+            <button class="proc-filter-btn active" data-filter="all">All Flows</button>
+            <button class="proc-filter-btn" data-filter="application">Application Logic</button>
+            <button class="proc-filter-btn" data-filter="tests">Test Chains</button>
+          </div>
+        </div>
+
+        <div class="process-chains-container" id="process-chains-container">
+          <div class="state-loading">Synthesizing process flows from Digital Twin...</div>
+        </div>
+      </div>
+
+      <!-- ======================================================== -->
+      <!-- VIEW 4: DEPENDENCIES                                     -->
+      <!-- ======================================================== -->
+      <div id="view-dependencies" class="content-view-panel" style="display:none;">
+        <div class="page-header-row">
+          <div>
+            <h2 class="page-title">Dependency Explorer</h2>
+            <span class="page-desc">Trace direct and transitive incoming callers and outgoing callees with verified evidence.</span>
+          </div>
+          <div class="dep-selector-row">
+            <label class="filter-heading" style="margin:0;">FOCUS COMPONENT:</label>
+            <select id="dep-component-select" class="context-select" style="min-width:260px;">
+              <option value="">-- Select a Component --</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Component Selection Quick-Explore Dashboard -->
+        <div class="dep-quick-pick-bar" id="dep-quick-pick-bar">
+          <span class="quick-pick-label">QUICK EXPLORE:</span>
+          <div class="quick-pick-pills" id="dep-quick-pick-pills">
+            <!-- Dynamically populated with Most Connected, Changed, and Isolated components -->
+          </div>
+        </div>
+
+        <div class="dep-matrix-grid" id="dep-matrix-grid">
+          <!-- Inbound Callers -->
+          <div class="dep-col-card">
+            <div class="dep-col-header">
+              <h3>Direct Inbound Callers</h3>
+              <span class="dep-badge" id="dep-inbound-count">0 callers</span>
+            </div>
+            <div class="dep-list" id="dep-inbound-list">
+              <div class="empty-list">Select a component to inspect inbound callers.</div>
+            </div>
+          </div>
+
+          <!-- Focus Component Card (Center) -->
+          <div class="dep-col-card dep-center-card" id="dep-center-card">
+            <div class="dep-col-header">
+              <h3>Selected Component</h3>
+              <span class="badge-evidence" id="dep-center-badge">AST Verified</span>
+            </div>
+            <div class="dep-center-body" id="dep-center-body">
+              <div class="empty-list">No component focused. Select one above or click a quick-explore pill.</div>
+            </div>
+          </div>
+
+          <!-- Outbound Callees -->
+          <div class="dep-col-card">
+            <div class="dep-col-header">
+              <h3>Direct Outbound Callees</h3>
+              <span class="dep-badge" id="dep-outbound-count">0 callees</span>
+            </div>
+            <div class="dep-list" id="dep-outbound-list">
+              <div class="empty-list">Select a component to inspect outbound callees.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Transitive Dependencies Section -->
+        <div class="card" id="dep-transitive-card" style="margin-top:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:14px;display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <h4 style="font-size:13px;font-weight:600;color:var(--text-secondary);letter-spacing:0.04em;">TRANSITIVE DEPENDENCY HOPS (2 HOPS)</h4>
+            <span class="dep-badge" id="dep-transitive-count">0 transitive nodes</span>
+          </div>
+          <div class="dep-transitive-list" id="dep-transitive-list" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+        </div>
+      </div>
+
+      <!-- ======================================================== -->
+      <!-- VIEW 5: TESTS                                            -->
+      <!-- ======================================================== -->
+      <div id="view-tests" class="content-view-panel" style="display:none;">
+        <div class="page-header-row">
+          <div>
+            <h2 class="page-title">Test Mapping & Impact Surface</h2>
+            <span class="page-desc">Verified unit, integration, and suite mappings derived from AST calls and assertion evidence.</span>
+          </div>
+          <div class="tests-meta-summary" id="tests-meta-summary" style="display:flex;flex-wrap:wrap;gap:8px;">
+            <div class="test-stat-badge">Total Test Artifacts: <strong id="tstat-total">0</strong></div>
+            <div class="test-stat-badge" style="border-left:3px solid #10b981;">Verified Mappings: <strong id="tstat-mapped">0</strong></div>
+            <div class="test-stat-badge" style="border-left:3px solid #f59e0b;">Unmapped Tests: <strong id="tstat-unmapped">0</strong></div>
+            <div class="test-stat-badge" style="border-left:3px solid #38bdf8;">Tested Components: <strong id="tstat-components">0</strong></div>
+          </div>
+        </div>
+
+        <div class="table-responsive" style="margin-top:16px;">
+          <table class="data-table" id="tests-table">
+            <thead>
+              <tr>
+                <th>Test Case Name</th>
+                <th>Type</th>
+                <th>File Location</th>
+                <th>Evidence Status</th>
+                <th>Covered Target Components</th>
+                <th>Impact Status</th>
+              </tr>
+            </thead>
+            <tbody id="tests-table-body">
+              <tr><td colspan="6" class="td-loading">Loading test mappings...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ======================================================== -->
+      <!-- VIEW 6: CHANGES (DIFF & IMPACT)                          -->
+      <!-- ======================================================== -->
+      <div id="view-changes" class="content-view-panel" style="display:none;">
+        <div class="page-header-row">
+          <div>
+            <h2 class="page-title">Snapshot Diff & Change Impact Analysis</h2>
+            <span class="page-desc">Deterministic change impact and blast-radius propagation across typed Digital Twin relationships.</span>
+          </div>
+          <div class="diff-controls-row">
+            <span class="pill-label">BASE (A):</span>
+            <select id="diff-base-select" class="context-select"></select>
+            <span class="pill-label">TARGET (B):</span>
+            <select id="diff-target-select" class="context-select"></select>
+            <button id="btn-run-diff-action" class="secondary-btn" style="margin-left:6px;">Calculate Diff</button>
+            <button id="btn-run-impact-action" class="primary-btn" style="background:#7c3aed;margin-left:8px;">⚡ Run Blast-Radius Analysis</button>
+            <span class="pill-label" style="margin-left:8px;">DEPTH:</span>
+            <input type="number" id="impact-depth-input" value="5" min="1" max="15" class="context-select" style="width:46px;text-align:center;">
+          </div>
+        </div>
+
+        <div class="diff-metrics-banner" id="diff-metrics-banner" style="display:none;">
+          <!-- Dynamically populated diff stats -->
+        </div>
+
+        <!-- Section: Structural Diff -->
+        <div class="card" style="margin-top:14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <h3 style="font-size:14px;font-weight:600;color:var(--text-primary);letter-spacing:0.5px;">STRUCTURAL SNAPSHOT CHANGES</h3>
+            <span id="diff-status-pill" class="badge" style="display:none;background:var(--bg-surface);color:var(--text-secondary);font-size:11px;padding:2px 8px;border-radius:4px;">0 CHANGES</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="diff-results-table">
+              <thead>
+                <tr>
+                  <th>Diff Status</th>
+                  <th>Artifact / Symbol</th>
+                  <th>Type</th>
+                  <th>Location</th>
+                  <th>Change Provenance</th>
+                </tr>
+              </thead>
+              <tbody id="diff-table-body">
+                <tr><td colspan="5" class="td-empty">Select snapshots and click "Calculate Diff" or "Run Blast-Radius Analysis".</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Section: Deterministic Change Impact / Blast-Radius -->
+        <div id="impact-analysis-container" class="card" style="margin-top:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:16px;display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-subtle);padding-bottom:12px;margin-bottom:16px;">
+            <div>
+              <h3 style="font-size:16px;font-weight:700;color:#c084fc;display:flex;align-items:center;gap:8px;">
+                <span>🎯</span> DETERMINISTIC BLAST-RADIUS REPORT
+              </h3>
+              <span id="impact-analysis-meta" style="font-size:12px;color:var(--text-secondary);">Evidence-backed propagation trace</span>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button id="btn-view-impact-graph" class="secondary-btn" style="font-size:12px;padding:6px 12px;border:1px solid #7c3aed;color:#c084fc;">
+                🌐 Project Impact Subgraph
+              </button>
+            </div>
+          </div>
+
+          <!-- Impact Metrics Grid -->
+          <div class="impact-metrics-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;margin-bottom:18px;">
+            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Changed</div>
+              <div id="metric-impact-changed" style="font-size:22px;font-weight:700;color:#f59e0b;margin-top:2px;">0</div>
+            </div>
+            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Directly Affected</div>
+              <div id="metric-impact-direct" style="font-size:22px;font-weight:700;color:#ef4444;margin-top:2px;">0</div>
+            </div>
+            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Indirectly Affected</div>
+              <div id="metric-impact-indirect" style="font-size:22px;font-weight:700;color:#ec4899;margin-top:2px;">0</div>
+            </div>
+            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Components</div>
+              <div id="metric-impact-components" style="font-size:22px;font-weight:700;color:#38bdf8;margin-top:2px;">0</div>
+            </div>
+            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">APIs</div>
+              <div id="metric-impact-apis" style="font-size:22px;font-weight:700;color:#f472b6;margin-top:2px;">0</div>
+            </div>
+            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Processes</div>
+              <div id="metric-impact-processes" style="font-size:22px;font-weight:700;color:#a78bfa;margin-top:2px;">0</div>
+            </div>
+            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Tests</div>
+              <div id="metric-impact-tests" style="font-size:22px;font-weight:700;color:#10b981;margin-top:2px;">0</div>
+            </div>
+          </div>
+
+          <!-- Impact Navigation Tabs -->
+          <div class="tab-header" style="display:flex;gap:8px;border-bottom:1px solid var(--border-color);margin-bottom:12px;">
+            <button id="tab-impact-paths" class="tab-btn active" style="padding:6px 14px;border:none;background:none;color:var(--text-primary);border-bottom:2px solid #7c3aed;font-weight:600;font-size:13px;cursor:pointer;">
+              Causal Impact Paths (<span id="impact-paths-count">0</span>)
+            </button>
+            <button id="tab-impact-findings" class="tab-btn" style="padding:6px 14px;border:none;background:none;color:var(--text-secondary);font-size:13px;cursor:pointer;">
+              Evidence & Findings (<span id="impact-findings-count">0</span>)
+            </button>
+            <button id="tab-impact-categories" class="tab-btn" style="padding:6px 14px;border:none;background:none;color:var(--text-secondary);font-size:13px;cursor:pointer;">
+              Affected Categories
+            </button>
+          </div>
+
+          <!-- Pane 1: Causal Impact Paths Tree -->
+          <div id="impact-pane-paths" class="impact-tab-pane" style="display:block;">
+            <div id="impact-paths-tree" style="display:flex;flex-direction:column;gap:8px;max-height:480px;overflow-y:auto;padding-right:6px;">
+              <!-- Populated dynamically with expandable trees -->
+            </div>
+          </div>
+
+          <!-- Pane 2: Evidence & Findings Table -->
+          <div id="impact-pane-findings" class="impact-tab-pane" style="display:none;">
+            <div class="table-responsive">
+              <table class="data-table" id="impact-findings-table">
+                <thead>
+                  <tr>
+                    <th>Level</th>
+                    <th>Root Cause</th>
+                    <th>Relationship</th>
+                    <th>Impacted Target</th>
+                    <th>Target Type</th>
+                    <th>Confidence</th>
+                    <th>Evidence Source</th>
+                  </tr>
+                </thead>
+                <tbody id="impact-findings-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Pane 3: Affected Categories -->
+          <div id="impact-pane-categories" class="impact-tab-pane" style="display:none;">
+            <div id="impact-categories-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:12px;">
+              <!-- Category cards populated dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======================================================== -->
+      <!-- VIEW 7: EVIDENCE (REPOSITORY EXPLORER)                   -->
+      <!-- ======================================================== -->
+      <div id="view-evidence" class="content-view-panel" style="display:none;">
+        <div class="page-header-row">
+          <div>
+            <h2 class="page-title">Repository Explorer & Source Evidence</h2>
+            <span class="page-desc">Browse directory structure with localized AST symbols, line numbers, and verification hashes.</span>
+          </div>
+        </div>
+
+        <div class="evidence-split-layout">
+          <!-- File Tree -->
+          <div class="evidence-tree-pane">
+            <div class="tree-search-bar">
+              <input type="text" id="evidence-search-input" placeholder="Filter files..." class="search-input">
+            </div>
+            <div class="tree-container" id="evidence-tree-container">
+              <div class="tree-loading">Loading file structure...</div>
+            </div>
+          </div>
+
+          <!-- Evidence Details -->
+          <div class="evidence-details-pane" id="evidence-details-pane">
+            <div id="evidence-overview-state" class="evidence-overview-container" style="display:flex;flex-direction:column;gap:16px;">
+              <!-- Evidence Header -->
+              <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                  <h3 style="font-size:15px;font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
+                    <span style="color:#06b6d4;">🛡️</span> DIGITAL TWIN EVIDENCE INTELLIGENCE
+                  </h3>
+                  <span class="badge" style="background:rgba(6,182,212,0.15);color:#06b6d4;border:1px solid rgba(6,182,212,0.3);font-size:11px;padding:2px 8px;">
+                    VERIFIED ARTIFACT PROVENANCE
+                  </span>
+                </div>
+                <p style="font-size:12px;color:var(--text-secondary);line-height:1.5;margin:0;">
+                  All Digital Twin entities are deterministically derived from source code ASTs, manifest configurations, and typed call relationships. Select any file from the directory tree to inspect its localized symbols, byte/line ranges, and graph connectivity.
+                </p>
+              </div>
+
+              <!-- Evidence Metric Cards -->
+              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;">
+                <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:12px;text-align:center;">
+                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Source Files</div>
+                  <div id="ev-sum-files" style="font-size:22px;font-weight:700;color:#38bdf8;margin-top:4px;">0</div>
+                </div>
+                <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:12px;text-align:center;">
+                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Structural Artifacts</div>
+                  <div id="ev-sum-artifacts" style="font-size:22px;font-weight:700;color:#c084fc;margin-top:4px;">0</div>
+                </div>
+                <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:12px;text-align:center;">
+                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Typed Edges</div>
+                  <div id="ev-sum-relationships" style="font-size:22px;font-weight:700;color:#34d399;margin-top:4px;">0</div>
+                </div>
+                <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:12px;text-align:center;">
+                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Test Evidence</div>
+                  <div id="ev-sum-tests" style="font-size:22px;font-weight:700;color:#f59e0b;margin-top:4px;">0</div>
+                </div>
+                <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:12px;text-align:center;">
+                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Process Chains</div>
+                  <div id="ev-sum-processes" style="font-size:22px;font-weight:700;color:#a78bfa;margin-top:4px;">0</div>
+                </div>
+                <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:12px;text-align:center;">
+                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Analysis Runs</div>
+                  <div id="ev-sum-runs" style="font-size:22px;font-weight:700;color:#06b6d4;margin-top:4px;">0</div>
+                </div>
+              </div>
+
+              <!-- Evidence Provenance & Hierarchy -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:14px;">
+                  <h4 style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+                    <span style="color:#10b981;">●</span> Evidence Classification Hierarchy
+                  </h4>
+                  <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-surface);border-radius:4px;border-left:3px solid #10b981;">
+                      <span style="font-weight:600;color:#10b981;">DIRECT_AST</span>
+                      <span style="color:var(--text-muted);">Confidence: 100% (High)</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-surface);border-radius:4px;border-left:3px solid #06b6d4;">
+                      <span style="font-weight:600;color:#06b6d4;">STATIC_MAPPING</span>
+                      <span style="color:var(--text-muted);">Confidence: 85-95% (Medium-High)</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-surface);border-radius:4px;border-left:3px solid #f59e0b;">
+                      <span style="font-weight:600;color:#f59e0b;">STATICALLY_INFERRED</span>
+                      <span style="color:var(--text-muted);">Confidence: 70-85% (Inferred Call Chains)</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:14px;">
+                  <h4 style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+                    <span style="color:#c084fc;">⚙️</span> Active Analyzers & Extraction Engine
+                  </h4>
+                  <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--text-secondary);">
+                    <li style="display:flex;align-items:center;gap:6px;">
+                      <span style="color:#10b981;">✓</span> Tree-sitter AST extractors (Python, TS, JS, Go, Java)
+                    </li>
+                    <li style="display:flex;align-items:center;gap:6px;">
+                      <span style="color:#10b981;">✓</span> Deterministic PostgreSQL Graph Projections
+                    </li>
+                    <li style="display:flex;align-items:center;gap:6px;">
+                      <span style="color:#10b981;">✓</span> Explicit Test Discovery & Target Resolver
+                    </li>
+                    <li style="display:flex;align-items:center;gap:6px;">
+                      <span style="color:#10b981;">✓</span> Process Synthesizer (DAG Traversal)
+                    </li>
+                    <li style="display:flex;align-items:center;gap:6px;">
+                      <span style="color:#10b981;">✓</span> Change Impact & Blast-Radius Engine
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              <!-- Select File Prompt -->
+              <div style="background:rgba(124,58,237,0.06);border:1px dashed #7c3aed;border-radius:8px;padding:18px;text-align:center;">
+                <div style="font-size:24px;margin-bottom:6px;">👈</div>
+                <div style="font-size:13px;font-weight:600;color:#c084fc;margin-bottom:4px;">Select a File to Inspect Localized Evidence</div>
+                <div style="font-size:12px;color:var(--text-secondary);">
+                  Click any source file in the left directory explorer to view extracted AST symbols, byte ranges, line numbers, relationships, and associated test/impact findings.
+                </div>
+              </div>
+            </div>
+
+            <!-- Active File Details Container (Hidden until file selected) -->
+            <div id="evidence-file-details" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ======================================================== -->
+    <!-- ONBOARDING MODAL                                         -->
+    <!-- ======================================================== -->
+    <div id="modal-onboard" class="modal-backdrop" style="display:none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title">Connect Software Repository</h3>
+          <button id="modal-close-btn" class="close-btn">&times;</button>
+        </div>
+
+        <!-- Provider Tabs inside Modal -->
+        <div class="modal-provider-tabs">
+          <button class="m-prov-tab active" data-prov="local">Local Directory</button>
+          <button class="m-prov-tab" data-prov="github">GitHub (Coming Soon)</button>
+          <button class="m-prov-tab" data-prov="archive">ZIP (Coming Soon)</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Local Directory Form -->
+          <div id="modal-panel-local" class="modal-panel active">
+            <p class="modal-help-text">
+              Enter an absolute or relative directory path on the local server filesystem. The Digital Twin
+              engine will execute language discovery, parse source ASTs, extract relationships, and persist a snapshot.
+            </p>
+
+            <div class="form-group">
+              <label class="form-label">FILESYSTEM PATH *</label>
+              <input type="text" id="input-local-path" class="form-input" placeholder="e.g. /Users/sanjay/DIGITAL TWIN /tmp/AuroraBillingDemo" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">REPOSITORY NAME (OPTIONAL)</label>
+              <input type="text" id="input-repo-name" class="form-input" placeholder="Auto-inferred from folder if blank">
+            </div>
+
+            <!-- Analysis Progress Checklist (shown while analyzing) -->
+            <div id="onboard-progress-box" class="progress-box" style="display:none;">
+              <div class="progress-title">
+                <span class="spinner-small"></span> Building Software Digital Twin...
+              </div>
+              <ul class="progress-checklist">
+                <li id="prog-step-1" class="prog-item">✓ Discovering files & manifests</li>
+                <li id="prog-step-2" class="prog-item">✓ Technology fingerprinting</li>
+                <li id="prog-step-3" class="prog-item">✓ Tree-sitter AST extraction</li>
+                <li id="prog-step-4" class="prog-item">✓ Deriving typed relationships</li>
+                <li id="prog-step-5" class="prog-item">✓ Synthesizing process chains</li>
+                <li id="prog-step-6" class="prog-item">✓ Evaluating architecture baseline</li>
+                <li id="prog-step-7" class="prog-item">✓ Snapshot persisted in PostgreSQL</li>
+              </ul>
+            </div>
+
+            <div id="onboard-error-box" class="error-banner" style="display:none;"></div>
+          </div>
+
+          <!-- GitHub Tab (Planned Future Capability) -->
+          <div id="modal-panel-github" class="modal-panel">
+            <div class="coming-soon-notice">
+              <div class="cs-icon">🐙</div>
+              <h4>GitHub Integration is a Planned Future Capability</h4>
+              <p>Remote repository cloning, OAuth authentication, and webhook-driven snapshot updates are planned future capabilities. Only local server filesystem ingestion is currently supported.</p>
+            </div>
+          </div>
+
+          <!-- Archive Tab (Planned Future Capability) -->
+          <div id="modal-panel-archive" class="modal-panel">
+            <div class="coming-soon-notice">
+              <div class="cs-icon">📦</div>
+              <h4>Archive Ingestion is a Planned Future Capability</h4>
+              <p>Direct upload of ZIP archives is a planned future capability.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="modal-cancel-btn" class="secondary-btn">Cancel</button>
+          <button id="modal-submit-btn" class="primary-btn">Ingest & Build Digital Twin</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/static/twin.js"></script>
+</body>
+</html>

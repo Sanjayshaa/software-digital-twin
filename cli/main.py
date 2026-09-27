@@ -184,6 +184,7 @@ def analyze(
     repo_path: str = typer.Argument(".", help="Path to software repository to analyze"),
     commit_hash: str = typer.Option("HEAD", "--commit", "-c", help="Commit hash for snapshot"),
     branch_name: str = typer.Option("main", "--branch", "-b", help="Branch name"),
+    baseline: Optional[str] = typer.Option(None, "--baseline", "-B", help="Path to architecture baseline YAML"),
 ):
     """
     Executes Phase 3 Structural Intelligence & Digital Twin Builder.
@@ -287,6 +288,58 @@ def analyze(
         console.print(f"[bold green]✔ Digital Twin snapshot '{snapshot_id}' built and persisted successfully.[/bold green]")
         console.print()
 
+        # Continuous Architecture Drift Detection
+        detected_baseline = baseline
+        if not detected_baseline:
+            candidates = [
+                os.path.join(abs_path, "architecture-baseline.yaml"),
+                os.path.join(abs_path, "docs", "architecture-baseline.yaml"),
+            ]
+            for cand in candidates:
+                if os.path.exists(cand):
+                    detected_baseline = cand
+                    break
+
+        if detected_baseline and os.path.exists(detected_baseline):
+            from app.services.architecture.service import architecture_service
+            arch_report = architecture_service.evaluate_repository(
+                repository_path=abs_path,
+                baseline_path=detected_baseline,
+                snapshot_id=snapshot_id,
+                repository_id=repo.id,
+            )
+            architecture_service.persist_report(
+                db=db,
+                report=arch_report,
+                repository_id=repo.id,
+                snapshot_id=snapshot_id,
+            )
+            arch_table = Table(title="Continuous Architecture Conformance", border_style="cyan")
+            arch_table.add_column("Metric", style="bold")
+            arch_table.add_column("Value", style="green")
+            arch_table.add_row("Baseline Version", arch_report.baseline_version)
+            arch_table.add_row("Conformance", f"{arch_report.conformance_percentage:.1f}%")
+            arch_table.add_row("Violations", str(arch_report.violations))
+            arch_table.add_row("Circular Cycles", str(arch_report.circular_dependencies))
+            console.print(arch_table)
+            console.print()
+
+        # Graph Projection Summary
+        from app.services.analysis.graph.projection import twin_graph_projection
+        graph_proj = twin_graph_projection.project_graph(
+            db=db,
+            repository_id=repo.id,
+            snapshot_id=snapshot_id,
+        )
+        graph_table = Table(title="Interactive Digital Twin Graph Projection", border_style="magenta")
+        graph_table.add_column("Metric", style="bold")
+        graph_table.add_column("Value", style="cyan")
+        graph_table.add_row("Total Graph Nodes", str(graph_proj["summary"]["total_nodes"]))
+        graph_table.add_row("Total Graph Edges", str(graph_proj["summary"]["total_edges"]))
+        graph_table.add_row("Interactive Obsidian View", f"http://localhost:8000/app?repo={repo.id}&snapshot={snapshot_id}")
+        console.print(graph_table)
+        console.print()
+
     except Exception as exc:
         console.print(f"[bold red]Analysis failed:[/bold red] {str(exc)}")
         raise typer.Exit(code=1)
@@ -324,10 +377,13 @@ def status_cmd():
         f"[bold green]{status.overall_project_progress}%[/bold green]",
         "Completed phases (Phases 1-3 of 10 verified)"
     )
+    p3 = next((p for p in status.phases if p.phase_number == 3), None)
+    p3_milestone_str = f"{p3.verified_milestones} / {p3.total_milestones} Milestones VERIFIED with tests" if p3 else "All Milestones VERIFIED"
+
     progress_table.add_row(
         "Current Phase Progress (Phase 3)",
         f"[bold green]{status.current_phase_progress}%[/bold green]",
-        f"27 / 27 Milestones VERIFIED with tests"
+        p3_milestone_str
     )
     progress_table.add_row(
         "Architecture Conformance",
@@ -560,7 +616,221 @@ def arch_compare_cmd(
         db.close()
 
 
+@app.command("graph")
+def graph_cmd(
+    repo_path: str = typer.Argument(".", help="Path to software repository"),
+    snapshot_id: Optional[str] = typer.Option(None, "--snapshot", "-s", help="Specific snapshot ID"),
+    depth: int = typer.Option(2, "--depth", "-d", help="Neighborhood depth"),
+    level: int = typer.Option(2, "--level", "-l", help="Hierarchical level (1: Modules, 2: Components, 3: Members, 4: All)"),
+):
+    """
+    Projects and displays the Interactive Digital Twin Graph statistics.
+    Provides direct access URL to the Obsidian-style visualization layer.
+    """
+    from app.core.database import SessionLocal
+    from app.models.entities import Repository, RepositorySnapshot
+    from app.services.analysis.graph.projection import twin_graph_projection
+
+    abs_path = os.path.abspath(repo_path)
+    db = SessionLocal()
+    try:
+        repo = db.query(Repository).filter_by(local_path=abs_path).first()
+        if not repo:
+            console.print(f"[bold red]Error:[/bold red] Repository at '{abs_path}' not found in Digital Twin database.")
+            console.print("Run [bold cyan]./digital-twin analyze <path>[/bold cyan] first.")
+            raise typer.Exit(code=1)
+
+        target_snap_id = snapshot_id
+        if not target_snap_id:
+            snap = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).order_by(RepositorySnapshot.created_at.desc()).first()
+            if not snap:
+                console.print(f"[bold red]Error:[/bold red] No snapshots found for repository '{repo.name}'.")
+                raise typer.Exit(code=1)
+            target_snap_id = snap.id
+
+        graph_proj = twin_graph_projection.project_graph(
+            db=db,
+            repository_id=repo.id,
+            snapshot_id=target_snap_id,
+            level=level,
+            depth=depth,
+        )
+
+        console.print()
+        console.print(Panel(
+            f"[bold magenta]DIGITAL TWIN ARCHITECTURE GRAPH PROJECTION[/bold magenta]\n"
+            f"Repository: [green]{repo.name}[/green] | Snapshot: [cyan]{target_snap_id}[/cyan] | Level: [yellow]{level}[/yellow]",
+            border_style="magenta"
+        ))
+
+        summary = graph_proj["summary"]
+        table = Table(title="Graph Projection Overview", border_style="cyan")
+        table.add_column("Property", style="bold")
+        table.add_column("Count / Details", style="green")
+        table.add_row("Nodes Rendered", str(summary["total_nodes"]))
+        table.add_row("Edges Rendered", str(summary["total_edges"]))
+        table.add_row("Hierarchical Level", f"Level {level}")
+        table.add_row("Violations Present", str(len(graph_proj.get("drift_violations", []))))
+        table.add_row("Interactive URL", f"http://localhost:8000/app?repo={repo.id}&snapshot={target_snap_id}")
+        console.print(table)
+        console.print()
+
+        # Breakdown by Node Type
+        type_counts = {}
+        for n in graph_proj["nodes"]:
+            t = n.get("type", "UNKNOWN")
+            type_counts[t] = type_counts.get(t, 0) + 1
+
+        if type_counts:
+            t_table = Table(title="Rendered Graph Nodes by Type", border_style="green")
+            t_table.add_column("Node Type", style="bold")
+            t_table.add_column("Count", justify="right", style="cyan")
+            for t, c in sorted(type_counts.items()):
+                t_table.add_row(t, str(c))
+            console.print(t_table)
+            console.print()
+
+    except Exception as exc:
+        console.print(f"[bold red]Graph projection failed:[/bold red] {str(exc)}")
+        raise typer.Exit(code=1)
+    finally:
+        db.close()
+
+
+@app.command("impact-analysis")
+def impact_analysis_cmd(
+    repository: str = typer.Option(..., "--repository", "-r", help="Repository ID, name, or local path"),
+    base_snapshot: str = typer.Option(..., "--base", "-b", help="Baseline Snapshot ID (before change)"),
+    target_snapshot: str = typer.Option(..., "--target", "-t", help="Target Snapshot ID (after change)"),
+    max_depth: int = typer.Option(5, "--max-depth", "-d", help="Maximum propagation traversal depth"),
+    include_tests: bool = typer.Option(True, "--include-tests/--no-tests", help="Include test suite impacts"),
+    include_processes: bool = typer.Option(True, "--include-processes/--no-processes", help="Include business process impacts"),
+    include_apis: bool = typer.Option(True, "--include-apis/--no-apis", help="Include API endpoint impacts"),
+):
+    """
+    Executes Phase 4 Change Impact & Blast Radius analysis between two snapshots.
+    Determines directly and indirectly affected components, APIs, processes, and tests.
+    """
+    from app.core.database import SessionLocal
+    from app.models.entities import Repository
+    from app.services.impact import change_impact_service, ImpactConfig
+    from sqlalchemy import or_
+
+    db = SessionLocal()
+    try:
+        repo = (
+            db.query(Repository)
+            .filter(
+                or_(
+                    Repository.id == repository,
+                    Repository.name == repository,
+                    Repository.local_path == os.path.abspath(repository),
+                )
+            )
+            .first()
+        )
+        if not repo:
+            console.print(f"[bold red]Error:[/bold red] Repository '{repository}' not found in Digital Twin database.")
+            raise typer.Exit(code=1)
+
+        console.print()
+        console.print(Panel(
+            f"[bold cyan]PHASE 4 — CHANGE IMPACT / BLAST-RADIUS ANALYSIS[/bold cyan]\n"
+            f"Repository: [green]{repo.name}[/green] ({repo.id})\n"
+            f"Base Snapshot (A): [cyan]{base_snapshot}[/cyan]\n"
+            f"Target Snapshot (B): [yellow]{target_snapshot}[/yellow]\n"
+            f"Max Traversal Depth: [magenta]{max_depth}[/magenta]",
+            border_style="cyan"
+        ))
+
+        config = ImpactConfig(
+            max_depth=max_depth,
+            include_tests=include_tests,
+            include_processes=include_processes,
+            include_apis=include_apis,
+        )
+
+        result = change_impact_service.run_impact_analysis(
+            db=db,
+            repository_id=repo.id,
+            base_snapshot_id=base_snapshot,
+            target_snapshot_id=target_snapshot,
+            config=config,
+        )
+
+        s = result.summary
+        metrics_table = Table(title="Change Impact Summary", border_style="cyan")
+        metrics_table.add_column("Impact Metric", style="bold")
+        metrics_table.add_column("Count", justify="center", style="green")
+
+        metrics_table.add_row("Changed Entities", str(s.changed))
+        metrics_table.add_row("Directly Affected (Level 1)", str(s.directly_affected))
+        metrics_table.add_row("Indirectly Affected (Level 2+)", str(s.indirectly_affected))
+        metrics_table.add_row("Affected Components", str(s.affected_components))
+        metrics_table.add_row("Affected Services", str(s.affected_services))
+        metrics_table.add_row("Affected APIs", str(s.affected_apis))
+        metrics_table.add_row("Affected Processes", str(s.affected_processes))
+        metrics_table.add_row("Affected Tests", str(s.affected_tests))
+        metrics_table.add_row("Max Depth Reached", str(s.max_depth_reached))
+        metrics_table.add_row("Execution Time", f"{result.execution_time_ms} ms")
+
+        console.print(metrics_table)
+        console.print()
+
+        # Display Changed Entities
+        if result.changes:
+            ch_table = Table(title="Detected Changes", border_style="yellow")
+            ch_table.add_column("Type", style="bold")
+            ch_table.add_column("Symbol / Artifact", style="cyan")
+            ch_table.add_column("Kind", style="dim")
+            ch_table.add_column("File / Location", style="dim")
+            ch_table.add_column("Level", justify="center")
+
+            for c in result.changes:
+                ch_table.add_row(
+                    c.change_type.value,
+                    c.qualified_name,
+                    c.artifact_type,
+                    c.source_file,
+                    "Symbol" if c.is_symbol_level else "File",
+                )
+            console.print(ch_table)
+            console.print()
+
+        # Display Impact Paths
+        if result.paths:
+            path_table = Table(title="Causal Impact Paths", border_style="magenta")
+            path_table.add_column("Depth", justify="center", style="bold")
+            path_table.add_column("Root Cause", style="cyan")
+            path_table.add_column("Impact Chain", style="white")
+            path_table.add_column("Terminal Entity", style="yellow")
+            path_table.add_column("Terminal Category", style="dim")
+            path_table.add_column("Confidence", justify="right", style="green")
+
+            for p in result.paths[:25]:  # Show top 25 paths
+                chain_str = " -> ".join(p.nodes)
+                path_table.add_row(
+                    str(p.depth),
+                    p.root_symbol,
+                    chain_str,
+                    p.target_symbol,
+                    p.terminal_type,
+                    f"{p.confidence * 100:.1f}%",
+                )
+            console.print(path_table)
+            if len(result.paths) > 25:
+                console.print(f"[dim]Showing top 25 of {len(result.paths)} paths.[/dim]")
+            console.print()
+
+        console.print(f"[bold green]✔[/bold green] Impact analysis recorded: [cyan]{result.analysis_id}[/cyan]")
+        console.print(f"[dim]Web Inspector: http://localhost:8000/app?repo={repo.id}&analysis={result.analysis_id}[/dim]\n")
+
+    except Exception as exc:
+        console.print(f"[bold red]Impact analysis failed:[/bold red] {str(exc)}")
+        raise typer.Exit(code=1)
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     app()
-
-
