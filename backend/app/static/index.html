@@ -80,6 +80,14 @@
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
           Evidence
         </button>
+        <button class="view-tab" data-view="runtime" id="tab-btn-runtime">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/><circle cx="12" cy="12" r="2"/></svg>
+          Runtime Evidence
+        </button>
+        <button class="view-tab" data-view="incidents" id="tab-btn-incidents">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Incidents
+        </button>
       </nav>
 
       <!-- Actions -->
@@ -703,10 +711,13 @@
               <span><strong>EVIDENCE LEVEL: STATICALLY INFERRED</strong> — Workflow execution chains are statically synthesized from AST entry points and call expressions. No runtime telemetry is implied.</span>
             </div>
           </div>
-          <div class="process-filter-tabs" id="process-filter-tabs">
-            <button class="proc-filter-btn active" data-filter="all">All Flows</button>
-            <button class="proc-filter-btn" data-filter="application">Application Logic</button>
-            <button class="proc-filter-btn" data-filter="tests">Test Chains</button>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button id="btn-discover-processes" class="primary-btn" style="font-size:12px;padding:6px 12px;background:#7c3aed;">⚡ Run Process Discovery</button>
+            <div class="process-filter-tabs" id="process-filter-tabs">
+              <button class="proc-filter-btn active" data-filter="all">All Flows</button>
+              <button class="proc-filter-btn" data-filter="application">Application Logic</button>
+              <button class="proc-filter-btn" data-filter="tests">Test Chains</button>
+            </div>
           </div>
         </div>
 
@@ -1097,6 +1108,149 @@
         </div>
       </div>
 
+      <!-- ======================================================== -->
+      <!-- VIEW 8: RUNTIME EVIDENCE                                 -->
+      <!-- ======================================================== -->
+      <div id="view-runtime" class="content-view-panel" style="display:none;">
+        <div class="page-header-row">
+          <div>
+            <h2 class="page-title">Runtime Evidence Pipeline</h2>
+            <div class="disclaimer-pill">
+              <span class="disc-icon">⚡</span>
+              <span><strong>EVIDENCE LEVEL: OBSERVED RUNTIME EVIDENCE</strong> — Normalized telemetry and execution events correlated deterministically with Digital Twin entities. Sensitive keys are automatically redacted.</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button id="btn-open-ingest-modal" class="primary-btn" style="font-size:12px;padding:6px 12px;">+ Ingest Runtime Events</button>
+            <button id="btn-refresh-runtime" class="secondary-btn" style="font-size:12px;padding:6px 12px;">↻ Refresh</button>
+          </div>
+        </div>
+
+        <!-- Runtime Summary Metric Strip -->
+        <div class="runtime-metric-strip" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;margin-top:12px;">
+          <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Total Events</div>
+            <div id="metric-runtime-total" style="font-size:20px;font-weight:700;color:#38bdf8;margin-top:2px;">0</div>
+          </div>
+          <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Correlated</div>
+            <div id="metric-runtime-correlated" style="font-size:20px;font-weight:700;color:#10b981;margin-top:2px;">0</div>
+          </div>
+          <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Errors / Exceptions</div>
+            <div id="metric-runtime-errors" style="font-size:20px;font-weight:700;color:#ef4444;margin-top:2px;">0</div>
+          </div>
+          <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Services Active</div>
+            <div id="metric-runtime-services" style="font-size:20px;font-weight:700;color:#a78bfa;margin-top:2px;">0</div>
+          </div>
+        </div>
+
+        <!-- Runtime Filter Toolbar -->
+        <div class="table-toolbar" style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="runtime-filter-event-type" class="context-select" style="min-width:130px;">
+            <option value="">All Event Types</option>
+            <option value="ERROR">ERROR</option>
+            <option value="EXCEPTION">EXCEPTION</option>
+            <option value="REQUEST">REQUEST</option>
+            <option value="SPAN">SPAN</option>
+            <option value="TRACE">TRACE</option>
+            <option value="DEPLOYMENT">DEPLOYMENT</option>
+            <option value="STARTUP">STARTUP</option>
+            <option value="HEALTH_CHECK">HEALTH_CHECK</option>
+          </select>
+          <select id="runtime-filter-severity" class="context-select" style="min-width:120px;">
+            <option value="">All Severities</option>
+            <option value="CRITICAL">CRITICAL</option>
+            <option value="ERROR">ERROR</option>
+            <option value="WARN">WARN</option>
+            <option value="INFO">INFO</option>
+          </select>
+          <select id="runtime-filter-env" class="context-select" style="min-width:120px;">
+            <option value="">All Environments</option>
+            <option value="production">production</option>
+            <option value="staging">staging</option>
+            <option value="development">development</option>
+          </select>
+          <input type="text" id="runtime-filter-service" placeholder="Filter by service..." class="search-input" style="max-width:160px;">
+          <input type="text" id="runtime-filter-trace" placeholder="Filter by trace ID..." class="search-input" style="max-width:160px;">
+          <button id="btn-apply-runtime-filters" class="secondary-btn" style="font-size:11px;padding:6px 10px;">Filter</button>
+          <button id="btn-reset-runtime-filters" class="secondary-btn" style="font-size:11px;padding:6px 10px;">Reset</button>
+          <div class="table-meta" id="runtime-count-display" style="margin-left:auto;">0 events</div>
+        </div>
+
+        <div class="table-responsive" style="margin-top:12px;">
+          <table class="data-table" id="runtime-events-table">
+            <thead>
+              <tr>
+                <th>Timestamp (UTC)</th>
+                <th>Type</th>
+                <th>Severity</th>
+                <th>Service / Env</th>
+                <th>Correlated Twin Entity</th>
+                <th>Trace / Span</th>
+                <th>Message & Attributes</th>
+              </tr>
+            </thead>
+            <tbody id="runtime-events-body">
+              <tr><td colspan="7" class="td-loading">Loading runtime evidence...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ======================================================== -->
+      <!-- VIEW 9: INCIDENTS & CAUSAL INVESTIGATION                 -->
+      <!-- ======================================================== -->
+      <div id="view-incidents" class="content-view-panel" style="display:none;">
+        <div class="page-header-row">
+          <div>
+            <h2 class="page-title">Incident Intelligence & Causal Investigation</h2>
+            <div class="disclaimer-pill" style="border-left:3px solid #ef4444;">
+              <span class="disc-icon">⚠️</span>
+              <span><strong>DETERMINISTIC INVESTIGATION:</strong> Produces evidence-backed candidate causal paths across changes, components, processes, and tests. Causal truth is never synthesized or assumed.</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button id="btn-open-create-incident-modal" class="primary-btn" style="background:#ef4444;font-size:12px;padding:6px 12px;">+ Declare Incident</button>
+            <button id="btn-refresh-incidents" class="secondary-btn" style="font-size:12px;padding:6px 12px;">↻ Refresh</button>
+          </div>
+        </div>
+
+        <!-- Incidents List Section -->
+        <div class="card" style="margin-top:14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <h3 style="font-size:14px;font-weight:600;color:var(--text-primary);letter-spacing:0.5px;">TRACKED INCIDENTS</h3>
+            <span id="incidents-count-badge" class="badge" style="background:var(--bg-surface);color:var(--text-secondary);font-size:11px;padding:2px 8px;">0 INCIDENTS</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="incidents-table">
+              <thead>
+                <tr>
+                  <th>Severity</th>
+                  <th>Title & Reference</th>
+                  <th>Status</th>
+                  <th>Detected At</th>
+                  <th>Affected Component</th>
+                  <th>Evidence</th>
+                  <th>Investigation Action</th>
+                </tr>
+              </thead>
+              <tbody id="incidents-table-body">
+                <tr><td colspan="7" class="td-empty">No incidents found. Declare an incident above to perform deterministic investigation.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Incident Investigation Workspace (Hidden until an incident is selected/investigated) -->
+        <div id="incident-investigation-workspace" class="card" style="margin-top:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:16px;display:none;">
+          <div id="investigation-report-container">
+            <!-- Dynamically populated with investigation results -->
+          </div>
+        </div>
+      </div>
+
     </main>
 
     <!-- ======================================================== -->
@@ -1175,6 +1329,106 @@
         <div class="modal-footer">
           <button id="modal-cancel-btn" class="secondary-btn">Cancel</button>
           <button id="modal-submit-btn" class="primary-btn">Ingest & Build Digital Twin</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- RUNTIME INGESTION MODAL                                  -->
+    <!-- ======================================================== -->
+    <div id="modal-ingest-runtime" class="modal-backdrop" style="display:none;">
+      <div class="modal-card" style="max-width:640px;">
+        <div class="modal-header">
+          <h3 class="modal-title">Ingest Runtime Evidence</h3>
+          <button id="modal-ingest-close-btn" class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-help-text">
+            Submit normalized runtime events in JSON or JSONL format. The ingestion pipeline automatically sanitizes credentials (passwords, tokens, keys) and deterministically correlates events to Digital Twin artifacts.
+          </p>
+
+          <div class="form-group">
+            <label class="form-label">ENVIRONMENT</label>
+            <select id="input-ingest-env" class="context-select" style="width:100%;">
+              <option value="production">production</option>
+              <option value="staging">staging</option>
+              <option value="development">development</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">FILE UPLOAD (.JSON OR .JSONL)</label>
+            <input type="file" id="input-ingest-file" accept=".json,.jsonl" class="form-input">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">OR PASTE RAW JSON / JSONL EVENTS</label>
+            <textarea id="input-ingest-json" class="form-input" style="height:150px;font-family:var(--font-mono);font-size:12px;" placeholder='[{"event_type": "ERROR", "severity": "ERROR", "service": "billing", "message": "Transaction failed", "trace_id": "tr-123"}]'></textarea>
+          </div>
+
+          <div id="ingest-status-box" class="progress-box" style="display:none;"></div>
+          <div id="ingest-error-box" class="error-banner" style="display:none;"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="modal-ingest-cancel-btn" class="secondary-btn">Cancel</button>
+          <button id="modal-ingest-submit-btn" class="primary-btn">Ingest & Correlate</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- CREATE INCIDENT MODAL                                    -->
+    <!-- ======================================================== -->
+    <div id="modal-create-incident" class="modal-backdrop" style="display:none;">
+      <div class="modal-card" style="max-width:540px;">
+        <div class="modal-header">
+          <h3 class="modal-title">Declare Incident</h3>
+          <button id="modal-incident-close-btn" class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-help-text">
+            Register a production or staging incident to trigger deterministic causal investigation against recent changes, runtime evidence, and the Digital Twin process graph.
+          </p>
+
+          <div class="form-group">
+            <label class="form-label">INCIDENT TITLE / REFERENCE *</label>
+            <input type="text" id="input-incident-title" class="form-input" placeholder="e.g. Checkout Service 500 Spike" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">SEVERITY *</label>
+            <select id="input-incident-severity" class="context-select" style="width:100%;">
+              <option value="critical">CRITICAL</option>
+              <option value="high" selected>HIGH</option>
+              <option value="medium">MEDIUM</option>
+              <option value="low">LOW</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">ENVIRONMENT</label>
+            <select id="input-incident-env" class="context-select" style="width:100%;">
+              <option value="production" selected>production</option>
+              <option value="staging">staging</option>
+              <option value="development">development</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">SUSPECTED / AFFECTED COMPONENT (OPTIONAL)</label>
+            <input type="text" id="input-incident-component" class="form-input" placeholder="e.g. PaymentService or CheckoutHandler">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">DESCRIPTION / CONTEXT</label>
+            <textarea id="input-incident-desc" class="form-input" style="height:80px;" placeholder="Observed behavior, alert details, impact scope..."></textarea>
+          </div>
+
+          <div id="incident-error-box" class="error-banner" style="display:none;"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="modal-incident-cancel-btn" class="secondary-btn">Cancel</button>
+          <button id="modal-incident-submit-btn" class="primary-btn" style="background:#ef4444;">Declare & Investigate</button>
         </div>
       </div>
     </div>

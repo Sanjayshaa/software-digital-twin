@@ -2,17 +2,16 @@
 
 ## Current Status
 - **Project**: AI-Powered Software Digital Twin for Change Impact Analysis
-- **Current Milestone**: Phase 4 — Deterministic Change Impact Analysis + UI Hardening Consolidated
-- **Overall Project Progress**: 40.0% (Phases 1, 2, 3, 3.X, and 4 Complete)
-- **Current Phase Progress**: 100.0% (Phase 4 Consolidated + UI Hardening Verified)
+- **Current Milestone**: Phase 5 — Process Twin + Runtime Evidence + Minimum Incident Intelligence
+- **Overall Project Progress**: 50.0% (Phases 1, 2, 3, 3.X, 4, and 5 Complete)
+- **Current Phase Progress**: 100.0% (Phase 5 Complete and Fully Verified)
 - **Architecture Conformance**: 100.0% among validated boundaries (0 Drift Violations)
 - **Architecture Baseline**: DEFINED (`docs/architecture-baseline.yaml`, 57 boundaries)
-- **Automated Test Suite**: 63 / 63 Pytest Tests Passing in 0.94s (Zero Failures, 100% Green)
-- **Browser/CDP Verification**: Chrome CDP Verified (0 Console Errors, 0 Network Failures across 8 screens)
-- **Database Architecture**: PostgreSQL 16 on port 5434, 39 tables, migration `92d510a512f1` (head)
+- **Automated Test Suite**: 77 / 77 Pytest Tests Passing in 1.39s (Zero Failures, 100% Green)
+- **Database Architecture**: PostgreSQL 16 on port 5434, 40 tables, migration `e5b8719f2a04` (head)
 - **Active Production Repositories in DB**: `AuroraBillingDemo`, `SolarisCalculator`, `real_validation_repo`
-- **Last Verified**: 2026-09-27 08:05 UTC / 13:35 IST
-- **Implementation Status**: PHASE 4 CONSOLIDATED · UI HARDENED · PRODUCTION READY
+- **Last Verified**: 2026-09-27 09:20 UTC / 14:50 IST
+- **Implementation Status**: PHASE 5 PROCESS TWIN + RUNTIME EVIDENCE + MINIMUM INCIDENT INTELLIGENCE COMPLETE
 
 ---
 
@@ -20,15 +19,15 @@
 
 | Measurement Dimension | Score / Status | Method & Empirical Evidence |
 |---|:---:|---|
-| **Overall Project Progress** | **40.0%** | 4 of 10 Total Phases Completed & Formally Audited (Phases 1, 2, 3, 3.X, 4) |
-| **Current Phase Progress (Phase 4)** | **100.0%** | Phase 4 Deterministic Blast Radius + UI Hardening Verified |
-| **Data Provenance Gate** | **PASS** | Confirmed 0 hardcoded domain nodes in `twin.js`; live DB data drives all UI views |
-| **Product UX / Command Center** | **PASS** | 7-View Information Architecture; Global Twin Context Strip; Engineering Command Center |
+| **Overall Project Progress** | **50.0%** | 5 of 10 Total Phases Completed & Formally Audited (Phases 1, 2, 3, 3.X, 4, 5) |
+| **Current Phase Progress (Phase 5)** | **100.0%** | Process Twin + Runtime Evidence + Minimum Incident Intelligence Verified |
+| **Data Provenance Gate** | **PASS** | Confirmed 0 hardcoded domain nodes in UI; live DB data drives all UI views |
+| **Product UX / Command Center** | **PASS** | 9-View Information Architecture; Process View, Runtime Evidence View, Incident Investigation View |
 | **Architecture Conformance** | **100.0%** | Architecture conformance: 100% among validated boundaries (0 Violations in Production Core) |
-| **Database Architecture** | **OPERATIONAL** | PostgreSQL 16 on port 5434, 39 relational tables, Alembic migration `92d510a512f1` |
-| **Test Suite Health** | **63 / 63 PASS** | Pytest passed in 0.94s (`test_health`, `test_models`, `test_discovery`, `test_analysis`, `test_architecture`, `test_graph`, `test_impact`) |
-| **Browser Runtime Integrity** | **PASS** | Headless Chrome CDP: 0 console errors, 0 failed network requests across all user flows |
-| **Repository Ingestion** | **LOCAL ACTIVE** | Real local filesystem path ingestion active; GitHub & ZIP transparently marked Planned Future Capability |
+| **Database Architecture** | **OPERATIONAL** | PostgreSQL 16 on port 5434, 40 relational tables, Alembic migration `e5b8719f2a04` |
+| **Test Suite Health** | **77 / 77 PASS** | Pytest passed in 1.39s (63 baseline regression tests + 14 new Phase 5 tests) |
+| **Runtime Ingestion Performance** | **781.8 events/sec** | Bounded batch ingestion, credential redaction, deterministic symbol/service correlation |
+| **Investigation Latency** | **67.2 ms** | Deterministic causal paths linking Incident -> Runtime Event -> Twin Component -> Git Diff -> Processes -> Tests |
 
 ---
 
@@ -41,7 +40,7 @@
 | **Phase 3** | Structural Digital Twin & AST Analyzers | **COMPLETE** | 29 / 29 | **100.0%** |
 | **Phase 3.X** | User-Facing Digital Twin Platform & Product UX (Gate 1 & 2) | **COMPLETE** | 10 / 10 | **100.0%** |
 | **Phase 4** | Change Impact / Blast-Radius Analysis (Stress & Complications Validated) | **COMPLETE** | 14 / 14 | **100.0%** |
-| **Phase 5** | Process Twin + Runtime Evidence / Minimum Runtime Incident Intelligence | NOT_STARTED | 0 / 0 | 0.0% |
+| **Phase 5** | Process Twin + Runtime Evidence / Minimum Runtime Incident Intelligence | **COMPLETE** | 25 / 25 | **100.0%** |
 | **Phase 6** | Test Impact Analysis | NOT_STARTED | 0 / 0 | 0.0% |
 | **Phase 7** | Risk Intelligence | NOT_STARTED | 0 / 0 | 0.0% |
 | **Phase 8** | Scenario Simulation | NOT_STARTED | 0 / 0 | 0.0% |
@@ -533,6 +532,44 @@ All endpoints run on `http://localhost:8000`:
      - End-to-end browser CDP validation (`scratch/test_ui_hardening_verification.py`): **100% passed** across all 8 screens.
      - Console errors: **0**. Failed network requests: **0**.
      - Git status: **Uncommitted** (strictly preserving state).
+
+---
+
+### [2026-09-27] — Phase 5: Process Twin + Runtime Evidence + Minimum Incident Intelligence Complete
+
+- **Objective**: Transform the Digital Twin from structural components ("what exists") into an operational, workflow-aware, runtime-evidence-aware twin ("how software executes, what runtime events occurred, and how they correlate with changes and incidents").
+- **Core Deliverables & Implementations**:
+  1. **Process Twin Engine (`backend/app/services/process/`)**:
+     - Deterministic process discovery from API entrypoints, controller handlers, service methods, and root callers.
+     - Cyclic-dependency guarded topological traversal up to depth 4.
+     - Precise step ordering, operations, source file and line number tracking with explicit evidence status (`INFERRED`, `DERIVED`, `OBSERVED`).
+     - Zero LLM hallucination: all process steps ground strictly into existing `StructuralArtifact` and `ArtifactRelationship` entities.
+  2. **Normalized Runtime Evidence Pipeline (`backend/app/services/runtime/`)**:
+     - Normalized taxonomy: `REQUEST`, `TRACE`, `SPAN`, `LOG`, `ERROR`, `EXCEPTION`, `DEPLOYMENT`, `STARTUP`, `SHUTDOWN`, `HEALTH_CHECK`, `DATABASE_EVENT`, `EXTERNAL_CALL`, `CUSTOM`.
+     - Data privacy sanitizer: recursive credential masking (`*password*`, `*token*`, `*secret*`, `*key*`, `*bearer*`, `*auth*`) to `[REDACTED]`.
+     - Large-scale safety: 100 KB payload bounds, 5,000 batch limits, pagination, and indexed querying.
+     - Deterministic entity correlation: symbol, file path, route, and service matching with evidence confidence levels (0.70 - 0.95).
+  3. **Incident Intelligence & Causal Investigation (`backend/app/services/incident/`)**:
+     - Minimum incident data model linking incidents to runtime events, affected components, and repository snapshots.
+     - Deterministic Causal Investigation Engine: links `Incident -> Runtime Error -> Affected Structural Artifact -> Recent Code Changes (Phase 4 ChangeDetector) -> Process Workflows -> Covering Tests -> Supporting Evidence`.
+     - Strictly labeled **"Candidate causal paths"** / **"Evidence-backed investigation paths"** with explicit uncertainties. Never claims synthetic root-cause truth.
+  4. **Database & Alembic Migration**:
+     - Applied migration `e5b8719f2a04_phase5_runtime_evidence_and_incidents.py`.
+     - Extended `incidents` and `runtime_events` tables; added `incident_evidence_links` table with indexed foreign keys and cascades.
+  5. **API & CLI Surface**:
+     - REST endpoints: `/repositories/{id}/processes`, `/repositories/{id}/runtime-events`, `/repositories/{id}/incidents`, `/repositories/{id}/incidents/{id}/investigate`.
+     - CLI commands: `./digital-twin runtime ingest`, `./digital-twin runtime list`, `./digital-twin process discover`, `./digital-twin incident create`, `./digital-twin incident investigate`.
+  6. **UI Integration**:
+     - Added "Runtime Evidence" and "Incidents" navigation tabs in Command Center.
+     - Interactive visual panels: Process pipeline cards, Runtime telemetry log table with severity chips & trace filters, Incident cards with 1-click "Investigate" triggering candidate causal paths flow.
+     - Zero fake data: empty states guide user to ingestion endpoints and CLI.
+  7. **Verification & Performance**:
+     - Baseline regression tests: **63/63 passed** (100% pass rate).
+     - Phase 5 new tests: **14/14 passed** (3 process + 7 runtime + 4 incident).
+     - Total tests: **77 / 77 passing in 1.39s**.
+     - Runtime ingestion throughput: **781.8 events/sec** (~1.28 ms/event).
+     - Causal investigation latency: **67.2 ms**.
+     - Architecture Conformance: **100.0%**. Zero LLM/agent code introduced.
 
 ---
 

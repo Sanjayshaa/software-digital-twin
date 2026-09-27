@@ -38,6 +38,7 @@ from app.models.entities import (
     ProcessTransition,
     ArchitectureReportEntity,
     ArchitectureDriftEntity,
+    IncidentEvidenceLink,
 )
 
 __all__ = [
@@ -80,6 +81,7 @@ __all__ = [
     "ProcessTransition",
     "ArchitectureReportEntity",
     "ArchitectureDriftEntity",
+    "IncidentEvidenceLink",
 ]
 
 

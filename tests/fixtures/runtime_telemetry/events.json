@@ -1,0 +1,47 @@
+[
+  {
+    "timestamp": "2026-09-27T10:00:00Z",
+    "event_type": "REQUEST",
+    "service": "dispatch-service",
+    "environment": "production",
+    "severity": "INFO",
+    "message": "Received dispatch order request",
+    "trace_id": "tr-order-9821",
+    "span_id": "sp-001",
+    "request_id": "req-9821-abc",
+    "attributes": {
+      "http_method": "POST",
+      "route": "/dispatch/order",
+      "user_token": "secret_user_token_12345"
+    }
+  },
+  {
+    "timestamp": "2026-09-27T10:00:01Z",
+    "event_type": "SPAN",
+    "service": "dispatch-service",
+    "environment": "production",
+    "severity": "INFO",
+    "message": "Invoking inventory allocation",
+    "trace_id": "tr-order-9821",
+    "span_id": "sp-002",
+    "attributes": {
+      "symbol": "allocate_inventory",
+      "auth_header": "Bearer super_secret_jwt_token_xyz"
+    }
+  },
+  {
+    "timestamp": "2026-09-27T10:00:02Z",
+    "event_type": "ERROR",
+    "service": "dispatch-service",
+    "environment": "production",
+    "severity": "ERROR",
+    "message": "Allocation failed: inventory service timeout",
+    "trace_id": "tr-order-9821",
+    "span_id": "sp-003",
+    "attributes": {
+      "symbol": "allocate_inventory",
+      "api_key": "prod_key_998877",
+      "file_path": "order_dispatcher.py"
+    }
+  }
+]

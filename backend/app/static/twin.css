@@ -1942,3 +1942,78 @@ body {
   background: #7c3aed;
   color: #fff;
 }
+
+/* ======================================================== */
+/* PHASE 5: RUNTIME EVIDENCE & INCIDENT INTELLIGENCE STYLES  */
+/* ======================================================== */
+.runtime-metric-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.causal-path-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid #7c3aed;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  transition: border-color 0.15s ease;
+}
+
+.causal-path-card:hover {
+  border-color: #a78bfa;
+}
+
+.causal-flow-diagram {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 10px 0;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+}
+
+.causal-step-node {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+.causal-step-node strong {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.causal-step-arrow {
+  color: #7c3aed;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.uncertainty-box {
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px dashed rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.uncertainty-box ul {
+  margin: 6px 0 0 18px;
+  padding: 0;
+}
+
+.uncertainty-box li {
+  margin-bottom: 4px;
+}
+

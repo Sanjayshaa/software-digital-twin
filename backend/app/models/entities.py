@@ -338,13 +338,22 @@ class Incident(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=True, index=True)
+    snapshot_id = Column(String(36), ForeignKey("repository_snapshots.id", ondelete="SET NULL"), nullable=True, index=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     severity = Column(String(50), default="medium", nullable=False)
     status = Column(String(50), default="open", nullable=False)
+    environment = Column(String(50), default="production", nullable=False, index=True)
+    affected_component_id = Column(String(128), ForeignKey("structural_artifacts.id", ondelete="SET NULL"), nullable=True, index=True)
     root_cause_component_id = Column(String(64), nullable=True)
+    metadata_payload = Column(JSON, default=dict, nullable=False)
     detected_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     resolved_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    events = relationship("RuntimeEvent", back_populates="incident")
+    evidence_links = relationship("IncidentEvidenceLink", back_populates="incident", cascade="all, delete-orphan")
 
 
 class RuntimeEvent(Base):
@@ -352,13 +361,41 @@ class RuntimeEvent(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=True, index=True)
+    snapshot_id = Column(String(36), ForeignKey("repository_snapshots.id", ondelete="SET NULL"), nullable=True, index=True)
     service_id = Column(String(36), ForeignKey("services.id", ondelete="SET NULL"), nullable=True, index=True)
+    incident_id = Column(String(36), ForeignKey("incidents.id", ondelete="SET NULL"), nullable=True, index=True)
+    service_name = Column(String(255), nullable=True, index=True)
+    component_artifact_id = Column(String(128), ForeignKey("structural_artifacts.id", ondelete="SET NULL"), nullable=True, index=True)
     event_type = Column(String(100), nullable=False, index=True)
+    severity = Column(String(50), default="INFO", nullable=False, index=True)
+    environment = Column(String(50), default="production", nullable=False, index=True)
+    trace_id = Column(String(128), nullable=True, index=True)
+    span_id = Column(String(128), nullable=True)
+    message = Column(Text, nullable=True)
     payload = Column(JSON, default=dict, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     # Relationships
     service = relationship("Service", back_populates="runtime_events")
+    incident = relationship("Incident", back_populates="events")
+
+
+class IncidentEvidenceLink(Base):
+    __tablename__ = "incident_evidence_links"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    incident_id = Column(String(36), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False, index=True)
+    link_type = Column(String(50), nullable=False, index=True)  # RUNTIME_EVENT, AFFECTED_COMPONENT, AFFECTED_PROCESS, CANDIDATE_CHANGE, RELATED_TEST, CAUSAL_PATH
+    target_id = Column(String(128), nullable=False, index=True)
+    target_type = Column(String(50), nullable=False)
+    confidence = Column(Float, default=1.0, nullable=False)
+    explanation = Column(Text, nullable=True)
+    metadata_payload = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    incident = relationship("Incident", back_populates="evidence_links")
 
 
 # ====================================================================

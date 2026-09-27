@@ -76,6 +76,7 @@
     initNavigation();
     initModal();
     initEventListeners();
+    initPhase5Handlers();
     fetchRepositories();
   });
 
@@ -230,6 +231,10 @@
       loadChangesView();
     } else if (viewName === 'evidence') {
       loadEvidenceView();
+    } else if (viewName === 'runtime') {
+      loadRuntimeView();
+    } else if (viewName === 'incidents') {
+      loadIncidentsView();
     }
   }
 
@@ -286,6 +291,10 @@
       loadChangesView();
     } else if (state.currentPrimaryView === 'evidence') {
       loadEvidenceView();
+    } else if (state.currentPrimaryView === 'runtime') {
+      loadRuntimeView();
+    } else if (state.currentPrimaryView === 'incidents') {
+      loadIncidentsView();
     }
   }
 
@@ -1022,19 +1031,62 @@
     const container = document.getElementById('process-chains-container');
     if (!container) return;
 
-    // Hook tab buttons
-    document.querySelectorAll('.proc-tab-btn').forEach(btn => {
+    // Hook filter buttons
+    document.querySelectorAll('.proc-filter-btn').forEach(btn => {
       btn.onclick = () => {
-        document.querySelectorAll('.proc-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.proc-filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        currentProcessTab = btn.dataset.procTab;
+        currentProcessTab = btn.dataset.filter || 'all';
         renderProcessesWorkflow();
       };
     });
 
-    container.innerHTML = '<div class="state-loading">Reconstructing deterministic process workflows from AST call graphs...</div>';
+    container.innerHTML = '<div class="state-loading">Synthesizing deterministic process workflows from AST call graphs...</div>';
 
     try {
+      // First check if Phase 5 discovered processes exist
+      let pUrl = `/repositories/${state.currentRepoId}/processes`;
+      if (state.currentSnapshotId) pUrl += `?snapshot_id=${state.currentSnapshotId}`;
+
+      const pRes = await fetch(pUrl);
+      if (pRes.ok) {
+        const pList = await pRes.json();
+        if (pList && pList.length > 0) {
+          const nodes = [];
+          const edges = [];
+          pList.forEach(p => {
+            (p.steps || []).forEach(s => {
+              nodes.push({
+                id: s.id,
+                process_id: p.id,
+                order: s.step_order,
+                name: s.name,
+                type: s.step_type || s.artifact_type || 'STEP',
+                component_name: s.artifact_name || s.name,
+                component_id: s.artifact_id,
+                location: s.file_path ? `${s.file_path}${s.line_number ? ':' + s.line_number : ''}` : 'source',
+                confidence: s.confidence,
+                evidence_status: s.evidence_status
+              });
+            });
+            (p.transitions || []).forEach(t => {
+              edges.push({
+                id: t.id,
+                process_id: p.id,
+                source: t.from_step_id,
+                target: t.to_step_id,
+                relationship_type: t.transition_type,
+                condition: t.evidence_status
+              });
+            });
+          });
+          state.currentProcessData = { processes: pList, nodes, edges };
+          renderProcessesWorkflow();
+          return;
+        }
+      }
+
+      // Fall back to process-graph
       let url = `/repositories/${state.currentRepoId}/process-graph`;
       if (state.currentSnapshotId) url += `?snapshot_id=${state.currentSnapshotId}`;
 
@@ -3003,6 +3055,642 @@
     });
   }
 
+  // --- Phase 5: Runtime Evidence & Incident Intelligence ---
+  let runtimeFilters = {
+    eventType: '',
+    severity: '',
+    env: '',
+    service: '',
+    trace: '',
+    limit: 50,
+    offset: 0
+  };
+
+  async function loadRuntimeView() {
+    if (!state.currentRepoId) return;
+    const tbody = document.getElementById('runtime-events-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = '<tr><td colspan="7" class="td-loading">Querying runtime evidence repository...</td></tr>';
+
+    try {
+      let queryParams = new URLSearchParams();
+      if (state.currentSnapshotId) queryParams.set('snapshot_id', state.currentSnapshotId);
+      if (runtimeFilters.eventType) queryParams.set('event_type', runtimeFilters.eventType);
+      if (runtimeFilters.severity) queryParams.set('severity', runtimeFilters.severity);
+      if (runtimeFilters.env) queryParams.set('environment', runtimeFilters.env);
+      if (runtimeFilters.service) queryParams.set('service_name', runtimeFilters.service);
+      if (runtimeFilters.trace) queryParams.set('trace_id', runtimeFilters.trace);
+      queryParams.set('limit', String(runtimeFilters.limit));
+      queryParams.set('offset', String(runtimeFilters.offset));
+
+      const res = await fetch(`/repositories/${state.currentRepoId}/runtime-events?${queryParams.toString()}`);
+      if (!res.ok) throw new Error('Failed to fetch runtime events');
+      const data = await res.json();
+
+      const totalEl = document.getElementById('metric-runtime-total');
+      const corrEl = document.getElementById('metric-runtime-correlated');
+      const errEl = document.getElementById('metric-runtime-errors');
+      const srvEl = document.getElementById('metric-runtime-services');
+      const countEl = document.getElementById('runtime-count-display');
+
+      if (totalEl) totalEl.textContent = data.total ?? 0;
+      if (countEl) countEl.textContent = `${data.total ?? 0} events`;
+
+      const events = data.events || [];
+      const correlatedCount = events.filter(e => e.component_artifact_id).length;
+      const errorCount = events.filter(e => e.severity === 'ERROR' || e.severity === 'CRITICAL' || e.event_type === 'ERROR' || e.event_type === 'EXCEPTION').length;
+      const uniqueServices = new Set(events.map(e => e.service_name).filter(Boolean)).size;
+
+      if (corrEl) corrEl.textContent = correlatedCount;
+      if (errEl) errEl.textContent = errorCount;
+      if (srvEl) srvEl.textContent = uniqueServices;
+
+      if (events.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="td-empty" style="padding:32px;text-align:center;">
+              <div style="font-size:28px;margin-bottom:8px;">📡</div>
+              <p style="font-weight:600;color:var(--text-primary);margin-bottom:4px;">No runtime evidence recorded yet</p>
+              <p style="font-size:12px;color:var(--text-secondary);max-width:540px;margin:0 auto 12px auto;">
+                Runtime evidence connects observed production/staging telemetry (logs, errors, traces) with structural Digital Twin entities.
+                Ingest structured JSON or JSONL events via the CLI or button above. Sensitive keys are automatically redacted.
+              </p>
+              <button class="primary-btn" onclick="document.getElementById('modal-ingest-runtime').style.display='flex';" style="font-size:12px;padding:6px 14px;">+ Ingest Runtime Events</button>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = events.map(evt => {
+        const sevColor = evt.severity === 'CRITICAL' ? '#ef4444' : (evt.severity === 'ERROR' ? '#f87171' : (evt.severity === 'WARN' ? '#fbbf24' : '#38bdf8'));
+        const hasCorrelation = !!evt.component_artifact_id;
+        const corrBadge = hasCorrelation ?
+          `<span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981;font-size:10px;padding:2px 6px;">
+            ✓ ${escapeHtml(evt.correlated_artifact_name || evt.component_artifact_id.slice(0, 8))} (${Math.round((evt.confidence || 0.85)*100)}%)
+          </span>` :
+          `<span class="badge" style="background:rgba(156,163,175,0.15);color:var(--text-muted);font-size:10px;padding:2px 6px;">Uncorrelated</span>`;
+
+        const timeStr = evt.timestamp ? new Date(evt.timestamp).toISOString().replace('T', ' ').slice(0, 19) : '-';
+        const msgStr = evt.message || (evt.attributes ? JSON.stringify(evt.attributes) : '-');
+
+        return `
+          <tr>
+            <td class="text-mono" style="font-size:11px;white-space:nowrap;color:var(--text-muted);">${escapeHtml(timeStr)}</td>
+            <td><span class="badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;font-size:11px;padding:2px 6px;">${escapeHtml(evt.event_type)}</span></td>
+            <td><span class="badge" style="background:${sevColor}22;color:${sevColor};font-size:11px;padding:2px 6px;font-weight:600;">${escapeHtml(evt.severity)}</span></td>
+            <td><strong>${escapeHtml(evt.service_name || '-')}</strong> <span style="font-size:11px;color:var(--text-muted);">(${escapeHtml(evt.environment || 'prod')})</span></td>
+            <td>${corrBadge}</td>
+            <td class="text-mono" style="font-size:11px;color:#a78bfa;">${escapeHtml(evt.trace_id || evt.span_id || '-')}</td>
+            <td style="max-width:320px;word-break:break-all;font-size:12px;color:var(--text-secondary);">${escapeHtml(msgStr)}</td>
+          </tr>
+        `;
+      }).join('');
+
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" class="td-empty" style="color:#ef4444;">Error loading runtime events: ${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function loadIncidentsView() {
+    if (!state.currentRepoId) return;
+    const tbody = document.getElementById('incidents-table-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = '<tr><td colspan="7" class="td-loading">Loading tracked incidents...</td></tr>';
+
+    try {
+      const res = await fetch(`/repositories/${state.currentRepoId}/incidents`);
+      if (!res.ok) throw new Error('Failed to load incidents');
+      const incidents = await res.json();
+
+      const countBadge = document.getElementById('incidents-count-badge');
+      if (countBadge) countBadge.textContent = `${incidents.length} INCIDENTS`;
+
+      if (incidents.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="td-empty" style="padding:32px;text-align:center;">
+              <div style="font-size:28px;margin-bottom:8px;">🛡️</div>
+              <p style="font-weight:600;color:var(--text-primary);margin-bottom:4px;">No active incidents recorded</p>
+              <p style="font-size:12px;color:var(--text-secondary);max-width:500px;margin:0 auto 12px auto;">
+                Declare a production or staging incident to trigger deterministic causal investigation against recent changes, runtime telemetry, and the Digital Twin process graph.
+              </p>
+              <button class="primary-btn" onclick="document.getElementById('modal-create-incident').style.display='flex';" style="font-size:12px;padding:6px 14px;background:#ef4444;">+ Declare Incident</button>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = incidents.map(inc => {
+        const sevColor = inc.severity === 'critical' ? '#ef4444' : (inc.severity === 'high' ? '#f97316' : (inc.severity === 'medium' ? '#fbbf24' : '#38bdf8'));
+        const timeStr = inc.detected_at ? new Date(inc.detected_at).toISOString().replace('T', ' ').slice(0, 19) : '-';
+        const evCount = inc.evidence_ids ? inc.evidence_ids.length : 0;
+
+        return `
+          <tr>
+            <td><span class="badge" style="background:${sevColor}22;color:${sevColor};font-size:11px;font-weight:700;padding:2px 8px;">${escapeHtml(inc.severity.toUpperCase())}</span></td>
+            <td>
+              <strong style="font-size:13px;color:var(--text-primary);">${escapeHtml(inc.title)}</strong>
+              ${inc.description ? `<p style="font-size:11px;color:var(--text-secondary);margin:2px 0 0 0;">${escapeHtml(inc.description)}</p>` : ''}
+              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Env: ${escapeHtml(inc.environment || 'production')}</div>
+            </td>
+            <td><span class="badge" style="background:var(--bg-surface);color:var(--text-secondary);font-size:10px;padding:2px 6px;">${escapeHtml(inc.status.toUpperCase())}</span></td>
+            <td class="text-mono" style="font-size:11px;color:var(--text-muted);">${escapeHtml(timeStr)}</td>
+            <td>${inc.affected_component_name ? `<code style="font-size:11px;color:#c084fc;">${escapeHtml(inc.affected_component_name)}</code>` : '<span style="color:var(--text-muted);font-size:11px;">Unassigned</span>'}</td>
+            <td><span class="badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;font-size:10px;padding:2px 6px;">${evCount} events</span></td>
+            <td>
+              <button class="primary-btn btn-investigate-incident" data-iid="${inc.id}" style="font-size:11px;padding:4px 10px;background:#7c3aed;">
+                ⚡ Investigate Causal Paths
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      tbody.querySelectorAll('.btn-investigate-incident').forEach(btn => {
+        btn.onclick = () => investigateIncident(btn.dataset.iid);
+      });
+
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" class="td-empty" style="color:#ef4444;">Error loading incidents: ${escapeHtml(err.message)}</td></tr>`;
+    }
+  }
+
+  async function investigateIncident(incidentId) {
+    if (!state.currentRepoId || !incidentId) return;
+    const ws = document.getElementById('incident-investigation-workspace');
+    const container = document.getElementById('investigation-report-container');
+    if (!ws || !container) return;
+
+    ws.style.display = 'block';
+    container.innerHTML = `
+      <div style="text-align:center;padding:24px;">
+        <span class="spinner-small"></span>
+        <div style="margin-top:8px;font-size:13px;color:var(--text-secondary);">Executing deterministic investigation engine... Correlating evidence, recent changes, call chains, and processes...</div>
+      </div>
+    `;
+
+    ws.scrollIntoView({ behavior: 'smooth' });
+
+    try {
+      const res = await fetch(`/repositories/${state.currentRepoId}/incidents/${incidentId}/investigate`, {
+        method: 'POST'
+      });
+      if (!res.ok) throw new Error('Investigation failed: ' + (await res.text()));
+      const inv = await res.json();
+
+      renderInvestigationResult(inv);
+    } catch (err) {
+      container.innerHTML = `
+        <div class="error-banner">
+          <strong>Investigation Error:</strong> ${escapeHtml(err.message)}
+        </div>
+      `;
+    }
+  }
+
+  function renderInvestigationResult(inv) {
+    const container = document.getElementById('investigation-report-container');
+    if (!container) return;
+
+    const inc = inv.incident;
+    const sevColor = inc.severity === 'critical' ? '#ef4444' : (inc.severity === 'high' ? '#f97316' : (inc.severity === 'medium' ? '#fbbf24' : '#38bdf8'));
+
+    const observedEv = inv.observed_evidence || [];
+    const recentChanges = inv.candidate_recent_changes || [];
+    const affectedProcs = inv.affected_processes || [];
+    const causalPaths = inv.candidate_causal_paths || [];
+    const relatedTests = inv.related_tests || [];
+    const uncertainties = inv.uncertainties || [];
+
+    container.innerHTML = `
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--border-subtle);padding-bottom:14px;margin-bottom:16px;">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:20px;">🎯</span>
+            <h3 style="font-size:16px;font-weight:700;color:var(--text-primary);margin:0;">
+              Investigation: ${escapeHtml(inc.title)}
+            </h3>
+            <span class="badge" style="background:${sevColor}22;color:${sevColor};font-size:11px;font-weight:700;padding:2px 8px;">
+              ${escapeHtml(inc.severity.toUpperCase())}
+            </span>
+            <span class="badge" style="background:rgba(124,58,237,0.15);color:#c084fc;font-size:11px;padding:2px 8px;">
+              Candidate Causal Paths Generated
+            </span>
+          </div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">
+            Repository ID: <code class="text-mono">${escapeHtml(inv.repository_id)}</code> • Snapshot: <code class="text-mono">${escapeHtml(inv.snapshot_id || 'latest')}</code>
+          </div>
+        </div>
+        <button class="secondary-btn" id="btn-reinvestigate-action" style="font-size:11px;padding:6px 12px;">
+          ↻ Re-Investigate
+        </button>
+      </div>
+
+      <!-- Investigation Metrics Strip -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;margin-bottom:18px;">
+        <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Observed Events</div>
+          <div style="font-size:20px;font-weight:700;color:#38bdf8;margin-top:2px;">${observedEv.length}</div>
+        </div>
+        <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Affected Entities</div>
+          <div style="font-size:20px;font-weight:700;color:#10b981;margin-top:2px;">${inv.affected_entities.length}</div>
+        </div>
+        <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Candidate Changes</div>
+          <div style="font-size:20px;font-weight:700;color:#f59e0b;margin-top:2px;">${recentChanges.length}</div>
+        </div>
+        <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Affected Processes</div>
+          <div style="font-size:20px;font-weight:700;color:#a78bfa;margin-top:2px;">${affectedProcs.length}</div>
+        </div>
+        <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Causal Paths</div>
+          <div style="font-size:20px;font-weight:700;color:#c084fc;margin-top:2px;">${causalPaths.length}</div>
+        </div>
+        <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Related Tests</div>
+          <div style="font-size:20px;font-weight:700;color:#34d399;margin-top:2px;">${relatedTests.length}</div>
+        </div>
+      </div>
+
+      <!-- Section: Candidate Causal Paths -->
+      <div style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <h4 style="font-size:13px;font-weight:700;color:var(--text-primary);letter-spacing:0.5px;text-transform:uppercase;margin:0;">
+            CANDIDATE CAUSAL PATHS (EVIDENCE-BACKED)
+          </h4>
+          <span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-size:10px;padding:2px 8px;">
+            Deterministic Static & Evidence Correlation
+          </span>
+        </div>
+        <p style="font-size:12px;color:var(--text-secondary);margin:0 0 12px 0;">
+          <strong>Architectural Guarantee:</strong> Paths represent evidence-backed candidate relationships derived from runtime error signatures, snapshot diffs, and AST call graphs. The system reports <em>potentially related based on evidence paths</em> rather than asserting unverified root cause truth.
+        </p>
+
+        ${causalPaths.length === 0 ? `
+          <div style="background:var(--bg-surface);border:1px dashed var(--border-color);border-radius:6px;padding:16px;text-align:center;font-size:12px;color:var(--text-muted);">
+            No candidate causal paths could be established. Ingest runtime events with service/file/symbol attributes matching the codebase to generate deterministic correlations.
+          </div>
+        ` : causalPaths.map((cp, idx) => `
+          <div class="causal-path-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="badge" style="background:#7c3aed;color:#fff;font-weight:700;font-size:11px;padding:2px 8px;">PATH #${idx + 1}</span>
+                <span style="font-size:12px;font-weight:600;color:var(--text-primary);">${escapeHtml(cp.relationship || 'CALLS_INTO')}</span>
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);">
+                Evidence Confidence: <strong style="color:#10b981;">${Math.round((cp.confidence || 0.85)*100)}%</strong>
+              </div>
+            </div>
+
+            <!-- Causal Flow Steps -->
+            <div class="causal-flow-diagram">
+              <div class="causal-step-node">
+                <span style="color:#ef4444;font-size:10px;font-weight:700;">INCIDENT EVENT</span>
+                <strong>${escapeHtml(cp.runtime_event_type || 'ERROR')}</strong>
+                <span class="text-mono text-muted">${escapeHtml(cp.runtime_event_id ? cp.runtime_event_id.slice(0, 8) : 'event')}</span>
+              </div>
+              <div class="causal-step-arrow">↳</div>
+              <div class="causal-step-node">
+                <span style="color:#38bdf8;font-size:10px;font-weight:700;">AFFECTED COMPONENT</span>
+                <strong>${escapeHtml(cp.component_name || 'Component')}</strong>
+                <span class="text-mono text-muted">${escapeHtml(cp.component_id ? cp.component_id.slice(0, 8) : '-')}</span>
+              </div>
+              ${cp.change_id ? `
+                <div class="causal-step-arrow">↳</div>
+                <div class="causal-step-node">
+                  <span style="color:#f59e0b;font-size:10px;font-weight:700;">RECENT CHANGE</span>
+                  <strong>${escapeHtml(cp.change_type || 'MODIFIED')}</strong>
+                  <span class="text-mono text-muted">${escapeHtml(cp.change_id.slice(0, 8))}</span>
+                </div>
+              ` : ''}
+              ${cp.process_id ? `
+                <div class="causal-step-arrow">↳</div>
+                <div class="causal-step-node">
+                  <span style="color:#a78bfa;font-size:10px;font-weight:700;">PROCESS FLOW</span>
+                  <strong>${escapeHtml(cp.process_name || 'Workflow')}</strong>
+                </div>
+              ` : ''}
+            </div>
+
+            <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">
+              ${escapeHtml(cp.explanation || 'Evidence path established across call graph and change detection.')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <!-- Two-Column Breakdown: Observed Evidence & Recent Changes -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;">
+        <!-- Observed Evidence -->
+        <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:12px;">
+          <h4 style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin:0 0 8px 0;">
+            Observed Evidence (${observedEv.length})
+          </h4>
+          ${observedEv.length === 0 ? '<div style="font-size:11px;color:var(--text-muted);">No linked runtime events</div>' : `
+            <div style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;">
+              ${observedEv.map(e => `
+                <div style="background:var(--bg-secondary);padding:6px 8px;border-radius:4px;font-size:11px;">
+                  <div style="display:flex;justify-content:space-between;color:var(--text-primary);font-weight:600;">
+                    <span>${escapeHtml(e.event_type)} [${escapeHtml(e.severity)}]</span>
+                    <span class="text-mono" style="color:var(--text-muted);">${escapeHtml(e.timestamp ? new Date(e.timestamp).toISOString().slice(11, 19) : '')}</span>
+                  </div>
+                  <div style="color:var(--text-secondary);margin-top:2px;">${escapeHtml(e.message || '-')}</div>
+                  ${e.trace_id ? `<div class="text-mono" style="color:#a78bfa;font-size:10px;">trace: ${escapeHtml(e.trace_id)}</div>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <!-- Candidate Recent Changes -->
+        <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:12px;">
+          <h4 style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin:0 0 8px 0;">
+            Candidate Recent Changes (${recentChanges.length})
+          </h4>
+          ${recentChanges.length === 0 ? '<div style="font-size:11px;color:var(--text-muted);">No recent changes detected in prior snapshot</div>' : `
+            <div style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;">
+              ${recentChanges.map(c => `
+                <div style="background:var(--bg-secondary);padding:6px 8px;border-radius:4px;font-size:11px;">
+                  <div style="display:flex;justify-content:space-between;color:var(--text-primary);font-weight:600;">
+                    <span style="color:#f59e0b;">${escapeHtml(c.change_type || 'CHANGE')}</span>
+                    <span class="text-mono" style="color:var(--text-muted);">${escapeHtml(c.file_path || '')}</span>
+                  </div>
+                  <div style="color:var(--text-secondary);margin-top:2px;">Symbol: <code>${escapeHtml(c.symbol_name || c.artifact_id || '-')}</code></div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      </div>
+
+      <!-- Affected Processes & Related Tests -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;">
+        <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:12px;">
+          <h4 style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin:0 0 8px 0;">
+            Affected Processes (${affectedProcs.length})
+          </h4>
+          ${affectedProcs.length === 0 ? '<div style="font-size:11px;color:var(--text-muted);">No process workflows intersect this component</div>' : `
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              ${affectedProcs.map(p => `
+                <div style="background:var(--bg-secondary);padding:6px 8px;border-radius:4px;font-size:11px;display:flex;justify-content:space-between;align-items:center;">
+                  <strong>⚡ ${escapeHtml(p.name || p.id)}</strong>
+                  <span class="badge" style="background:rgba(167,139,250,0.15);color:#a78bfa;font-size:10px;">${escapeHtml(p.type || 'WORKFLOW')}</span>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:12px;">
+          <h4 style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin:0 0 8px 0;">
+            Related Tests (${relatedTests.length})
+          </h4>
+          ${relatedTests.length === 0 ? '<div style="font-size:11px;color:var(--text-muted);">No test suites directly cover affected component</div>' : `
+            <div style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;">
+              ${relatedTests.map(t => `
+                <div style="background:var(--bg-secondary);padding:6px 8px;border-radius:4px;font-size:11px;display:flex;justify-content:space-between;align-items:center;">
+                  <span>🧪 ${escapeHtml(t.name || t.id)}</span>
+                  <span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981;font-size:10px;">Impacted Test</span>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      </div>
+
+      <!-- Section: Uncertainties & Evidence Limitations -->
+      <div class="uncertainty-box">
+        <strong style="color:#ef4444;text-transform:uppercase;font-size:11px;letter-spacing:0.5px;">
+          ⚠️ Uncertainties & Evidence Limitations
+        </strong>
+        <ul>
+          ${uncertainties.map(u => `<li>${escapeHtml(u)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+
+    document.getElementById('btn-reinvestigate-action')?.addEventListener('click', () => {
+      investigateIncident(inc.id);
+    });
+  }
+
+  function initPhase5Handlers() {
+    // Process discovery button
+    const discBtn = document.getElementById('btn-discover-processes');
+    if (discBtn) {
+      discBtn.addEventListener('click', async () => {
+        if (!state.currentRepoId) return;
+        discBtn.disabled = true;
+        discBtn.textContent = '⚡ Discovering...';
+        try {
+          const res = await fetch(`/repositories/${state.currentRepoId}/processes/discover`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ snapshot_id: state.currentSnapshotId || null })
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          alert(`Process Discovery Completed: Found ${data.processes_discovered} workflows, ${data.steps_created} steps, ${data.transitions_created} transitions.`);
+          loadProcessesView();
+        } catch (err) {
+          alert('Process discovery failed: ' + err.message);
+        } finally {
+          discBtn.disabled = false;
+          discBtn.textContent = '⚡ Run Process Discovery';
+        }
+      });
+    }
+
+    // Ingest Runtime modal
+    const openIngestBtn = document.getElementById('btn-open-ingest-modal');
+    const modalIngest = document.getElementById('modal-ingest-runtime');
+    const closeIngestBtn = document.getElementById('modal-ingest-close-btn');
+    const cancelIngestBtn = document.getElementById('modal-ingest-cancel-btn');
+    const submitIngestBtn = document.getElementById('modal-ingest-submit-btn');
+
+    if (openIngestBtn && modalIngest) {
+      openIngestBtn.addEventListener('click', () => modalIngest.style.display = 'flex');
+      closeIngestBtn?.addEventListener('click', () => modalIngest.style.display = 'none');
+      cancelIngestBtn?.addEventListener('click', () => modalIngest.style.display = 'none');
+
+      submitIngestBtn?.addEventListener('click', async () => {
+        if (!state.currentRepoId) return;
+        const env = document.getElementById('input-ingest-env')?.value || 'production';
+        const fileInput = document.getElementById('input-ingest-file');
+        const rawJson = document.getElementById('input-ingest-json')?.value || '';
+        const statusBox = document.getElementById('ingest-status-box');
+        const errorBox = document.getElementById('ingest-error-box');
+
+        if (statusBox) statusBox.style.display = 'none';
+        if (errorBox) errorBox.style.display = 'none';
+
+        let eventsList = [];
+
+        try {
+          if (fileInput?.files?.length) {
+            const file = fileInput.files[0];
+            const text = await file.text();
+            if (file.name.endsWith('.jsonl')) {
+              eventsList = text.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+            } else {
+              const parsed = JSON.parse(text);
+              eventsList = Array.isArray(parsed) ? parsed : [parsed];
+            }
+          } else if (rawJson.trim()) {
+            const trimmed = rawJson.trim();
+            if (trimmed.startsWith('[')) {
+              eventsList = JSON.parse(trimmed);
+            } else if (trimmed.startsWith('{')) {
+              if (trimmed.includes('\n')) {
+                eventsList = trimmed.split('\n').filter(Boolean).map(line => JSON.parse(line));
+              } else {
+                eventsList = [JSON.parse(trimmed)];
+              }
+            } else {
+              throw new Error('Please enter valid JSON or JSONL format');
+            }
+          } else {
+            throw new Error('Please select a file or paste runtime events');
+          }
+
+          submitIngestBtn.disabled = true;
+          submitIngestBtn.textContent = 'Ingesting...';
+
+          const res = await fetch(`/repositories/${state.currentRepoId}/runtime-events/ingest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              events: eventsList,
+              environment: env,
+              snapshot_id: state.currentSnapshotId || null
+            })
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({ detail: res.statusText }));
+            throw new Error(errData.detail || 'Ingestion failed');
+          }
+
+          const resData = await res.json();
+          modalIngest.style.display = 'none';
+          alert(`Runtime Ingestion Complete: ${resData.ingested_count} ingested, ${resData.correlated_count} correlated, ${resData.redacted_count} fields redacted.`);
+          loadRuntimeView();
+
+        } catch (err) {
+          if (errorBox) {
+            errorBox.style.display = 'block';
+            errorBox.textContent = err.message;
+          } else {
+            alert(err.message);
+          }
+        } finally {
+          submitIngestBtn.disabled = false;
+          submitIngestBtn.textContent = 'Ingest & Correlate';
+        }
+      });
+    }
+
+    // Runtime filter controls
+    document.getElementById('btn-apply-runtime-filters')?.addEventListener('click', () => {
+      runtimeFilters.eventType = document.getElementById('runtime-filter-event-type')?.value || '';
+      runtimeFilters.severity = document.getElementById('runtime-filter-severity')?.value || '';
+      runtimeFilters.env = document.getElementById('runtime-filter-env')?.value || '';
+      runtimeFilters.service = document.getElementById('runtime-filter-service')?.value || '';
+      runtimeFilters.trace = document.getElementById('runtime-filter-trace')?.value || '';
+      loadRuntimeView();
+    });
+
+    document.getElementById('btn-reset-runtime-filters')?.addEventListener('click', () => {
+      if (document.getElementById('runtime-filter-event-type')) document.getElementById('runtime-filter-event-type').value = '';
+      if (document.getElementById('runtime-filter-severity')) document.getElementById('runtime-filter-severity').value = '';
+      if (document.getElementById('runtime-filter-env')) document.getElementById('runtime-filter-env').value = '';
+      if (document.getElementById('runtime-filter-service')) document.getElementById('runtime-filter-service').value = '';
+      if (document.getElementById('runtime-filter-trace')) document.getElementById('runtime-filter-trace').value = '';
+      runtimeFilters = { eventType: '', severity: '', env: '', service: '', trace: '', limit: 50, offset: 0 };
+      loadRuntimeView();
+    });
+
+    document.getElementById('btn-refresh-runtime')?.addEventListener('click', () => loadRuntimeView());
+    document.getElementById('btn-refresh-incidents')?.addEventListener('click', () => loadIncidentsView());
+
+    // Create Incident modal
+    const openIncBtn = document.getElementById('btn-open-create-incident-modal');
+    const modalInc = document.getElementById('modal-create-incident');
+    const closeIncBtn = document.getElementById('modal-incident-close-btn');
+    const cancelIncBtn = document.getElementById('modal-incident-cancel-btn');
+    const submitIncBtn = document.getElementById('modal-incident-submit-btn');
+
+    if (openIncBtn && modalInc) {
+      openIncBtn.addEventListener('click', () => modalInc.style.display = 'flex');
+      closeIncBtn?.addEventListener('click', () => modalInc.style.display = 'none');
+      cancelIncBtn?.addEventListener('click', () => modalInc.style.display = 'none');
+
+      submitIncBtn?.addEventListener('click', async () => {
+        if (!state.currentRepoId) return;
+        const title = document.getElementById('input-incident-title')?.value || '';
+        const severity = document.getElementById('input-incident-severity')?.value || 'high';
+        const env = document.getElementById('input-incident-env')?.value || 'production';
+        const component = document.getElementById('input-incident-component')?.value || null;
+        const desc = document.getElementById('input-incident-desc')?.value || '';
+        const errorBox = document.getElementById('incident-error-box');
+
+        if (!title.trim()) {
+          if (errorBox) {
+            errorBox.style.display = 'block';
+            errorBox.textContent = 'Incident title is required';
+          }
+          return;
+        }
+
+        submitIncBtn.disabled = true;
+        submitIncBtn.textContent = 'Declaring...';
+
+        try {
+          const res = await fetch(`/repositories/${state.currentRepoId}/incidents`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title,
+              severity,
+              environment: env,
+              affected_component_name: component,
+              description: desc,
+              snapshot_id: state.currentSnapshotId || null
+            })
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({ detail: res.statusText }));
+            throw new Error(errData.detail || 'Failed to create incident');
+          }
+
+          const newInc = await res.json();
+          modalInc.style.display = 'none';
+          loadIncidentsView();
+          investigateIncident(newInc.id);
+
+        } catch (err) {
+          if (errorBox) {
+            errorBox.style.display = 'block';
+            errorBox.textContent = err.message;
+          } else {
+            alert(err.message);
+          }
+        } finally {
+          submitIncBtn.disabled = false;
+          submitIncBtn.textContent = 'Declare & Investigate';
+        }
+      });
+    }
+  }
+
   function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -3023,6 +3711,9 @@
     switchArchSubtab,
     triggerOnboarding,
     executeChangeImpactAnalysis,
+    loadRuntimeView,
+    loadIncidentsView,
+    investigateIncident,
   };
 
 })();

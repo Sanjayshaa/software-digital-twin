@@ -14,6 +14,9 @@ from app.api.status import router as status_router
 from app.api.architecture import router as architecture_router
 from app.api.graph import router as graph_router
 from app.api.impact import router as impact_router
+from app.api.runtime import router as runtime_router
+from app.api.process import router as process_router
+from app.api.incident import router as incident_router
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -74,6 +77,9 @@ app.include_router(status_router)
 app.include_router(architecture_router)
 app.include_router(graph_router)
 app.include_router(impact_router)
+app.include_router(runtime_router)
+app.include_router(process_router)
+app.include_router(incident_router)
 
 
 if __name__ == "__main__":

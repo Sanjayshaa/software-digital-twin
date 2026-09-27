@@ -832,5 +832,269 @@ def impact_analysis_cmd(
         db.close()
 
 
+# ====================================================================
+# PHASE 5 CLI SUBCOMMANDS: RUNTIME, PROCESS, INCIDENT
+# ====================================================================
+
+runtime_app = typer.Typer(help="Runtime Evidence Ingestion and Querying", no_args_is_help=True)
+app.add_typer(runtime_app, name="runtime")
+
+process_app = typer.Typer(help="Process Twin Discovery and Workflow Inspection", no_args_is_help=True)
+app.add_typer(process_app, name="process")
+
+incident_app = typer.Typer(help="Incident Intelligence & Causal Investigation", no_args_is_help=True)
+app.add_typer(incident_app, name="incident")
+
+
+@runtime_app.command("ingest")
+def runtime_ingest(
+    file_path: str = typer.Argument(..., help="Path to JSON or JSONL runtime event file"),
+    repository: str = typer.Option(..., "--repository", "-r", help="Repository ID or Name"),
+    snapshot: Optional[str] = typer.Option(None, "--snapshot", "-s", help="Snapshot ID (optional)"),
+    environment: str = typer.Option("production", "--environment", "-e", help="Environment name"),
+):
+    """Ingests, sanitizes, and correlates runtime events from a JSON/JSONL file."""
+    from app.core.database import SessionLocal
+    from app.models.entities import Repository
+    from app.services.runtime import runtime_evidence_service
+    from sqlalchemy import or_
+
+    if not os.path.exists(file_path):
+        console.print(f"[bold red]Error:[/bold red] File '{file_path}' does not exist.")
+        raise typer.Exit(code=1)
+
+    db = SessionLocal()
+    try:
+        repo = db.query(Repository).filter(
+            or_(Repository.id == repository, Repository.name == repository)
+        ).first()
+        if not repo:
+            console.print(f"[bold red]Error:[/bold red] Repository '{repository}' not found.")
+            raise typer.Exit(code=1)
+
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        result = runtime_evidence_service.ingest_json_or_jsonl(
+            db=db,
+            repository_id=repo.id,
+            content=content,
+            snapshot_id=snapshot,
+            default_environment=environment,
+        )
+
+        console.print(f"\n[bold green]✔ Runtime Evidence Ingested Successfully[/bold green]")
+        console.print(f"  Repository: [cyan]{repo.name}[/cyan] ({repo.id})")
+        console.print(f"  Ingested Events: [bold]{result.ingested_count}[/bold]")
+        console.print(f"  Correlated to Twin: [bold green]{result.correlated_count}[/bold green]")
+        console.print(f"  Redacted Sensitive Fields: [yellow]{result.redacted_count}[/yellow]")
+        console.print(f"  Execution Time: [dim]{result.execution_time_ms} ms[/dim]\n")
+    finally:
+        db.close()
+
+
+@runtime_app.command("list")
+def runtime_list(
+    repository: str = typer.Option(..., "--repository", "-r", help="Repository ID or Name"),
+    severity: Optional[str] = typer.Option(None, "--severity", help="Filter by severity (ERROR, WARN, INFO)"),
+    event_type: Optional[str] = typer.Option(None, "--event-type", help="Filter by event type"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max events to display"),
+):
+    """Lists recent normalized runtime events."""
+    from app.core.database import SessionLocal
+    from app.models.entities import Repository
+    from app.services.runtime import runtime_evidence_service
+    from sqlalchemy import or_
+
+    db = SessionLocal()
+    try:
+        repo = db.query(Repository).filter(
+            or_(Repository.id == repository, Repository.name == repository)
+        ).first()
+        if not repo:
+            console.print(f"[bold red]Error:[/bold red] Repository '{repository}' not found.")
+            raise typer.Exit(code=1)
+
+        page = runtime_evidence_service.list_events(
+            db=db,
+            repository_id=repo.id,
+            severity=severity,
+            event_type=event_type,
+            limit=limit,
+        )
+
+        table = Table(title=f"Runtime Events ({page.total} total)", border_style="cyan")
+        table.add_column("Timestamp", style="dim")
+        table.add_column("Type", style="bold")
+        table.add_column("Severity", style="yellow")
+        table.add_column("Service", style="cyan")
+        table.add_column("Message", style="white")
+        table.add_column("Correlated", style="green")
+
+        for ev in page.events:
+            sev_color = "red" if ev.severity in ("ERROR", "CRITICAL") else "yellow" if ev.severity == "WARN" else "green"
+            table.add_row(
+                ev.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                ev.event_type,
+                f"[{sev_color}]{ev.severity}[/{sev_color}]",
+                ev.service_name or "-",
+                (ev.message or "-")[:50],
+                f"{ev.correlation_method} ({ev.correlation_confidence * 100:.0f}%)" if ev.component_artifact_id else "[dim]Unmatched[/dim]",
+            )
+        console.print(table)
+    finally:
+        db.close()
+
+
+@process_app.command("discover")
+def process_discover(
+    repository: str = typer.Option(..., "--repository", "-r", help="Repository ID or Name"),
+    snapshot: Optional[str] = typer.Option(None, "--snapshot", "-s", help="Snapshot ID (optional)"),
+):
+    """Executes deterministic Process Twin discovery from AST call chains."""
+    from app.core.database import SessionLocal
+    from app.models.entities import Repository
+    from app.services.process import process_service
+    from sqlalchemy import or_
+
+    db = SessionLocal()
+    try:
+        repo = db.query(Repository).filter(
+            or_(Repository.id == repository, Repository.name == repository)
+        ).first()
+        if not repo:
+            console.print(f"[bold red]Error:[/bold red] Repository '{repository}' not found.")
+            raise typer.Exit(code=1)
+
+        result = process_service.discover_processes(
+            db=db,
+            repository_id=repo.id,
+            snapshot_id=snapshot,
+        )
+
+        console.print(f"\n[bold green]✔ Process Twin Discovery Complete[/bold green]")
+        console.print(f"  Discovered Workflows: [bold cyan]{result.total_processes}[/bold cyan]")
+        console.print(f"  Execution Steps: [bold]{result.total_steps}[/bold]")
+        console.print(f"  Process Transitions: [bold]{result.total_transitions}[/bold]")
+        console.print(f"  Execution Time: [dim]{result.execution_time_ms} ms[/dim]\n")
+
+        for p in result.processes:
+            console.print(f"  • [bold]{p.name}[/bold] ({p.steps_count} steps, {p.transitions_count} transitions)")
+        console.print()
+    finally:
+        db.close()
+
+
+@incident_app.command("create")
+def incident_create(
+    repository: str = typer.Option(..., "--repository", "-r", help="Repository ID or Name"),
+    title: str = typer.Option(..., "--title", "-t", help="Incident title"),
+    severity: str = typer.Option("medium", "--severity", help="Severity (low, medium, high, critical)"),
+    environment: str = typer.Option("production", "--environment", "-e", help="Environment"),
+    description: Optional[str] = typer.Option(None, "--desc", help="Incident description"),
+):
+    """Creates a new incident record."""
+    from app.core.database import SessionLocal
+    from app.models.entities import Repository
+    from app.services.incident import incident_service, IncidentCreate
+    from sqlalchemy import or_
+
+    db = SessionLocal()
+    try:
+        repo = db.query(Repository).filter(
+            or_(Repository.id == repository, Repository.name == repository)
+        ).first()
+        if not repo:
+            console.print(f"[bold red]Error:[/bold red] Repository '{repository}' not found.")
+            raise typer.Exit(code=1)
+
+        req = IncidentCreate(
+            title=title,
+            description=description,
+            severity=severity,
+            environment=environment,
+        )
+        inc = incident_service.create_incident(db, repo.id, req)
+        console.print(f"\n[bold green]✔ Incident Created:[/bold green] [cyan]{inc.id}[/cyan]")
+        console.print(f"  Title: {inc.title}")
+        console.print(f"  Severity: {inc.severity.upper()} · Status: {inc.status.upper()}\n")
+    finally:
+        db.close()
+
+
+@incident_app.command("investigate")
+def incident_investigate(
+    incident_id: str = typer.Argument(..., help="Incident ID to investigate"),
+):
+    """Runs deterministic causal investigation for an incident."""
+    from app.core.database import SessionLocal
+    from app.services.incident import incident_service
+
+    db = SessionLocal()
+    try:
+        result = incident_service.investigate_incident(db, incident_id)
+
+        console.print(Panel(
+            f"[bold]Incident Investigation:[/bold] {result.incident_title}\n"
+            f"[dim]Severity:[/dim] {result.severity.upper()}  [dim]Environment:[/dim] {result.environment}",
+            title="🔍 Digital Twin Incident Intelligence",
+            border_style="red" if result.severity in ("high", "critical") else "yellow",
+        ))
+
+        if result.affected_component:
+            comp = result.affected_component
+            console.print(f"[bold]Primary Affected Component:[/bold] [cyan]{comp['name']}[/cyan] ({comp['type']})")
+            if comp.get("location"):
+                console.print(f"  Location: [dim]{comp['location']}[/dim]")
+            console.print()
+
+        # Candidate Causal Paths
+        if result.candidate_causal_paths:
+            path_table = Table(title="Candidate Causal Paths (Evidence-Backed)", border_style="magenta")
+            path_table.add_column("Hops", justify="center", style="bold")
+            path_table.add_column("Recent Change", style="cyan")
+            path_table.add_column("Type", style="yellow")
+            path_table.add_column("Chain to Incident Target", style="white")
+            path_table.add_column("Confidence", justify="right", style="green")
+
+            for path in result.candidate_causal_paths:
+                node_names = [n["name"] for n in path.path_nodes]
+                chain_str = " -> ".join(node_names) if len(node_names) > 1 else "[bold cyan]Direct Modification[/bold cyan]"
+                path_table.add_row(
+                    str(path.hop_count),
+                    path.changed_artifact_name,
+                    path.change_type,
+                    chain_str,
+                    f"{path.confidence * 100:.0f}%",
+                )
+            console.print(path_table)
+            console.print()
+        else:
+            console.print("[dim]No candidate recent change paths linked to this component.[/dim]\n")
+
+        # Affected Processes
+        if result.affected_processes:
+            console.print("[bold]Affected Business & Service Processes:[/bold]")
+            for p in result.affected_processes:
+                console.print(f"  • [bold]{p['name']}[/bold] (Step: {p['step_name']})")
+            console.print()
+
+        # Related Tests
+        if result.related_tests:
+            console.print(f"[bold]Related Tests to Execute ({len(result.related_tests)}):[/bold]")
+            for t in result.related_tests[:5]:
+                console.print(f"  • [green]{t['test_name']}[/green] [dim]({t['location']})[/dim]")
+            console.print()
+
+        console.print(f"[dim italic]{result.disclaimer}[/dim italic]\n")
+
+    except Exception as exc:
+        console.print(f"[bold red]Investigation failed:[/bold red] {str(exc)}")
+        raise typer.Exit(code=1)
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     app()
+
