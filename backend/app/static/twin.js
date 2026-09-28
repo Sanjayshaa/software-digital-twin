@@ -75,6 +75,8 @@
     initCanvas();
     initNavigation();
     initModal();
+    initCommandPalette();
+    initAskSoftware();
     initEventListeners();
     initPhase5Handlers();
     fetchRepositories();
@@ -107,8 +109,8 @@
 
   // --- 1. Navigation & View Switching ---
   function initNavigation() {
-    // Primary View Tabs
-    const tabs = document.querySelectorAll('#main-view-tabs .view-tab');
+    // Primary View Tabs across sidebar and panels
+    const tabs = document.querySelectorAll('.view-tab');
     tabs.forEach(tab => {
       tab.addEventListener('click', () => {
         const view = tab.dataset.view;
@@ -125,14 +127,31 @@
       });
     });
 
-    // Overview Hero Graph Button
-    const ovGraphBtn = document.getElementById('ov-btn-view-graph');
-    if (ovGraphBtn) {
-      ovGraphBtn.addEventListener('click', () => {
-        switchPrimaryView('architecture');
-        switchArchSubtab('graph');
-      });
-    }
+    // Overview Hero & Action Buttons
+    document.getElementById('ov-btn-view-graph')?.addEventListener('click', () => {
+      switchPrimaryView('architecture');
+      switchArchSubtab('graph');
+    });
+
+    document.getElementById('ov-btn-explore')?.addEventListener('click', () => {
+      switchPrimaryView('components');
+    });
+
+    document.getElementById('ov-btn-analyze')?.addEventListener('click', () => {
+      switchPrimaryView('impact');
+    });
+
+    // Header Quick Action & Sidebar Buttons
+    document.getElementById('top-btn-connect-repo')?.addEventListener('click', openConnectModal);
+    document.getElementById('sidebar-repo-card')?.addEventListener('click', openConnectModal);
+    document.getElementById('top-btn-ingest-runtime')?.addEventListener('click', openIngestModal);
+    document.getElementById('top-btn-create-incident')?.addEventListener('click', openCreateIncidentModal);
+    document.getElementById('top-search-btn')?.addEventListener('click', () => window.openCommandPalette?.());
+
+    // Theme toggle
+    document.getElementById('btn-toggle-theme')?.addEventListener('click', () => {
+      document.body.classList.toggle('theme-light');
+    });
 
     // Level Selector
     document.querySelectorAll('.level-btn').forEach(btn => {
@@ -194,8 +213,14 @@
 
   function switchPrimaryView(viewName) {
     state.currentPrimaryView = viewName;
-    document.querySelectorAll('#main-view-tabs .view-tab').forEach(t => {
-      t.classList.toggle('active', t.dataset.view === viewName);
+    document.querySelectorAll('.view-tab').forEach(t => {
+      const isTarget = t.dataset.view === viewName;
+      t.classList.toggle('active', isTarget);
+      if (isTarget) {
+        t.className = 'view-tab active w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-[#0071e3] text-white shadow-xs transition-all';
+      } else {
+        t.className = 'view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all';
+      }
     });
 
     // Hide all view panels
@@ -219,8 +244,10 @@
     // Execute view-specific loaders
     if (viewName === 'overview') {
       loadOverviewData();
+    } else if (viewName === 'components') {
+      loadComponentsData();
     } else if (viewName === 'architecture') {
-      switchArchSubtab(state.currentArchSubtab);
+      switchArchSubtab(state.currentArchSubtab || 'graph');
     } else if (viewName === 'processes') {
       loadProcessesView();
     } else if (viewName === 'dependencies') {
@@ -229,12 +256,17 @@
       loadTestsView();
     } else if (viewName === 'changes') {
       loadChangesView();
+    } else if (viewName === 'impact') {
+      loadChangesView();
+      executeChangeImpactAnalysis();
     } else if (viewName === 'evidence') {
       loadEvidenceView();
     } else if (viewName === 'runtime') {
       loadRuntimeView();
     } else if (viewName === 'incidents') {
       loadIncidentsView();
+    } else if (viewName === 'ask') {
+      setTimeout(() => document.getElementById('ask-query-input')?.focus(), 50);
     }
   }
 
@@ -362,6 +394,33 @@
     const modal = document.getElementById('modal-onboard');
     if (modal) modal.style.display = 'none';
   }
+
+  function openIngestModal() {
+    const modal = document.getElementById('modal-ingest-runtime');
+    if (modal) modal.style.display = 'flex';
+  }
+
+  function closeIngestModal() {
+    const modal = document.getElementById('modal-ingest-runtime');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function openCreateIncidentModal() {
+    const modal = document.getElementById('modal-create-incident');
+    if (modal) modal.style.display = 'flex';
+  }
+
+  function closeCreateIncidentModal() {
+    const modal = document.getElementById('modal-create-incident');
+    if (modal) modal.style.display = 'none';
+  }
+
+  window.openConnectModal = openConnectModal;
+  window.closeConnectModal = closeConnectModal;
+  window.openIngestModal = openIngestModal;
+  window.closeIngestModal = closeIngestModal;
+  window.openCreateIncidentModal = openCreateIncidentModal;
+  window.closeCreateIncidentModal = closeCreateIncidentModal;
 
   function showOnboardError(msg) {
     const errBox = document.getElementById('onboard-error-box');
@@ -646,26 +705,25 @@
         pkgGrid.innerHTML = '';
         const pkgs = data.architecture_packages || [];
         if (pkgs.length === 0) {
-          pkgGrid.innerHTML = '<div style="grid-column:1/-1;color:var(--text-muted);font-size:12px;padding:12px;text-align:center;background:var(--bg-surface);border-radius:6px;">No macro packages identified in this snapshot.</div>';
+          pkgGrid.innerHTML = '<div class="col-span-full p-4 text-center text-xs text-[#64748B] bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl">No macro packages identified in this snapshot.</div>';
         } else {
           pkgs.forEach(pkg => {
             const card = document.createElement('div');
-            card.className = 'arch-pkg-card';
-            card.style = 'background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:8px;';
-            const sampleHtml = (pkg.sample_components || []).slice(0, 3).map(c => `<span style="font-size:11px;background:var(--bg-secondary);border:1px solid var(--border-subtle);padding:2px 6px;border-radius:4px;font-family:monospace;color:#c084fc;">${escapeHtml(c)}</span>`).join(' ');
+            card.className = 'bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-4 flex flex-col justify-between space-y-3';
+            const sampleHtml = (pkg.sample_components || []).slice(0, 3).map(c => `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-white border border-[#E2E8F0] text-[#6D28D9]">${escapeHtml(c)}</span>`).join(' ');
             card.innerHTML = `
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <strong style="font-size:13px;color:var(--text-primary);display:flex;align-items:center;gap:6px;">
+              <div class="flex items-center justify-between">
+                <strong class="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
                   <span>📦</span> ${escapeHtml(pkg.name)}
                 </strong>
-                <span class="badge" style="background:rgba(56,189,248,0.12);color:#38bdf8;font-size:10px;padding:2px 6px;border-radius:4px;">${pkg.artifact_count} artifacts</span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">${pkg.artifact_count} artifacts</span>
               </div>
-              <div style="font-size:11px;color:var(--text-secondary);display:flex;gap:12px;">
+              <div class="text-xs text-[#64748B] flex gap-3">
                 <span>${pkg.module_count} Modules</span>
                 <span>${pkg.files_count} Files</span>
               </div>
-              ${sampleHtml ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px;">${sampleHtml}</div>` : ''}
-              <button class="secondary-btn btn-explore-pkg" data-pkg="${escapeHtml(pkg.name)}" style="font-size:11px;padding:4px 8px;margin-top:4px;align-self:flex-start;border:1px solid var(--border-color);color:var(--text-secondary);cursor:pointer;">
+              ${sampleHtml ? `<div class="flex flex-wrap gap-1 mt-1">${sampleHtml}</div>` : ''}
+              <button class="btn-explore-pkg inline-flex items-center gap-1 text-xs text-[#0071e3] hover:text-[#0059b5] font-semibold mt-1" data-pkg="${escapeHtml(pkg.name)}">
                 Explore in Architecture Graph →
               </button>
             `;
@@ -686,76 +744,116 @@
         }
       }
 
+      // Dynamic Architecture Flow Pipeline
+      const flowList = document.getElementById('ov-flow-nodes-list');
+      if (flowList) {
+        const pkgs = data.architecture_packages || [];
+        if (pkgs.length === 0) {
+          flowList.innerHTML = '<div class="w-full text-center py-6 text-xs text-[#64748B]">No architectural packages detected in this snapshot.</div>';
+        } else {
+          const topPkgs = pkgs.slice(0, 5);
+          const icons = ['devices', 'router', 'receipt_long', 'memory', 'database'];
+          const colors = [
+            { bg: '#F0F9FF', text: '#0284C7', border: '#BAE6FD', badgeBg: '#E0F2FE', badgeText: '#0369A1' },
+            { bg: '#ECFDF5', text: '#059669', border: '#A7F3D0', badgeBg: '#D1FAE5', badgeText: '#047857' },
+            { bg: '#FFFBEB', text: '#D97706', border: '#FED7AA', badgeBg: '#FEF3C7', badgeText: '#B45309' },
+            { bg: '#EEF2FF', text: '#4F46E5', border: '#C7D2FE', badgeBg: '#E0E7FF', badgeText: '#4338CA' },
+            { bg: '#FAF5FF', text: '#7C3AED', border: '#DDD6FE', badgeBg: '#EDE9FE', badgeText: '#6D28D9' },
+          ];
+
+          flowList.innerHTML = topPkgs.map((pkg, i) => {
+            const col = colors[i % colors.length];
+            const icon = icons[i % icons.length];
+            const nodeHtml = `
+              <div class="flex-1 bg-white border border-[${col.border}]/80 p-3 rounded-lg shadow-2xs flex flex-col items-center text-center">
+                <div class="w-8 h-8 rounded-full bg-[${col.bg}] text-[${col.text}] flex items-center justify-center">
+                  <span class="material-symbols-outlined text-[18px]">${icon}</span>
+                </div>
+                <span class="text-xs font-bold text-[#0F172A] mt-1 truncate max-w-[120px]">${escapeHtml(pkg.name)}</span>
+                <span class="text-[10px] text-[#64748B]">${pkg.total_artifacts} artifacts</span>
+                <span class="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[${col.badgeBg}] text-[${col.badgeText}] text-[10px] font-semibold border border-[${col.border}]">
+                  ${pkg.modules || pkg.module_count || 1} modules
+                </span>
+              </div>
+            `;
+            const arrowHtml = (i < topPkgs.length - 1)
+              ? `<div class="flex items-center text-[#94A3B8]"><span class="material-symbols-outlined text-[18px]">trending_flat</span></div>`
+              : '';
+            return nodeHtml + arrowHtml;
+          }).join('');
+        }
+      }
+
       // Latest Change Impact Card in Overview
       const impactContainer = document.getElementById('ov-impact-container');
       if (impactContainer) {
         const imp = data.latest_impact;
         if (imp) {
           impactContainer.innerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div class="flex items-center justify-between mb-3">
               <div>
-                <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Change Impact Analysis Run</span>
-                <div style="font-size:13px;font-weight:600;color:#c084fc;margin-top:2px;">
-                  Target Snapshot: <span class="text-mono">${escapeHtml(imp.target_snapshot_id.slice(0, 14))}</span>
+                <span class="text-[10px] uppercase font-bold text-[#64748B] tracking-wider">Change Impact Analysis Run</span>
+                <div class="text-xs font-bold text-[#6D28D9] mt-0.5">
+                  Target Snapshot: <span class="font-mono text-[#0F172A]">${escapeHtml(imp.target_snapshot_id.slice(0, 14))}</span>
                 </div>
               </div>
-              <button id="btn-ov-view-impact" class="secondary-btn" style="font-size:11px;padding:5px 10px;border:1px solid #7c3aed;color:#c084fc;cursor:pointer;">
+              <button id="btn-ov-view-impact" class="px-3 py-1.5 rounded-lg bg-[#FAF5FF] hover:bg-[#F3E8FF] border border-[#DDD6FE] text-[#6D28D9] text-xs font-semibold transition-colors">
                 Open Full Blast-Radius Report →
               </button>
             </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(100px, 1fr));gap:8px;">
-              <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:4px;padding:8px;text-align:center;">
-                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Changed</div>
-                <div style="font-size:18px;font-weight:700;color:#f59e0b;">${imp.changed_count}</div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+                <div class="text-[10px] text-[#64748B] uppercase font-bold">Changed</div>
+                <div class="text-lg font-bold text-[#F59E0B] mt-0.5">${imp.changed_count}</div>
               </div>
-              <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:4px;padding:8px;text-align:center;">
-                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Direct Impact</div>
-                <div style="font-size:18px;font-weight:700;color:#ef4444;">${imp.directly_affected_count}</div>
+              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+                <div class="text-[10px] text-[#64748B] uppercase font-bold">Direct</div>
+                <div class="text-lg font-bold text-[#EF4444] mt-0.5">${imp.directly_affected_count}</div>
               </div>
-              <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:4px;padding:8px;text-align:center;">
-                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Indirect Impact</div>
-                <div style="font-size:18px;font-weight:700;color:#ec4899;">${imp.indirectly_affected_count}</div>
+              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+                <div class="text-[10px] text-[#64748B] uppercase font-bold">Indirect</div>
+                <div class="text-lg font-bold text-[#EC4899] mt-0.5">${imp.indirectly_affected_count}</div>
               </div>
-              <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:4px;padding:8px;text-align:center;">
-                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Components</div>
-                <div style="font-size:18px;font-weight:700;color:#38bdf8;">${imp.components_affected}</div>
+              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+                <div class="text-[10px] text-[#64748B] uppercase font-bold">Components</div>
+                <div class="text-lg font-bold text-[#3B82F6] mt-0.5">${imp.components_affected}</div>
               </div>
-              <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:4px;padding:8px;text-align:center;">
-                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">APIs</div>
-                <div style="font-size:18px;font-weight:700;color:#f472b6;">${imp.apis_affected}</div>
+              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+                <div class="text-[10px] text-[#64748B] uppercase font-bold">APIs</div>
+                <div class="text-lg font-bold text-[#8B5CF6] mt-0.5">${imp.apis_affected}</div>
               </div>
-              <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:4px;padding:8px;text-align:center;">
-                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Processes</div>
-                <div style="font-size:18px;font-weight:700;color:#a78bfa;">${imp.processes_affected}</div>
+              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+                <div class="text-[10px] text-[#64748B] uppercase font-bold">Processes</div>
+                <div class="text-lg font-bold text-[#06B6D4] mt-0.5">${imp.processes_affected}</div>
               </div>
-              <div style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:4px;padding:8px;text-align:center;">
-                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">Tests</div>
-                <div style="font-size:18px;font-weight:700;color:#10b981;">${imp.tests_affected}</div>
+              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+                <div class="text-[10px] text-[#64748B] uppercase font-bold">Tests</div>
+                <div class="text-lg font-bold text-[#10B981] mt-0.5">${imp.tests_affected}</div>
               </div>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--text-secondary);">
-              <span>Causal Paths: <strong>${imp.causal_paths_count}</strong></span>
-              <span>Execution Time: <strong>${imp.execution_time_ms} ms</strong></span>
-              <span>Analyzed: <strong>${new Date(imp.created_at).toLocaleTimeString()}</strong></span>
+            <div class="flex items-center justify-between text-xs text-[#64748B] pt-2 border-t border-[#F1F5F9] mt-3">
+              <span>Causal Paths: <strong class="text-[#0F172A]">${imp.causal_paths_count}</strong></span>
+              <span>Execution Time: <strong class="text-[#0F172A]">${imp.execution_time_ms} ms</strong></span>
+              <span>Analyzed: <strong class="text-[#0F172A]">${new Date(imp.created_at).toLocaleTimeString()}</strong></span>
             </div>
           `;
           document.getElementById('btn-ov-view-impact')?.addEventListener('click', () => {
-            switchPrimaryView('changes');
+            switchPrimaryView('impact');
           });
         } else {
           impactContainer.innerHTML = `
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;background:var(--bg-surface);border:1px dashed var(--border-color);border-radius:6px;">
+            <div class="p-4 rounded-xl bg-[#F8FAFC] border border-dashed border-[#E2E8F0] flex items-center justify-between">
               <div>
-                <div style="font-size:13px;font-weight:600;color:var(--text-secondary);">No Change Impact Analysis Run For This Snapshot</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Compare with an earlier snapshot to compute deterministic blast-radius propagation across components, APIs, processes, and tests.</div>
+                <div class="text-xs font-bold text-[#0F172A]">No Change Impact Analysis Run For This Snapshot</div>
+                <div class="text-[11px] text-[#64748B] mt-0.5">Compare with an earlier snapshot to compute deterministic blast-radius propagation across components, APIs, processes, and tests.</div>
               </div>
-              <button id="btn-ov-run-impact" class="primary-btn" style="font-size:11px;padding:6px 12px;white-space:nowrap;cursor:pointer;">
+              <button id="btn-ov-run-impact" class="px-3.5 py-1.5 rounded-lg bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs shrink-0">
                 Run Blast-Radius Analysis →
               </button>
             </div>
           `;
           document.getElementById('btn-ov-run-impact')?.addEventListener('click', () => {
-            switchPrimaryView('changes');
+            switchPrimaryView('impact');
           });
         }
       }
@@ -815,8 +913,464 @@
         runTime.textContent = data.latest_run?.completed_at ? new Date(data.latest_run.completed_at).toLocaleString() : 'Just now';
       }
 
+      // Update Stitch Hero Metric Cards
+      const ovCompCount = document.getElementById('ov-components-count');
+      const ovCompSub = document.getElementById('ov-components-sub');
+      const ovApisCount = document.getElementById('ov-apis-count');
+      const ovApisSub = document.getElementById('ov-apis-sub');
+      const ovDepsCount = document.getElementById('ov-deps-count');
+      const ovDepsSub = document.getElementById('ov-deps-sub');
+      const ovTestsCount = document.getElementById('ov-tests-count');
+      const ovTestsSub = document.getElementById('ov-tests-sub');
+
+      const bd = data.component_breakdown || {};
+      if (ovCompCount) ovCompCount.textContent = m.artifacts ?? 0;
+      if (ovCompSub) ovCompSub.textContent = `${bd.MODULE || 0} modules · ${bd.CLASS || 0} classes`;
+      if (ovApisCount) ovApisCount.textContent = m.apis ?? 0;
+      if (ovApisSub) ovApisSub.textContent = `${m.apis ?? 0} endpoints registered`;
+      if (ovDepsCount) ovDepsCount.textContent = m.relationships ?? 0;
+      if (ovDepsSub) ovDepsSub.textContent = 'Static, semantic & call edges';
+      if (ovTestsCount) ovTestsCount.textContent = m.tests ?? 0;
+      if (ovTestsSub) ovTestsSub.textContent = `${m.tests ?? 0} suites & cases mapped`;
+
+      // Update sidebar & breadcrumb repo info
+      const sbRepoName = document.getElementById('sidebar-repo-name');
+      const sbBranchName = document.getElementById('sidebar-branch-name');
+      const ovRepoBreadcrumb = document.getElementById('ov-repo-breadcrumb');
+      if (sbRepoName) sbRepoName.textContent = data.repository?.name || 'Local Repository';
+      if (sbBranchName) sbBranchName.textContent = data.snapshot?.branch_name || data.repository?.default_branch || 'main';
+      if (ovRepoBreadcrumb) ovRepoBreadcrumb.textContent = data.repository?.name || 'Local Repository';
+
+      // Load Live Real Incidents for Overview Banner & Badges
+      loadOverviewIncidents(state.currentRepoId);
+
+      // Load Live Real Runtime Telemetry for Overview Feed
+      loadOverviewRuntime(state.currentRepoId);
+
     } catch (e) {
       console.error('Error loading overview data', e);
+    }
+  }
+
+  async function loadOverviewIncidents(repoId) {
+    if (!repoId) return;
+    try {
+      const res = await fetch(`/repositories/${repoId}/incidents`);
+      if (!res.ok) return;
+      const incidents = await res.json();
+
+      const sbBadge = document.getElementById('sidebar-incidents-badge');
+      const ovBadge = document.getElementById('ov-incidents-badge');
+      if (sbBadge) sbBadge.textContent = incidents.length;
+      if (ovBadge) ovBadge.textContent = `${incidents.length} Active`;
+
+      const card = document.getElementById('ov-active-incident-card');
+      const stripeEl = document.getElementById('ov-incident-stripe');
+      const pillEl = document.getElementById('ov-incident-status-pill');
+      const pulseEl = document.getElementById('ov-incident-pulse');
+      const titleEl = document.getElementById('ov-incident-title');
+      const descEl = document.getElementById('ov-incident-desc');
+      const statusEl = document.getElementById('ov-incident-status');
+      const targetEl = document.getElementById('ov-incident-target');
+      const badgesContainer = document.getElementById('ov-incident-badges');
+      const confEl = document.getElementById('ov-incident-confidence');
+      const invBtn = document.getElementById('ov-btn-investigate');
+      const viewIncidentsBtn = document.getElementById('ov-btn-view-incidents');
+
+      if (incidents.length > 0) {
+        const inc = incidents[0];
+        state.activeIncidentId = inc.id;
+
+        if (card) {
+          card.className = "bg-[#FFF1F2]/80 border border-[#FECDD3] rounded-xl p-6 shadow-xs hover:shadow-md transition-all relative overflow-hidden";
+        }
+        if (stripeEl) stripeEl.className = "absolute left-0 top-0 bottom-0 w-1.5 bg-[#E11D48]";
+        if (pillEl) pillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#FFE4E6] text-[#BE123C] text-[11px] font-bold border border-[#FDA4AF]/60";
+        if (pulseEl) pulseEl.className = "w-2 h-2 rounded-full bg-[#E11D48] animate-pulse";
+        if (statusEl) statusEl.textContent = `Needs Attention · ${(inc.severity || 'SEV-1').toUpperCase()}`;
+
+        if (titleEl) {
+          titleEl.textContent = inc.title;
+          titleEl.className = "text-lg font-bold text-[#881337] tracking-tight";
+        }
+        if (descEl) {
+          descEl.textContent = inc.description || 'Deterministic causal correlation and evidence available for analysis.';
+          descEl.className = "text-xs text-[#9F1239]/90 mt-1 leading-relaxed";
+        }
+        if (targetEl) targetEl.textContent = inc.affected_component_name || 'Component root';
+
+        if (badgesContainer) {
+          const evCount = inc.evidence_ids ? inc.evidence_ids.length : 0;
+          badgesContainer.innerHTML = `
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/90 border border-[#FECDD3] text-[#BE123C] text-xs font-medium shadow-2xs">
+              <span class="material-symbols-outlined text-[16px] text-[#E11D48]">error</span>
+              <span>${evCount} linked evidence item${evCount === 1 ? '' : 's'}</span>
+            </div>
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/90 border border-[#FED7AA] text-[#C2410C] text-xs font-medium shadow-2xs">
+              <span class="material-symbols-outlined text-[16px] text-[#EA580C]">flag</span>
+              <span>Status: ${(inc.status || 'OPEN').toUpperCase()}</span>
+            </div>
+          `;
+        }
+
+        if (confEl) confEl.textContent = 'Confidence: 100% verified';
+
+        const doInvestigate = () => {
+          switchPrimaryView('incidents');
+          investigateIncident(inc.id);
+        };
+        if (invBtn) invBtn.onclick = doInvestigate;
+        if (viewIncidentsBtn) viewIncidentsBtn.onclick = doInvestigate;
+
+      } else {
+        state.activeIncidentId = null;
+
+        if (card) {
+          card.className = "bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-6 shadow-xs hover:shadow-md transition-all relative overflow-hidden";
+        }
+        if (stripeEl) stripeEl.className = "absolute left-0 top-0 bottom-0 w-1.5 bg-[#10B981]";
+        if (pillEl) pillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] text-[11px] font-bold border border-[#A7F3D0]";
+        if (pulseEl) pulseEl.className = "w-2 h-2 rounded-full bg-[#10B981]";
+        if (statusEl) statusEl.textContent = 'All Systems Operational';
+
+        if (titleEl) {
+          titleEl.textContent = 'No Active Incidents';
+          titleEl.className = "text-lg font-bold text-[#0F172A] tracking-tight";
+        }
+        if (descEl) {
+          descEl.textContent = 'No open incidents recorded in this environment. System running cleanly.';
+          descEl.className = "text-xs text-[#64748B] mt-1 leading-relaxed";
+        }
+        if (targetEl) targetEl.textContent = 'Clean Environment';
+
+        if (badgesContainer) {
+          badgesContainer.innerHTML = `
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#E2E8F0] text-[#059669] text-xs font-medium shadow-2xs">
+              <span class="material-symbols-outlined text-[16px] text-[#10B981]">check_circle</span>
+              <span>0 active anomalies · 0 open incidents</span>
+            </div>
+          `;
+        }
+
+        if (confEl) confEl.textContent = 'Status: Verified Healthy';
+
+        const doViewIncidents = () => {
+          switchPrimaryView('incidents');
+        };
+        if (invBtn) invBtn.onclick = doViewIncidents;
+        if (viewIncidentsBtn) viewIncidentsBtn.onclick = doViewIncidents;
+      }
+    } catch (e) {
+      console.warn('Failed to load overview incidents', e);
+    }
+  }
+
+  async function loadOverviewRuntime(repoId) {
+    if (!repoId) return;
+    try {
+      const res = await fetch(`/repositories/${repoId}/runtime-events?limit=4`);
+      if (!res.ok) return;
+      const events = await res.json();
+
+      const sbRuntimeBadge = document.getElementById('sidebar-runtime-badge');
+      if (sbRuntimeBadge) sbRuntimeBadge.textContent = events.length;
+
+      const feed = document.getElementById('ov-runtime-feed');
+      if (!feed) return;
+
+      if (events.length === 0) {
+        feed.innerHTML = `
+          <div class="text-xs text-on-surface-variant p-4 text-center border border-dashed border-outline-variant/30 rounded-xl">
+            No runtime telemetry ingested yet. Use the <strong>+ Ingest</strong> button to correlate traces, error spikes, and APM metrics.
+          </div>
+        `;
+        return;
+      }
+
+      feed.innerHTML = events.slice(0, 3).map(ev => {
+        const isError = ev.severity === 'error' || ev.severity === 'critical';
+        const sevColor = isError ? 'text-red-400 bg-red-500/10 border-red-500/20' : 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+        return `
+          <div class="flex items-center justify-between p-3 rounded-xl bg-surface-container-low border border-outline-variant/20 hover:border-outline-variant/40 transition-colors">
+            <div class="flex items-center gap-3">
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold border ${sevColor}">${escapeHtml(ev.event_type)}</span>
+              <div>
+                <div class="text-xs font-semibold text-on-surface">${escapeHtml(ev.component_name || 'System Event')}</div>
+                <div class="text-[10px] text-on-surface-variant font-mono mt-0.5">${new Date(ev.timestamp).toLocaleTimeString()} · Env: ${escapeHtml(ev.environment || 'production')}</div>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="text-xs font-mono font-bold ${ev.latency_ms > 500 ? 'text-amber-400' : 'text-emerald-400'}">${ev.latency_ms ? ev.latency_ms + 'ms' : '-'}</span>
+              <div class="text-[10px] text-on-surface-variant">${ev.error_count > 0 ? `<span class="text-red-400 font-bold">${ev.error_count} errs</span>` : '0 errs'}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      console.warn('Failed to load overview runtime feed', e);
+    }
+  }
+
+  function initCommandPalette() {
+    const modal = document.getElementById('modal-command-palette');
+    const input = document.getElementById('cmd-palette-input');
+    const results = document.getElementById('cmd-palette-results');
+    const searchBtn = document.getElementById('top-search-btn');
+
+    function openPalette() {
+      if (!modal) return;
+      modal.style.display = 'flex';
+      if (input) {
+        input.value = '';
+        input.focus();
+        renderPaletteResults('');
+      }
+    }
+
+    function closePalette() {
+      if (modal) modal.style.display = 'none';
+    }
+
+    searchBtn?.addEventListener('click', openPalette);
+    document.getElementById('cmd-palette-close-btn')?.addEventListener('click', closePalette);
+
+    modal?.addEventListener('click', (e) => {
+      if (e.target === modal) closePalette();
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        if (modal && modal.style.display === 'flex') {
+          closePalette();
+        } else {
+          openPalette();
+        }
+      } else if (e.key === 'Escape') {
+        closePalette();
+        closeConnectModal();
+        closeIngestModal();
+        closeCreateIncidentModal();
+      }
+    });
+
+    input?.addEventListener('input', (e) => {
+      renderPaletteResults(e.target.value.trim().toLowerCase());
+    });
+
+    function renderPaletteResults(query) {
+      if (!results) return;
+      const views = [
+        { name: 'Architecture Overview', icon: 'dashboard', view: 'overview', desc: 'System metrics, active incident, and macro packages' },
+        { name: 'Components & Artifacts', icon: 'category', view: 'components', desc: 'Modules, classes, functions, and services' },
+        { name: 'Architecture Topology Graph', icon: 'schema', view: 'architecture', desc: 'Interactive Canvas with L1/L2/L3 zoom and inspector' },
+        { name: 'Dependency Matrix', icon: 'account_tree', view: 'dependencies', desc: 'Inbound, outbound, and circular dependencies' },
+        { name: 'Process Twin & Business Flows', icon: 'account_tree', view: 'processes', desc: 'Discovered end-to-end workflows and steps' },
+        { name: 'Snapshot Comparison', icon: 'compare_arrows', view: 'changes', desc: 'Deterministic structural differences across git commits' },
+        { name: 'Change Impact & Blast-Radius', icon: 'radar', view: 'impact', desc: 'Multi-hop propagation paths and affected test suites' },
+        { name: 'Test Impact & Verification', icon: 'science', view: 'tests', desc: 'Test coverage, suite status, and affected test cases' },
+        { name: 'Incident Intelligence', icon: 'troubleshoot', view: 'incidents', desc: 'Triage active production incidents and causal paths' },
+        { name: 'Runtime Telemetry Stream', icon: 'stream', view: 'runtime', desc: 'Live traces, error spikes, and performance telemetry' },
+        { name: 'Evidence Ledger', icon: 'receipt_long', view: 'evidence', desc: 'Multi-source factual audit records' },
+        { name: 'Ask Software Intelligence', icon: 'auto_awesome', view: 'ask', desc: 'Deterministic natural language software inquiry' },
+      ];
+
+      let items = views.filter(v => !query || v.name.toLowerCase().includes(query) || v.desc.toLowerCase().includes(query));
+
+      if (query && state.rawGraph && state.rawGraph.nodes) {
+        const matchedNodes = state.rawGraph.nodes.filter(n => n.name && n.name.toLowerCase().includes(query)).slice(0, 5);
+        matchedNodes.forEach(n => {
+          items.push({
+            name: `Inspect Node: ${n.name}`,
+            icon: 'hub',
+            view: 'architecture',
+            nodeId: n.id,
+            desc: `Type: ${n.type} · ${n.path || 'Root'}`
+          });
+        });
+      }
+
+      if (items.length === 0) {
+        results.innerHTML = `<div class="p-6 text-center text-xs text-on-surface-variant">No matching commands or components found for "${escapeHtml(query)}"</div>`;
+        return;
+      }
+
+      results.innerHTML = items.map((item, idx) => `
+        <div class="cmd-item flex items-center justify-between p-3 rounded-xl hover:bg-surface-container-high/60 cursor-pointer transition-colors group" data-idx="${idx}">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant group-hover:text-primary transition-colors">
+              <span class="material-symbols-outlined text-[18px]">${item.icon}</span>
+            </div>
+            <div>
+              <div class="text-xs font-semibold text-on-surface group-hover:text-primary transition-colors">${escapeHtml(item.name)}</div>
+              <div class="text-[11px] text-on-surface-variant line-clamp-1">${escapeHtml(item.desc)}</div>
+            </div>
+          </div>
+          <span class="material-symbols-outlined text-[14px] text-on-surface-variant group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+        </div>
+      `).join('');
+
+      results.querySelectorAll('.cmd-item').forEach(el => {
+        const idx = parseInt(el.dataset.idx, 10);
+        const item = items[idx];
+        el.addEventListener('click', () => {
+          closePalette();
+          if (item.nodeId) {
+            switchPrimaryView('architecture');
+            switchArchSubtab('graph');
+            setTimeout(() => focusOnNode(item.nodeId), 150);
+          } else if (item.view) {
+            switchPrimaryView(item.view);
+          }
+        });
+      });
+    }
+
+    window.openCommandPalette = openPalette;
+    window.closeCommandPalette = closePalette;
+  }
+
+  function initAskSoftware() {
+    const input = document.getElementById('ask-query-input');
+    const submitBtn = document.getElementById('btn-ask-submit');
+    const resultsContainer = document.getElementById('ask-results-container');
+
+    document.querySelectorAll('.ask-prompt-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        const prompt = pill.dataset.prompt;
+        if (input && prompt) {
+          input.value = prompt;
+          runSoftwareQuery(prompt);
+        }
+      });
+    });
+
+    submitBtn?.addEventListener('click', () => {
+      const q = input?.value?.trim();
+      if (q) runSoftwareQuery(q);
+    });
+
+    input?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const q = input.value.trim();
+        if (q) runSoftwareQuery(q);
+      }
+    });
+
+    async function runSoftwareQuery(query) {
+      if (!resultsContainer) return;
+      resultsContainer.innerHTML = `
+        <div class="flex items-center justify-center p-12 text-on-surface-variant gap-3">
+          <span class="material-symbols-outlined animate-spin text-primary">progress_activity</span>
+          <span class="text-xs font-mono">Synthesizing twin graph, telemetry, and evidence for: "${escapeHtml(query)}"...</span>
+        </div>
+      `;
+
+      const qLower = query.toLowerCase();
+      const repoId = state.currentRepoId;
+      const snapId = state.currentSnapshotId;
+
+      try {
+        if (qLower.includes('incident') || qLower.includes('triage') || qLower.includes('outage') || qLower.includes('failure')) {
+          const res = await fetch(`/repositories/${repoId}/incidents`);
+          const incidents = res.ok ? await res.json() : [];
+          if (incidents.length === 0) {
+            resultsContainer.innerHTML = `
+              <div class="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 space-y-3">
+                <div class="flex items-center gap-2 text-emerald-400 font-semibold text-sm">
+                  <span class="material-symbols-outlined">check_circle</span> Zero Active Incidents
+                </div>
+                <p class="text-xs text-on-surface-variant">The software digital twin reports zero open production incidents. All monitored services and components are within normal operating parameters.</p>
+              </div>
+            `;
+          } else {
+            resultsContainer.innerHTML = `
+              <div class="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 space-y-4">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2 text-red-400 font-semibold text-sm">
+                    <span class="material-symbols-outlined">warning</span> Found ${incidents.length} Tracked Incident(s)
+                  </div>
+                  <button class="px-3 py-1 rounded-lg bg-red-600/20 text-red-400 text-xs font-medium border border-red-500/30" onclick="window.TwinApp.switchPrimaryView('incidents')">Open Triage View →</button>
+                </div>
+                <div class="space-y-3">
+                  ${incidents.map(inc => `
+                    <div class="p-3 bg-surface-container rounded-xl border border-outline-variant/20 flex items-center justify-between">
+                      <div>
+                        <div class="text-xs font-bold text-on-surface">${escapeHtml(inc.title)}</div>
+                        <div class="text-[11px] text-on-surface-variant mt-0.5">${escapeHtml(inc.description || 'Target: ' + (inc.affected_component_name || 'Component root'))}</div>
+                      </div>
+                      <button class="px-2.5 py-1 rounded-lg bg-primary hover:bg-blue-600 text-white text-[11px] font-semibold" onclick="window.TwinApp.investigateIncident('${inc.id}')">Investigate Causal Path</button>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            `;
+          }
+        } else if (qLower.includes('blast radius') || qLower.includes('impact') || qLower.includes('change')) {
+          resultsContainer.innerHTML = `
+            <div class="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-primary font-semibold text-sm">
+                  <span class="material-symbols-outlined">radar</span> Change Impact Intelligence
+                </div>
+                <button class="px-3 py-1 rounded-lg bg-primary text-white text-xs font-semibold" onclick="window.TwinApp.switchPrimaryView('impact')">Run Full Blast-Radius →</button>
+              </div>
+              <p class="text-xs text-on-surface-variant">Deterministic change detection computes structural diffs between Git snapshots and propagates causal dependency paths through the architecture graph to identify directly and indirectly affected components, APIs, process steps, and test suites.</p>
+            </div>
+          `;
+        } else {
+          let url = `/repositories/${repoId}/components`;
+          if (snapId) url += `?snapshot_id=${snapId}`;
+          const res = await fetch(url);
+          const data = res.ok ? await res.json() : { components: [] };
+          const components = data.components || [];
+          const matches = components.filter(c =>
+            c.name.toLowerCase().includes(qLower) ||
+            (c.qualified_name && c.qualified_name.toLowerCase().includes(qLower)) ||
+            (c.location && c.location.toLowerCase().includes(qLower))
+          ).slice(0, 10);
+
+          if (matches.length > 0) {
+            resultsContainer.innerHTML = `
+              <div class="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 space-y-4">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2 text-cyan-400 font-semibold text-sm">
+                    <span class="material-symbols-outlined">category</span> Matched ${matches.length} Architectural Component(s)
+                  </div>
+                  <button class="px-3 py-1 rounded-lg bg-surface-container-high hover:bg-surface-container-highest text-xs text-on-surface" onclick="window.TwinApp.switchPrimaryView('components')">View All in Catalog →</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  ${matches.map(c => `
+                    <div class="p-3 bg-surface-container rounded-xl border border-outline-variant/20 hover:border-primary/40 transition-colors">
+                      <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-on-surface">${escapeHtml(c.name)}</span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">${escapeHtml(c.type)}</span>
+                      </div>
+                      <div class="text-[11px] text-on-surface-variant font-mono mt-1 truncate">${escapeHtml(c.location || c.qualified_name || '-')}</div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            `;
+          } else {
+            resultsContainer.innerHTML = `
+              <div class="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 space-y-3">
+                <div class="flex items-center gap-2 text-on-surface font-semibold text-sm">
+                  <span class="material-symbols-outlined">search</span> Query Result
+                </div>
+                <p class="text-xs text-on-surface-variant">No exact components matched "${escapeHtml(query)}". Try querying about active incidents, blast radius, specific module names, or run a full snapshot comparison.</p>
+              </div>
+            `;
+          }
+        }
+      } catch (err) {
+        resultsContainer.innerHTML = `
+          <div class="bg-surface-container-low border border-red-500/30 rounded-2xl p-6 space-y-2 text-red-400 text-xs">
+            <div class="font-bold flex items-center gap-2"><span class="material-symbols-outlined">error</span> Query Failed</div>
+            <p>${escapeHtml(err.message)}</p>
+          </div>
+        `;
+      }
     }
   }
 
@@ -868,21 +1422,22 @@
     tbody.innerHTML = '';
 
     if (components.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="td-empty">No components found matching filter.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-[#64748B]">No components found matching filter.</td></tr>';
       return;
     }
 
     components.forEach(c => {
       const tr = document.createElement('tr');
+      tr.className = 'hover:bg-[#F8FAFC] transition-colors';
       tr.innerHTML = `
-        <td><strong>${escapeHtml(c.name)}</strong></td>
-        <td><span class="type-pill type-${c.type}">${c.type}</span></td>
-        <td class="text-mono text-muted">${escapeHtml(c.qualified_name || c.name)}</td>
-        <td class="text-mono">${escapeHtml(c.location || '')}</td>
-        <td>${escapeHtml(c.language || 'Python')}</td>
-        <td><span class="conf-badge">${((c.confidence || 1.0) * 100).toFixed(0)}%</span></td>
-        <td>
-          <button class="small-action-btn" data-art-id="${c.id}">Focus in Graph</button>
+        <td class="p-3.5 font-bold text-[#0F172A]">${escapeHtml(c.name)}</td>
+        <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#EEF2FF] text-[#4F46E5] border border-[#C7D2FE]">${c.type}</span></td>
+        <td class="p-3.5 font-mono text-xs text-[#64748B]">${escapeHtml(c.qualified_name || c.name)}</td>
+        <td class="p-3.5 font-mono text-xs text-[#475569]">${escapeHtml(c.location || '')}</td>
+        <td class="p-3.5 text-[#475569]">${escapeHtml(c.language || 'Python')}</td>
+        <td class="p-3.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">${((c.confidence || 1.0) * 100).toFixed(0)}%</span></td>
+        <td class="p-3.5">
+          <button class="px-2.5 py-1 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-xs font-medium transition-colors" data-art-id="${c.id}">Focus in Graph</button>
         </td>
       `;
 
@@ -1028,7 +1583,7 @@
 
   async function loadProcessesView() {
     if (!state.currentRepoId) return;
-    const container = document.getElementById('process-chains-container');
+    const container = document.getElementById('processes-container') || document.getElementById('process-chains-container');
     if (!container) return;
 
     // Hook filter buttons
@@ -1041,7 +1596,7 @@
       };
     });
 
-    container.innerHTML = '<div class="state-loading">Synthesizing deterministic process workflows from AST call graphs...</div>';
+    container.innerHTML = '<div class="p-8 text-center text-xs text-[#64748B]">Synthesizing deterministic process workflows from AST call graphs...</div>';
 
     try {
       // First check if Phase 5 discovered processes exist
@@ -1096,12 +1651,12 @@
       state.currentProcessData = data;
       renderProcessesWorkflow();
     } catch (err) {
-      container.innerHTML = `<div class="empty-state-box"><p>Error synthesizing processes: ${escapeHtml(err.message)}</p></div>`;
+      container.innerHTML = `<div class="p-6 text-center text-xs text-[#BE123C] bg-[#FFF1F2] rounded-xl border border-[#FECDD3]">Error synthesizing processes: ${escapeHtml(err.message)}</div>`;
     }
   }
 
   function renderProcessesWorkflow() {
-    const container = document.getElementById('process-chains-container');
+    const container = document.getElementById('processes-container') || document.getElementById('process-chains-container');
     if (!container || !state.currentProcessData) return;
 
     const data = state.currentProcessData;
@@ -1118,10 +1673,10 @@
 
     if (processes.length === 0) {
       container.innerHTML = `
-        <div class="empty-state-box" style="padding:32px;text-align:center;background:var(--bg-secondary);border:1px dashed var(--border-color);border-radius:8px;">
-          <div style="font-size:28px;margin-bottom:8px;">⚙️</div>
-          <p style="font-size:13px;color:var(--text-secondary);margin-bottom:4px;">No process workflows matched the active filter.</p>
-          <span style="font-size:11px;color:var(--text-muted);">Process flows are deterministically synthesized from API routes, controllers, and service entry points.</span>
+        <div class="p-8 text-center bg-white border border-dashed border-[#E2E8F0] rounded-xl">
+          <div class="text-2xl mb-2">⚙️</div>
+          <p class="font-bold text-sm text-[#0F172A] mb-1">No process workflows matched the active filter.</p>
+          <span class="text-xs text-[#64748B]">Process flows are deterministically synthesized from API routes, controllers, and service entry points.</span>
         </div>
       `;
       return;
@@ -1135,65 +1690,64 @@
       const transitions = allEdges.filter(e => e.process_id === proc.id);
 
       const card = document.createElement('div');
-      card.className = 'process-workflow-card';
-      card.style = 'background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-bottom:20px;';
+      card.className = 'bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs mb-4';
 
       card.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--border-subtle);padding-bottom:12px;margin-bottom:16px;">
+        <div class="flex items-center justify-between pb-3 border-b border-[#E2E8F0] mb-4">
           <div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-size:16px;">⚡</span>
-              <h3 style="font-size:15px;font-weight:700;color:var(--text-primary);margin:0;">${escapeHtml(proc.name)}</h3>
-              <span class="badge" style="background:rgba(192,132,252,0.15);color:#c084fc;font-size:11px;padding:2px 8px;border-radius:4px;">${escapeHtml(proc.type || 'WORKFLOW')}</span>
+            <div class="flex items-center gap-2">
+              <span class="text-base">⚡</span>
+              <h3 class="text-sm font-bold text-[#0F172A]">${escapeHtml(proc.name)}</h3>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#FAF5FF] text-[#6D28D9] border border-[#DDD6FE]">${escapeHtml(proc.type || 'WORKFLOW')}</span>
             </div>
-            <p style="font-size:12px;color:var(--text-secondary);margin:4px 0 0 0;">${escapeHtml(proc.description || 'Statically inferred deterministic execution flow')}</p>
+            <p class="text-xs text-[#64748B] mt-0.5">${escapeHtml(proc.description || 'Statically inferred deterministic execution flow')}</p>
           </div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <span class="badge-evidence" style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);font-size:11px;padding:3px 8px;border-radius:4px;">
-              Evidence: STATICALLY INFERRED
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]">
+              STATICALLY INFERRED
             </span>
-            <span style="font-size:11px;color:var(--text-muted);">${steps.length} Steps</span>
+            <span class="text-xs text-[#64748B]">${steps.length} Steps</span>
           </div>
         </div>
 
-        <div class="workflow-steps-pipeline" style="display:flex;flex-direction:column;gap:0;">
+        <div class="flex flex-col gap-0">
           ${steps.map((step, sIdx) => {
             const outTrans = transitions.find(t => t.source === step.id);
             const isEntry = sIdx === 0;
             const isTerminal = sIdx === steps.length - 1;
-            const roleBadge = isEntry ? '<span class="badge" style="background:rgba(56,189,248,0.2);color:#38bdf8;font-size:10px;padding:2px 6px;">ENTRY POINT</span>' : (isTerminal ? '<span class="badge" style="background:rgba(52,211,153,0.2);color:#34d399;font-size:10px;padding:2px 6px;">TERMINAL</span>' : '');
+            const roleBadge = isEntry ? '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">ENTRY POINT</span>' : (isTerminal ? '<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#D1FAE5] text-[#047857] border border-[#A7F3D0]">TERMINAL</span>' : '');
 
             return `
-              <div class="wf-step-container" style="display:flex;gap:16px;align-items:stretch;">
-                <div style="display:flex;flex-direction:column;align-items:center;width:32px;">
-                  <div style="width:28px;height:28px;border-radius:50%;background:#7c3aed;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;box-shadow:0 0 8px rgba(124,58,237,0.4);flex-shrink:0;">
+              <div class="flex gap-4 items-stretch">
+                <div class="flex flex-col items-center w-8 shrink-0">
+                  <div class="w-7 h-7 rounded-full bg-[#0071e3] text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
                     ${step.order}
                   </div>
                   ${!isTerminal ? `
-                    <div style="flex:1;width:2px;background:linear-gradient(to bottom, #7c3aed, rgba(124,58,237,0.2));margin:4px 0;"></div>
+                    <div class="flex-1 w-0.5 bg-[#CBD5E1] my-1"></div>
                   ` : ''}
                 </div>
 
-                <div style="flex:1;background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:12px;margin-bottom:12px;">
-                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <div style="display:flex;align-items:center;gap:8px;">
-                      <strong style="font-size:13px;color:var(--text-primary);">${escapeHtml(step.name)}</strong>
-                      <span class="type-pill type-${step.type}" style="font-size:10px;padding:1px 6px;">${step.type}</span>
+                <div class="flex-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-3.5 mb-3">
+                  <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                      <strong class="text-xs font-bold text-[#0F172A]">${escapeHtml(step.name)}</strong>
+                      <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-[#EEF2FF] text-[#4F46E5] border border-[#C7D2FE]">${step.type}</span>
                       ${roleBadge}
                     </div>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                      <span style="font-size:11px;color:var(--text-muted);">Confidence: <strong>${Math.round((step.confidence || 0.85)*100)}%</strong></span>
-                      <button class="secondary-btn btn-inspect-step-graph" data-cid="${step.component_id}" style="font-size:10px;padding:2px 6px;border:1px solid var(--border-color);cursor:pointer;">Focus Graph</button>
+                    <div class="flex items-center gap-2">
+                      <span class="text-[11px] text-[#64748B]">Confidence: <strong class="text-[#0F172A]">${Math.round((step.confidence || 0.85)*100)}%</strong></span>
+                      <button class="btn-inspect-step-graph px-2 py-0.5 rounded text-[10px] font-medium bg-white hover:bg-[#F1F5F9] border border-[#E2E8F0] text-[#0F172A] transition-colors" data-cid="${step.component_id}">Focus Graph</button>
                     </div>
                   </div>
-                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;color:var(--text-secondary);background:var(--bg-secondary);padding:6px 10px;border-radius:4px;">
-                    <div>Component: <code class="text-mono" style="color:#c084fc;">${escapeHtml(step.component_name || step.name)}</code></div>
-                    <div>Source Location: <code class="text-mono text-muted">${escapeHtml(step.location || 'source')}</code></div>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-white p-2 rounded-lg border border-[#E2E8F0]">
+                    <div><span class="text-[#64748B]">Component:</span> <code class="font-mono text-[#4F46E5]">${escapeHtml(step.component_name || step.name)}</code></div>
+                    <div><span class="text-[#64748B]">Location:</span> <code class="font-mono text-[#64748B]">${escapeHtml(step.location || 'source')}</code></div>
                   </div>
                   ${outTrans ? `
-                    <div style="margin-top:6px;font-size:11px;color:#06b6d4;display:flex;align-items:center;gap:6px;">
+                    <div class="mt-2 text-xs text-[#0284C7] flex items-center gap-1.5 font-medium">
                       <span>↳ ${escapeHtml(outTrans.relationship_type || 'CALLS')} transition</span>
-                      <span style="color:var(--text-muted);font-size:10px;">• ${escapeHtml(outTrans.condition || 'Deterministic call')}</span>
+                      <span class="text-[#64748B] text-[11px] font-normal">• ${escapeHtml(outTrans.condition || 'Deterministic call')}</span>
                     </div>
                   ` : ''}
                 </div>
@@ -1425,30 +1979,36 @@
 
     if (inboundList) {
       inboundList.innerHTML = incoming.length > 0 ? incoming.map(e => `
-        <div class="dep-item-box" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;margin-bottom:8px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <strong style="color:var(--text-primary);font-size:12px;">⬅️ ${escapeHtml(e.sourceNode?.name || e.source)}</strong>
-            <span class="badge" style="font-size:10px;background:rgba(239,68,68,0.12);color:#ef4444;">${e.type}</span>
+        <div class="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-between mb-2">
+          <div>
+            <strong class="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px] text-[#4F46E5]">arrow_back</span>
+              ${escapeHtml(e.sourceNode?.name || e.source)}
+            </strong>
+            <div class="text-[11px] text-[#64748B] mt-1">
+              Evidence: <span class="font-mono text-[#0F172A]">${escapeHtml(e.evidence?.file || 'AST Call')}</span>
+            </div>
           </div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
-            Evidence: <span class="text-mono">${escapeHtml(e.evidence?.file || 'AST Call')}</span>
-          </div>
+          <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#EEF2FF] text-[#4F46E5] border border-[#C7D2FE]">${e.type}</span>
         </div>
-      `).join('') : '<div class="empty-list" style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">No direct inbound callers in snapshot.</div>';
+      `).join('') : '<div class="p-6 text-center text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl border border-dashed border-[#E2E8F0]">No direct inbound callers in snapshot.</div>';
     }
 
     if (outboundList) {
       outboundList.innerHTML = outgoing.length > 0 ? outgoing.map(e => `
-        <div class="dep-item-box" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;margin-bottom:8px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <strong style="color:var(--text-primary);font-size:12px;">➡️ ${escapeHtml(e.targetNode?.name || e.target)}</strong>
-            <span class="badge" style="font-size:10px;background:rgba(56,189,248,0.12);color:#38bdf8;">${e.type}</span>
+        <div class="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-between mb-2">
+          <div>
+            <strong class="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px] text-[#0284C7]">arrow_forward</span>
+              ${escapeHtml(e.targetNode?.name || e.target)}
+            </strong>
+            <div class="text-[11px] text-[#64748B] mt-1">
+              Evidence: <span class="font-mono text-[#0F172A]">${escapeHtml(e.evidence?.file || 'AST Call')}</span>
+            </div>
           </div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
-            Evidence: <span class="text-mono">${escapeHtml(e.evidence?.file || 'AST Call')}</span>
-          </div>
+          <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#F0F9FF] text-[#0284C7] border border-[#BAE6FD]">${e.type}</span>
         </div>
-      `).join('') : '<div class="empty-list" style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">No direct outbound callees in snapshot.</div>';
+      `).join('') : '<div class="p-6 text-center text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl border border-dashed border-[#E2E8F0]">No direct outbound callees in snapshot.</div>';
     }
 
     // Transitive Dependencies (2 hops)
@@ -1488,65 +2048,263 @@
     }
   }
 
-  // --- 10. Tests View ---
+  // --- 10. Tests & Verification View (Phase 6 Test Impact Intelligence) ---
+  let currentTestImpactResult = null;
+
   async function loadTestsView() {
+    if (!state.currentRepoId) return;
+
+    // 1. Wire up Filter Tabs
+    const tabs = document.querySelectorAll('.ti-tab-btn');
+    tabs.forEach(t => {
+      t.onclick = () => {
+        tabs.forEach(b => {
+          b.classList.remove('active', 'bg-[#F1F5F9]', 'text-[#0F172A]');
+          b.classList.add('text-[#64748B]');
+        });
+        t.classList.add('active', 'bg-[#F1F5F9]', 'text-[#0F172A]');
+        t.classList.remove('text-[#64748B]');
+
+        const targetTab = t.dataset.tiTab;
+        const panelAff = document.getElementById('ti-tab-panel-affected');
+        const panelUnk = document.getElementById('ti-tab-panel-unknown');
+        const panelUnaff = document.getElementById('ti-tab-panel-unaffected');
+        const panelCat = document.getElementById('ti-tab-panel-catalog');
+
+        if (panelAff) panelAff.style.display = targetTab === 'affected' ? 'block' : 'none';
+        if (panelUnk) panelUnk.style.display = targetTab === 'unknown' ? 'block' : 'none';
+        if (panelUnaff) panelUnaff.style.display = targetTab === 'unaffected' ? 'block' : 'none';
+        if (panelCat) panelCat.style.display = targetTab === 'catalog' ? 'block' : 'none';
+      };
+    });
+
+    // 2. Wire up Run Test Impact Button
+    const runBtn = document.getElementById('btn-run-test-impact');
+    if (runBtn) {
+      runBtn.onclick = () => executeTestImpactAnalysis();
+    }
+
+    // 3. Load catalog and execute test impact
+    await loadTestCatalog();
+    await executeTestImpactAnalysis();
+  }
+
+  async function executeTestImpactAnalysis() {
+    if (!state.currentRepoId) return;
+    const banner = document.getElementById('ti-status-banner');
+    if (banner) banner.textContent = 'Calculating test impact paths...';
+
+    const affectedList = document.getElementById('ti-affected-tests-list');
+    const unknownList = document.getElementById('ti-unknown-coverage-list');
+    const unaffectedList = document.getElementById('ti-unaffected-tests-list');
+
+    try {
+      const payload = {
+        target_snapshot_id: state.currentSnapshotId || (state.snapshots[0] ? state.snapshots[0].id : null),
+        base_snapshot_id: state.diffSnapshotId || (state.snapshots[1] ? state.snapshots[1].id : null),
+        max_depth: 6,
+        include_indirect: true,
+        include_unaffected: true,
+      };
+
+      if (!payload.target_snapshot_id) {
+        if (banner) banner.textContent = 'No snapshots available for analysis.';
+        return;
+      }
+
+      const res = await fetch(`/repositories/${state.currentRepoId}/test-impact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        throw new Error('Test impact computation failed');
+      }
+
+      const data = await res.json();
+      currentTestImpactResult = data;
+      const s = data.summary || {};
+
+      // Update metrics
+      const elAff = document.getElementById('ti-metric-affected');
+      const elDir = document.getElementById('ti-metric-direct');
+      const elInd = document.getElementById('ti-metric-indirect');
+      const elUna = document.getElementById('ti-metric-unaffected');
+      const elUnk = document.getElementById('ti-metric-unknown');
+
+      if (elAff) elAff.textContent = s.potentially_affected_count ?? 0;
+      if (elDir) elDir.textContent = s.directly_affected_count ?? 0;
+      if (elInd) elInd.textContent = s.indirectly_affected_count ?? 0;
+      if (elUna) elUna.textContent = s.unaffected_count ?? 0;
+      if (elUnk) elUnk.textContent = s.unknown_coverage_count ?? 0;
+
+      // Update tab counts
+      const tabAff = document.getElementById('ti-tab-count-affected');
+      const tabUnk = document.getElementById('ti-tab-count-unknown');
+      const tabUna = document.getElementById('ti-tab-count-unaffected');
+
+      if (tabAff) tabAff.textContent = s.potentially_affected_count ?? 0;
+      if (tabUnk) tabUnk.textContent = s.unknown_coverage_count ?? 0;
+      if (tabUna) tabUna.textContent = s.unaffected_count ?? 0;
+
+      if (banner) banner.textContent = `Completed in ${data.execution_time_ms} ms · ${s.potentially_affected_count} tests potentially affected`;
+
+      // Render Affected Tests List
+      if (affectedList) {
+        const tests = data.affected_tests || [];
+        if (tests.length === 0) {
+          affectedList.innerHTML = `
+            <div class="p-8 text-center bg-white border border-[#E2E8F0] rounded-xl text-xs text-[#059669]">
+              <span class="material-symbols-outlined text-2xl text-[#10B981] mb-1">check_circle</span>
+              <div class="font-bold text-[#0F172A]">All Mapped Tests Safe</div>
+              <p class="text-[#64748B] mt-0.5">No existing tests are affected by changes in this snapshot comparison.</p>
+            </div>
+          `;
+        } else {
+          affectedList.innerHTML = tests.map(t => {
+            const isDirect = t.classification === 'DIRECTLY_AFFECTED';
+            const badgeClass = isDirect
+              ? 'bg-[#FFE4E6] text-[#BE123C] border-[#FDA4AF]'
+              : 'bg-[#EDE9FE] text-[#6D28D9] border-[#DDD6FE]';
+            const badgeLabel = isDirect ? 'Directly Affected' : 'Indirectly Affected';
+
+            // Path arrows
+            const pathHtml = (t.impact_path && t.impact_path.length > 1) ? `
+              <div class="mt-2.5 p-2.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg overflow-x-auto">
+                <div class="text-[10px] uppercase font-bold text-[#64748B] mb-1.5 tracking-wider">Causal Propagation Path:</div>
+                <div class="flex items-center gap-1.5 text-[11px] font-mono text-[#0F172A] whitespace-nowrap">
+                  ${t.impact_path.map((node, i) => `
+                    <span class="px-2 py-0.5 bg-white border border-[#E2E8F0] rounded text-[#0F172A] font-semibold">${escapeHtml(node)}</span>
+                    ${i < t.impact_path.length - 1 ? `
+                      <span class="text-[#94A3B8] font-bold">→</span>
+                      <span class="px-1.5 py-0.5 rounded text-[10px] bg-[#EEF2FF] text-[#4F46E5] font-sans font-bold border border-[#C7D2FE]">${escapeHtml(t.relationships[i] || 'CALLS')}</span>
+                      <span class="text-[#94A3B8] font-bold">→</span>
+                    ` : ''}
+                  `).join('')}
+                </div>
+              </div>
+            ` : '';
+
+            return `
+              <div class="p-4 bg-white border border-[#E2E8F0] rounded-xl shadow-2xs space-y-2 hover:border-[#CBD5E1] transition-colors">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="space-y-0.5">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="font-bold text-xs text-[#0F172A] flex items-center gap-1">
+                        <span>🧪</span> ${escapeHtml(t.test_name)}
+                      </span>
+                      <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeClass}">${badgeLabel}</span>
+                      <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">${escapeHtml(t.evidence_status)}</span>
+                      <span class="text-[10px] text-[#64748B] font-mono">Depth: ${t.depth} hop${t.depth > 1 ? 's' : ''}</span>
+                    </div>
+                    <div class="text-[11px] font-mono text-[#64748B]">${escapeHtml(t.location)}</div>
+                  </div>
+                  <span class="text-[11px] text-[#059669] font-semibold bg-[#ECFDF5] px-2 py-0.5 rounded border border-[#A7F3D0] shrink-0">
+                    Recommended Execution
+                  </span>
+                </div>
+                <p class="text-xs text-[#475569] leading-relaxed">
+                  <strong class="text-[#0F172A]">Why affected:</strong> ${escapeHtml(t.reason)}
+                </p>
+                ${pathHtml}
+              </div>
+            `;
+          }).join('');
+        }
+      }
+
+      // Render Unknown Coverage List
+      if (unknownList) {
+        const unks = data.unknown_coverage || [];
+        if (unks.length === 0) {
+          unknownList.innerHTML = `
+            <div class="p-8 text-center bg-white border border-[#E2E8F0] rounded-xl text-xs text-[#059669]">
+              <span class="material-symbols-outlined text-2xl text-[#10B981] mb-1">verified</span>
+              <div class="font-bold text-[#0F172A]">100% Changed Entities Have Test Coverage</div>
+              <p class="text-[#64748B] mt-0.5">Every modified, added, or removed component has corresponding tests mapped in the digital twin.</p>
+            </div>
+          `;
+        } else {
+          unknownList.innerHTML = unks.map(u => `
+            <div class="p-4 bg-[#FFFBEB] border border-[#FDE68A] rounded-xl shadow-2xs space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-xs text-[#92400E] flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[16px] text-[#D97706]">warning</span>
+                  ${escapeHtml(u.name)} (${escapeHtml(u.artifact_type)})
+                </span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A]">${escapeHtml(u.change_type)}</span>
+              </div>
+              <div class="text-[11px] font-mono text-[#B45309]">${escapeHtml(u.location)}</div>
+              <p class="text-xs text-[#78350F] mt-1">${escapeHtml(u.reason)}</p>
+            </div>
+          `).join('');
+        }
+      }
+
+      // Render Unaffected Tests List
+      if (unaffectedList) {
+        const un = data.unaffected_tests || [];
+        if (un.length === 0) {
+          unaffectedList.innerHTML = '<div class="p-6 text-center text-xs text-[#64748B]">No unaffected tests in this snapshot.</div>';
+        } else {
+          unaffectedList.innerHTML = un.map(t => `
+            <div class="p-3 bg-white border border-[#E2E8F0] rounded-lg flex items-center justify-between text-xs">
+              <div class="flex items-center gap-2">
+                <span class="text-[#10B981]">✓</span>
+                <strong class="font-mono text-[#0F172A]">${escapeHtml(t.test_name)}</strong>
+                <span class="text-[11px] text-[#64748B] font-mono">${escapeHtml(t.location)}</span>
+              </div>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">Unaffected</span>
+            </div>
+          `).join('');
+        }
+      }
+
+    } catch (err) {
+      if (banner) banner.textContent = `Analysis error: ${err.message}`;
+    }
+  }
+
+  async function loadTestCatalog() {
     if (!state.currentRepoId) return;
     const tbody = document.getElementById('tests-table-body');
     if (!tbody) return;
 
-    tbody.innerHTML = '<tr><td colspan="6" class="td-loading">Extracting test suites, assertions, and verified component mappings...</td></tr>';
-
     try {
-      let url = `/repositories/${state.currentRepoId}/tests-map`;
+      let url = `/repositories/${state.currentRepoId}/tests-catalog`;
       if (state.currentSnapshotId) url += `?snapshot_id=${state.currentSnapshotId}`;
 
       const res = await fetch(url);
-      if (!res.ok) throw new Error('Failed to load test mappings');
+      if (!res.ok) return;
       const data = await res.json();
       const tests = data.tests || [];
 
-      // Update stat badges
-      const elTotal = document.getElementById('tstat-total');
-      const elMapped = document.getElementById('tstat-mapped');
-      const elUnmapped = document.getElementById('tstat-unmapped');
-      const elComponents = document.getElementById('tstat-components');
+      const countEl = document.getElementById('ti-tab-count-catalog');
+      if (countEl) countEl.textContent = tests.length;
 
-      if (elTotal) elTotal.textContent = data.total_tests ?? tests.length;
-      if (elMapped) elMapped.textContent = data.verified_mappings_count ?? 0;
-      if (elUnmapped) elUnmapped.textContent = data.unmapped_count ?? 0;
-      if (elComponents) elComponents.textContent = data.tested_components_count ?? 0;
-
-      tbody.innerHTML = '';
       if (tests.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="td-empty">No test cases or test specifications identified in snapshot.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="p-6 text-center text-[#64748B]">No test specifications identified in snapshot.</td></tr>';
         return;
       }
 
-      tests.forEach(t => {
-        const tr = document.createElement('tr');
-        const hasTargets = t.targets && t.targets.length > 0;
-        const targetsHtml = hasTargets
-          ? t.targets.map(tg => `<span class="target-tag" style="background:rgba(56,189,248,0.12);color:#38bdf8;border:1px solid rgba(56,189,248,0.25);padding:2px 6px;border-radius:4px;font-size:11px;margin-right:4px;">${escapeHtml(tg)}</span>`).join('')
-          : '<span style="color:var(--text-muted);font-style:italic;font-size:11px;">Unmapped test artifact</span>';
-
-        const isAffected = t.impact_status === 'AFFECTED';
-        const impactBadge = isAffected
-          ? '<span class="badge" style="background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);font-size:10px;padding:2px 6px;">AFFECTED BY CHANGE</span>'
-          : '<span class="badge" style="background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);font-size:10px;padding:2px 6px;">HEALTHY / UNAFFECTED</span>';
-
-        tr.innerHTML = `
-          <td><strong style="color:var(--text-primary);">${escapeHtml(t.name)}</strong></td>
-          <td><span class="type-pill type-TEST_CASE">${escapeHtml(t.type || 'TEST_CASE')}</span></td>
-          <td class="text-mono" style="font-size:11px;">${escapeHtml(t.location || '')}</td>
-          <td><span class="badge-evidence">${escapeHtml(t.evidence_status || (hasTargets ? 'STATIC_MAPPING' : 'UNMAPPED'))}</span></td>
-          <td>${targetsHtml}</td>
-          <td>${impactBadge}</td>
+      tbody.innerHTML = tests.map(t => {
+        const tgHtml = (t.targets && t.targets.length > 0)
+          ? t.targets.map(tg => `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-[#F0F9FF] text-[#0284C7] border border-[#BAE6FD] mr-1">${escapeHtml(tg.name)} (${escapeHtml(tg.relationship)})</span>`).join(' ')
+          : '<span class="text-[#64748B] italic">No target component linked</span>';
+        return `
+          <tr class="hover:bg-[#F8FAFC] transition-colors">
+            <td class="p-3.5 font-bold text-[#0F172A] flex items-center gap-1.5">
+              <span>🧪</span> ${escapeHtml(t.name)}
+            </td>
+            <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A]">${escapeHtml(t.artifact_type)}</span></td>
+            <td class="p-3.5 font-mono text-[11px] text-[#475569]">${escapeHtml(t.location)}</td>
+            <td class="p-3.5">${tgHtml}</td>
+          </tr>
         `;
-        tbody.appendChild(tr);
-      });
-
+      }).join('');
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="6" class="td-empty">Error loading tests: ${escapeHtml(err.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-[#64748B]">Error loading test catalog: ${escapeHtml(err.message)}</td></tr>`;
     }
   }
 
@@ -1554,7 +2312,7 @@
   let currentImpactAnalysisResult = null;
 
   function loadChangesView() {
-    const diffBtn = document.getElementById('btn-run-diff-action');
+    const diffBtn = document.getElementById('btn-compute-diff') || document.getElementById('btn-run-diff-action');
     if (diffBtn) {
       diffBtn.onclick = () => executeSnapshotDiff();
     }
@@ -1926,28 +2684,31 @@
       if (banner) {
         banner.style.display = 'flex';
         banner.innerHTML = `
-          <div class="diff-chip diff-add">+${added} Added</div>
-          <div class="diff-chip diff-del">-${removed} Removed</div>
-          <div class="diff-chip diff-mod">~${modified} Modified</div>
-          <div class="diff-chip diff-unchanged">${summary.total_changes || 0} Total Changed Artifacts</div>
+          <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">+${added} Added</span>
+          <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-[#FFF1F2] text-[#BE123C] border border-[#FECDD3]">-${removed} Removed</span>
+          <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]">~${modified} Modified</span>
+          <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">${summary.total_changes || 0} Total Changed Artifacts</span>
         `;
       }
 
       tbody.innerHTML = '';
       if (changes.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="td-empty">Zero structural differences detected between the selected snapshots.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-[#64748B]">Zero structural differences detected between the selected snapshots.</td></tr>';
         return;
       }
 
       changes.forEach(n => {
         const tr = document.createElement('tr');
+        tr.className = 'hover:bg-[#F8FAFC] transition-colors';
         const cType = n.change_type || 'MODIFIED';
+        const tagClass = cType === 'ADDED' ? 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]' : (cType === 'REMOVED' ? 'bg-[#FFF1F2] text-[#BE123C] border-[#FECDD3]' : 'bg-[#FFFBEB] text-[#B45309] border-[#FDE68A]');
+
         tr.innerHTML = `
-          <td><span class="diff-tag diff-${cType.toLowerCase()}">${cType}</span></td>
-          <td><strong>${escapeHtml(n.artifact_name || n.artifact_id)}</strong></td>
-          <td><span class="type-pill type-${n.artifact_type}">${n.artifact_type}</span></td>
-          <td class="text-mono">${escapeHtml(n.file_path || '')}${n.line_number ? `:${n.line_number}` : ''}</td>
-          <td>${escapeHtml(n.details || (cType === 'ADDED' ? 'New artifact discovered in target snapshot.' : (cType === 'REMOVED' ? 'Artifact absent in target snapshot.' : 'Signature or logic modified.')))}</td>
+          <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${tagClass}">${cType}</span></td>
+          <td class="p-3.5 font-bold text-xs text-[#0F172A]">${escapeHtml(n.artifact_name || n.artifact_id)}</td>
+          <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-[#EEF2FF] text-[#4F46E5] border border-[#C7D2FE]">${n.artifact_type}</span></td>
+          <td class="p-3.5 font-mono text-xs text-[#64748B]">${escapeHtml(n.file_path || '')}${n.line_number ? `:${n.line_number}` : ''}</td>
+          <td class="p-3.5 text-xs text-[#475569]">${escapeHtml(n.details || (cType === 'ADDED' ? 'New artifact discovered in target snapshot.' : (cType === 'REMOVED' ? 'Artifact absent in target snapshot.' : 'Signature or logic modified.')))}</td>
         `;
         tbody.appendChild(tr);
       });
@@ -2544,7 +3305,7 @@
         ctx.lineWidth = 1.5;
         ctx.setLineDash([2, 4]);
       } else {
-        ctx.strokeStyle = isConnected ? 'rgba(148, 163, 184, 0.45)' : 'rgba(148, 163, 184, 0.08)';
+        ctx.strokeStyle = isConnected ? 'rgba(100, 116, 139, 0.65)' : 'rgba(203, 213, 225, 0.25)';
         ctx.lineWidth = isConnected ? 1.4 : 0.8;
         ctx.setLineDash([]);
       }
@@ -2553,7 +3314,7 @@
       ctx.setLineDash([]);
 
       if (isConnected) {
-        drawArrow(ctx, a.x, a.y, b.x, b.y, b.radius + 4, e.is_drift ? '#ef4444' : 'rgba(148, 163, 184, 0.6)');
+        drawArrow(ctx, a.x, a.y, b.x, b.y, b.radius + 4, e.is_drift ? '#ef4444' : 'rgba(100, 116, 139, 0.8)');
       }
     });
 
@@ -2570,10 +3331,10 @@
       if (isSelected) {
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.radius + 6, 0, 2 * Math.PI);
-        ctx.fillStyle = 'rgba(6, 182, 212, 0.25)';
+        ctx.fillStyle = 'rgba(0, 113, 227, 0.18)';
         ctx.fill();
         ctx.lineWidth = 2;
-        ctx.strokeStyle = '#06b6d4';
+        ctx.strokeStyle = '#0071e3';
         ctx.stroke();
       } else if (isImpacted) {
         ctx.beginPath();
@@ -2592,7 +3353,7 @@
       ctx.fillStyle = color;
       ctx.fill();
       ctx.lineWidth = 1.5;
-      ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.2)';
+      ctx.strokeStyle = isSelected ? '#0071e3' : 'rgba(15, 23, 42, 0.15)';
       ctx.stroke();
 
       // Diff Status Indicators
@@ -2606,8 +3367,8 @@
 
       // Node Label
       if (!isDimmed || state.transform.k > 1.2) {
-        ctx.fillStyle = isSelected ? '#ffffff' : '#cbd5e1';
-        ctx.font = `${Math.max(10, 11 / state.transform.k)}px 'Plus Jakarta Sans', sans-serif`;
+        ctx.fillStyle = isSelected ? '#0071e3' : '#0f172a';
+        ctx.font = `${isSelected ? '600 ' : '500 '}${Math.max(10, 11 / state.transform.k)}px 'Inter', sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText(n.name, n.x, n.y + n.radius + 12);
       }
@@ -3068,10 +3829,10 @@
 
   async function loadRuntimeView() {
     if (!state.currentRepoId) return;
-    const tbody = document.getElementById('runtime-events-body');
+    const tbody = document.getElementById('runtime-table-body') || document.getElementById('runtime-events-body');
     if (!tbody) return;
 
-    tbody.innerHTML = '<tr><td colspan="7" class="td-loading">Querying runtime evidence repository...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-[#64748B]">Querying runtime evidence repository...</td></tr>';
 
     try {
       let queryParams = new URLSearchParams();
@@ -3109,14 +3870,13 @@
       if (events.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="7" class="td-empty" style="padding:32px;text-align:center;">
-              <div style="font-size:28px;margin-bottom:8px;">📡</div>
-              <p style="font-weight:600;color:var(--text-primary);margin-bottom:4px;">No runtime evidence recorded yet</p>
-              <p style="font-size:12px;color:var(--text-secondary);max-width:540px;margin:0 auto 12px auto;">
-                Runtime evidence connects observed production/staging telemetry (logs, errors, traces) with structural Digital Twin entities.
-                Ingest structured JSON or JSONL events via the CLI or button above. Sensitive keys are automatically redacted.
+            <td colspan="7" class="p-8 text-center text-[#64748B]">
+              <div class="text-2xl mb-2">📡</div>
+              <p class="font-bold text-sm text-[#0F172A] mb-1">No runtime evidence recorded yet</p>
+              <p class="text-xs text-[#64748B] max-w-md mx-auto mb-4">
+                Runtime evidence connects observed telemetry (logs, errors, traces) with structural Digital Twin entities.
               </p>
-              <button class="primary-btn" onclick="document.getElementById('modal-ingest-runtime').style.display='flex';" style="font-size:12px;padding:6px 14px;">+ Ingest Runtime Events</button>
+              <button class="px-3.5 py-1.5 rounded-lg bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs" onclick="window.TwinApp.openIngestModal();">+ Ingest Telemetry</button>
             </td>
           </tr>
         `;
@@ -3124,26 +3884,30 @@
       }
 
       tbody.innerHTML = events.map(evt => {
-        const sevColor = evt.severity === 'CRITICAL' ? '#ef4444' : (evt.severity === 'ERROR' ? '#f87171' : (evt.severity === 'WARN' ? '#fbbf24' : '#38bdf8'));
+        const isCrit = evt.severity === 'CRITICAL' || evt.severity === 'ERROR';
+        const sevBadge = isCrit
+          ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FFF1F2] text-[#BE123C] border border-[#FECDD3]">${escapeHtml(evt.severity || 'ERROR')}</span>`
+          : `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#F0F9FF] text-[#0369A1] border border-[#BAE6FD]">${escapeHtml(evt.severity || 'INFO')}</span>`;
+
         const hasCorrelation = !!evt.component_artifact_id;
         const corrBadge = hasCorrelation ?
-          `<span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981;font-size:10px;padding:2px 6px;">
+          `<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
             ✓ ${escapeHtml(evt.correlated_artifact_name || evt.component_artifact_id.slice(0, 8))} (${Math.round((evt.confidence || 0.85)*100)}%)
           </span>` :
-          `<span class="badge" style="background:rgba(156,163,175,0.15);color:var(--text-muted);font-size:10px;padding:2px 6px;">Uncorrelated</span>`;
+          `<span class="px-2 py-0.5 rounded text-[10px] bg-[#F1F5F9] text-[#64748B] border border-[#E2E8F0]">Uncorrelated</span>`;
 
         const timeStr = evt.timestamp ? new Date(evt.timestamp).toISOString().replace('T', ' ').slice(0, 19) : '-';
         const msgStr = evt.message || (evt.attributes ? JSON.stringify(evt.attributes) : '-');
 
         return `
-          <tr>
-            <td class="text-mono" style="font-size:11px;white-space:nowrap;color:var(--text-muted);">${escapeHtml(timeStr)}</td>
-            <td><span class="badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;font-size:11px;padding:2px 6px;">${escapeHtml(evt.event_type)}</span></td>
-            <td><span class="badge" style="background:${sevColor}22;color:${sevColor};font-size:11px;padding:2px 6px;font-weight:600;">${escapeHtml(evt.severity)}</span></td>
-            <td><strong>${escapeHtml(evt.service_name || '-')}</strong> <span style="font-size:11px;color:var(--text-muted);">(${escapeHtml(evt.environment || 'prod')})</span></td>
-            <td>${corrBadge}</td>
-            <td class="text-mono" style="font-size:11px;color:#a78bfa;">${escapeHtml(evt.trace_id || evt.span_id || '-')}</td>
-            <td style="max-width:320px;word-break:break-all;font-size:12px;color:var(--text-secondary);">${escapeHtml(msgStr)}</td>
+          <tr class="hover:bg-[#F8FAFC] transition-colors">
+            <td class="p-3.5">${sevBadge}</td>
+            <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#EEF2FF] text-[#4F46E5] border border-[#C7D2FE]">${escapeHtml(evt.event_type)}</span></td>
+            <td class="p-3.5 font-mono text-xs text-[#64748B] whitespace-nowrap">${escapeHtml(timeStr)}</td>
+            <td class="p-3.5 font-bold text-xs text-[#0F172A]">${escapeHtml(evt.service_name || '-')} <span class="font-normal text-[#64748B]">(${escapeHtml(evt.environment || 'prod')})</span></td>
+            <td class="p-3.5">${corrBadge}</td>
+            <td class="p-3.5 font-mono text-xs text-[#7C3AED]">${escapeHtml(evt.trace_id || evt.span_id || '-')}</td>
+            <td class="p-3.5 text-xs text-[#475569] max-w-xs truncate" title="${escapeHtml(msgStr)}">${escapeHtml(msgStr)}</td>
           </tr>
         `;
       }).join('');
@@ -3185,25 +3949,28 @@
       }
 
       tbody.innerHTML = incidents.map(inc => {
-        const sevColor = inc.severity === 'critical' ? '#ef4444' : (inc.severity === 'high' ? '#f97316' : (inc.severity === 'medium' ? '#fbbf24' : '#38bdf8'));
+        const isCrit = inc.severity === 'critical' || inc.severity === 'high';
+        const sevBadge = isCrit
+          ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FFF1F2] text-[#BE123C] border border-[#FECDD3]">${escapeHtml(inc.severity.toUpperCase())}</span>`
+          : `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]">${escapeHtml(inc.severity.toUpperCase())}</span>`;
         const timeStr = inc.detected_at ? new Date(inc.detected_at).toISOString().replace('T', ' ').slice(0, 19) : '-';
         const evCount = inc.evidence_ids ? inc.evidence_ids.length : 0;
 
         return `
-          <tr>
-            <td><span class="badge" style="background:${sevColor}22;color:${sevColor};font-size:11px;font-weight:700;padding:2px 8px;">${escapeHtml(inc.severity.toUpperCase())}</span></td>
-            <td>
-              <strong style="font-size:13px;color:var(--text-primary);">${escapeHtml(inc.title)}</strong>
-              ${inc.description ? `<p style="font-size:11px;color:var(--text-secondary);margin:2px 0 0 0;">${escapeHtml(inc.description)}</p>` : ''}
-              <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">Env: ${escapeHtml(inc.environment || 'production')}</div>
+          <tr class="hover:bg-[#F8FAFC] transition-colors">
+            <td class="p-3.5">${sevBadge}</td>
+            <td class="p-3.5">
+              <div class="font-bold text-xs text-[#0F172A]">${escapeHtml(inc.title)}</div>
+              ${inc.description ? `<p class="text-[11px] text-[#64748B] mt-0.5 leading-snug">${escapeHtml(inc.description)}</p>` : ''}
+              <div class="text-[10px] text-[#94A3B8] font-mono mt-1">Env: ${escapeHtml(inc.environment || 'production')}</div>
             </td>
-            <td><span class="badge" style="background:var(--bg-surface);color:var(--text-secondary);font-size:10px;padding:2px 6px;">${escapeHtml(inc.status.toUpperCase())}</span></td>
-            <td class="text-mono" style="font-size:11px;color:var(--text-muted);">${escapeHtml(timeStr)}</td>
-            <td>${inc.affected_component_name ? `<code style="font-size:11px;color:#c084fc;">${escapeHtml(inc.affected_component_name)}</code>` : '<span style="color:var(--text-muted);font-size:11px;">Unassigned</span>'}</td>
-            <td><span class="badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;font-size:10px;padding:2px 6px;">${evCount} events</span></td>
-            <td>
-              <button class="primary-btn btn-investigate-incident" data-iid="${inc.id}" style="font-size:11px;padding:4px 10px;background:#7c3aed;">
-                ⚡ Investigate Causal Paths
+            <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">${escapeHtml(inc.status.toUpperCase())}</span></td>
+            <td class="p-3.5 font-mono text-xs text-[#64748B]">${escapeHtml(timeStr)}</td>
+            <td class="p-3.5">${inc.affected_component_name ? `<span class="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-[#FAF5FF] text-[#6D28D9] border border-[#DDD6FE]">${escapeHtml(inc.affected_component_name)}</span>` : '<span class="text-xs text-[#94A3B8]">Unassigned</span>'}</td>
+            <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-medium bg-[#F0F9FF] text-[#0284C7] border border-[#BAE6FD]">${evCount} events</span></td>
+            <td class="p-3.5">
+              <button class="btn-investigate-incident px-2.5 py-1.5 rounded-lg bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1" data-iid="${inc.id}">
+                <span>⚡ Causal Paths</span>
               </button>
             </td>
           </tr>
@@ -3711,9 +4478,15 @@
     switchArchSubtab,
     triggerOnboarding,
     executeChangeImpactAnalysis,
+    executeTestImpactAnalysis,
+    loadTestsView,
     loadRuntimeView,
     loadIncidentsView,
     investigateIncident,
+    openConnectModal,
+    openIngestModal,
+    openCreateIncidentModal,
+    openCommandPalette: () => window.openCommandPalette?.(),
   };
 
 })();

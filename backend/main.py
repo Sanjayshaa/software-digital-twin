@@ -17,6 +17,7 @@ from app.api.impact import router as impact_router
 from app.api.runtime import router as runtime_router
 from app.api.process import router as process_router
 from app.api.incident import router as incident_router
+from app.api.testing import router as testing_router
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -80,6 +81,7 @@ app.include_router(impact_router)
 app.include_router(runtime_router)
 app.include_router(process_router)
 app.include_router(incident_router)
+app.include_router(testing_router)
 
 
 if __name__ == "__main__":

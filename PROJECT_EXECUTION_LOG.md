@@ -165,6 +165,13 @@ All endpoints run on `http://localhost:8000`:
 | `GET` | `/status` | Project execution status with milestone completion percentage |
 | `POST` | `/architecture/check` | Evaluates repository AST against architectural baseline boundaries |
 | `POST` | `/architecture/diff` | Compares architecture drift between two historical snapshots |
+| `POST` | `/runtime/events` | Ingests and sanitizes normalized runtime telemetry events |
+| `GET` | `/repositories/{id}/runtime-events` | Lists correlated runtime events for repository artifacts |
+| `POST` | `/incidents` | Creates operational incident with affected component links |
+| `POST` | `/incidents/{id}/investigate` | Deterministically correlates incident to recent changes, tests, and traces |
+| `POST` | `/repositories/{id}/test-impact` | Executes deterministic test impact between target and base snapshots |
+| `GET` | `/repositories/{id}/test-impact/{id}` | Retrieves persisted test impact analysis results and evidence |
+| `GET` | `/repositories/{id}/tests-catalog` | Retrieves mapped test suites and catalog for repository snapshot |
 
 ---
 
@@ -570,6 +577,38 @@ All endpoints run on `http://localhost:8000`:
      - Runtime ingestion throughput: **781.8 events/sec** (~1.28 ms/event).
      - Causal investigation latency: **67.2 ms**.
      - Architecture Conformance: **100.0%**. Zero LLM/agent code introduced.
+
+---
+
+### Log Entry #18: UI Integration Audit & Phase 6 — Test Impact Intelligence
+- **Timestamp**: `2026-09-28T22:40:00+05:30`
+- **Originating Prompt**:
+  > *"Part 1–17: UI Backend Integration Audit, Remove Product-Dangerous Hardcoded Data, Preserve Visual Design, Complete User Journey, Verify Phase 1-5 Functionality, Product Language, Phase 6 Test Impact Intelligence."*
+- **Actions Taken**:
+  1. **UI Integration Audit & Hardcoded Data Removal**:
+     - Audited all 12 primary view screens (`overview`, `components`, `architecture`, `dependencies`, `processes`, `changes`, `impact`, `tests`, `incidents`, `runtime`, `evidence`, `ask`).
+     - Replaced hardcoded demo metrics (`24`, `38`, `71`, `184`), hardcoded repository name (`payment-platform`), and hardcoded incident (`Payment authorization failures`, `PR #402`, `Confidence: 98.4%`) with dynamic real PostgreSQL data or clean operational states.
+     - Transformed the hardcoded Architecture Preview flow into a dynamic pipeline driven by real `architecture_packages` from PostgreSQL.
+     - Cleaned internal implementation jargon from user-facing screens (`AST Mirror`, `Process Twin`, `AST Diffs`, `AST nodes` replaced with developer-friendly terms: `Living Software Model`, `Workflows & Business Processes`, `Code Changes`, `Software Components`).
+  2. **Phase 6 Test Impact Intelligence Engine**:
+     - Implemented `TestImpactEngine` in `backend/app/services/testing/engine.py` performing deterministic, cycle-protected, bounded traversal across `TESTS`, `CALLS`, `IMPORTS`, `DEPENDS_ON`, `EXTENDS`, `IMPLEMENTS`, `CONSUMES`, `EXPOSES` edges.
+     - Classifies tests into: `DIRECTLY_AFFECTED`, `INDIRECTLY_AFFECTED`, `UNAFFECTED`, and flags changed code lacking tests as `UNKNOWN_COVERAGE`.
+     - Produces explainable natural-language causal paths (e.g. `PaymentService.calculate_tax → OrderService → test_checkout_payment.py`) with evidence statuses (`OBSERVED`, `DERIVED`).
+     - Pure deterministic execution with zero LLM hallucination.
+  3. **Service & API Router**:
+     - Implemented `TestImpactService` (`backend/app/services/testing/service.py`) persisting runs into `AnalysisRun` (`test_impact`).
+     - Implemented REST router `backend/app/api/testing.py`:
+       - `POST /repositories/{id}/test-impact`: Executes deterministic test impact between snapshots.
+       - `GET /repositories/{id}/test-impact/{id}`: Retrieves previous test impact analysis.
+       - `GET /repositories/{id}/tests-catalog`: Retrieves discovered tests catalog with mapped targets.
+     - Registered in `backend/main.py`.
+  4. **Frontend UI Experience**:
+     - Integrated Test Impact Intelligence into `view-tests` with Bento summary cards, filter tabs (`Affected Tests`, `Coverage Unknown`, `Unaffected Tests`, `Full Catalog`), interactive test execution button, and detailed explainable test cards with visual path arrows.
+  5. **Verification**:
+     - Preserved all 77 baseline tests from Phase 1–5.
+     - Added 7 comprehensive test scenarios in `backend/tests/test_test_impact.py`.
+     - Full test suite: **84 / 84 passing in 1.63s**.
+     - Documented in `docs/TEST_IMPACT.md`.
 
 ---
 

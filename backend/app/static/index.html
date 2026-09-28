@@ -1,1438 +1,1313 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Digital Twin — Software Architecture & Structural Intelligence Platform</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2338bdf8'><circle cx='12' cy='12' r='8'/></svg>">
-  <link rel="stylesheet" href="/static/twin.css">
+  <meta name="shell-type" content="web_dashboard">
+  <title>TwinCore — Developer Intelligence & Living Software Digital Twin</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%230071e3'><circle cx='12' cy='12' r='8'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#0059b5",
+            "primary-container": "#0071e3",
+            "on-primary": "#ffffff",
+            "on-primary-container": "#fcfbff",
+            "secondary": "#465e8b",
+            "secondary-container": "#b4ccff",
+            "on-secondary-container": "#3e5682",
+            "tertiary": "#9b3f00",
+            "tertiary-container": "#c25100",
+            "surface": "#f9f9fb",
+            "surface-pure": "#ffffff",
+            "surface-bright": "#f9f9fb",
+            "surface-dim": "#d9dadc",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-low": "#f3f3f5",
+            "surface-container": "#eeeef0",
+            "surface-container-high": "#e8e8ea",
+            "surface-container-highest": "#e2e2e4",
+            "background": "#f9f9fb",
+            "on-surface": "#1a1c1d",
+            "on-surface-variant": "#414753",
+            "outline": "#717785",
+            "outline-variant": "#c1c6d6",
+            "error": "#ba1a1a",
+            "error-container": "#ffdad6",
+            "on-error-container": "#93000a"
+          },
+          fontFamily: {
+            headline: ["Inter", "system-ui", "sans-serif"],
+            body: ["Inter", "system-ui", "sans-serif"],
+            label: ["Inter", "system-ui", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"]
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="stylesheet" href="/static/twin.css">
+  <style>
+    @layer base {
+      html, body { margin: 0; padding: 0; }
+      body { overscroll-behavior: none; }
+    }
+    .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.12); border-radius: 9999px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.22); }
+  </style>
 </head>
-<body class="theme-dark">
-  <div id="app" class="app-layout">
-    <!-- Top Header -->
-    <header class="top-nav">
-      <div class="nav-brand">
-        <div class="brand-logo">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-            <circle cx="12" cy="12" r="3"></circle>
-            <circle cx="4" cy="6" r="2"></circle>
-            <circle cx="20" cy="6" r="2"></circle>
-            <circle cx="4" cy="18" r="2"></circle>
-            <circle cx="20" cy="18" r="2"></circle>
-            <line x1="6" y1="7" x2="10" y2="10.5"></line>
-            <line x1="18" y1="7" x2="14" y2="10.5"></line>
-            <line x1="6" y1="17" x2="10" y2="13.5"></line>
-            <line x1="18" y1="17" x2="14" y2="13.5"></line>
-          </svg>
+<body class="bg-[#F8FAFC] font-body text-[#1a1c1d] flex h-screen overflow-hidden selection:bg-indigo-100">
+
+  <!-- ==================================================================== -->
+  <!-- LEFT SIDEBAR: STITCH TWINCORE NAVIGATION -->
+  <!-- ==================================================================== -->
+  <aside id="app-sidebar" class="w-72 bg-white border-r border-[#E2E8F0] z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)] h-screen shrink-0">
+    <div class="flex flex-col flex-1 overflow-y-auto custom-scrollbar">
+
+      <!-- Brand Header -->
+      <div class="h-16 px-5 flex items-center gap-3 border-b border-[#F1F5F9]">
+        <div class="w-8 h-8 rounded-lg bg-[#0071e3] flex items-center justify-center text-white shadow-sm shrink-0">
+          <span class="material-symbols-outlined text-[20px] text-white">hub</span>
         </div>
-        <div class="brand-info">
-          <span class="brand-title">Software Digital Twin</span>
-          <span class="brand-sub">Engineering Intelligence Platform</span>
+        <div class="flex flex-col min-w-0">
+          <span class="text-sm font-bold text-[#0F172A] tracking-tight leading-tight truncate">TwinCore</span>
+          <span class="text-[11px] text-[#64748B] truncate">Developer Intelligence</span>
         </div>
       </div>
 
-      <!-- Repo & Snapshot Context Selector -->
-      <div class="nav-context" id="nav-context-bar">
-        <div class="context-pill">
-          <span class="pill-label">REPO</span>
-          <select id="repo-select" class="context-select"></select>
-        </div>
-        <div class="context-pill">
-          <span class="pill-label">SNAPSHOT</span>
-          <select id="snapshot-select" class="context-select"></select>
-        </div>
-        <div class="context-pill branch-pill" id="branch-badge">
-          <span class="branch-icon">⌥</span>
-          <span id="branch-name">main</span>
-        </div>
-      </div>
+      <!-- Navigation Links -->
+      <nav id="sidebar-nav" class="px-3 py-4 space-y-4">
 
-      <!-- Primary Navigation Tabs (7 Top-Level Views) -->
-      <nav class="view-tabs" id="main-view-tabs">
-        <button class="view-tab active" data-view="overview" id="tab-btn-overview">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-          Overview
-        </button>
-        <button class="view-tab" data-view="architecture" id="tab-btn-architecture">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><circle cx="6" cy="18" r="3"/><line x1="9" y1="6" x2="18" y2="15"/><line x1="6" y1="9" x2="6" y2="15"/></svg>
-          Architecture
-        </button>
-        <button class="view-tab" data-view="processes" id="tab-btn-processes">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          Processes
-        </button>
-        <button class="view-tab" data-view="dependencies" id="tab-btn-dependencies">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1"/><path d="M18 8h4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-4"/><circle cx="8" cy="12" r="2"/></svg>
-          Dependencies
-        </button>
-        <button class="view-tab" data-view="tests" id="tab-btn-tests">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14 2 8 8-12 12-8-8 12-12Z"/><path d="m18 6-3-3"/><path d="m9 15-3-3"/></svg>
-          Tests
-        </button>
-        <button class="view-tab" data-view="changes" id="tab-btn-changes">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-          Changes
-        </button>
-        <button class="view-tab" data-view="evidence" id="tab-btn-evidence">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
-          Evidence
-        </button>
-        <button class="view-tab" data-view="runtime" id="tab-btn-runtime">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/><circle cx="12" cy="12" r="2"/></svg>
-          Runtime Evidence
-        </button>
-        <button class="view-tab" data-view="incidents" id="tab-btn-incidents">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Incidents
-        </button>
+        <!-- Section: Overview -->
+        <div class="space-y-1">
+          <div class="px-2.5 py-1 text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider">Overview</div>
+          <button data-view="overview" class="view-tab active w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-[#0071e3] text-white shadow-xs transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px]">grid_view</span>
+              <span>Overview</span>
+            </div>
+          </button>
+        </div>
+
+        <!-- Section: Explore -->
+        <div class="space-y-1">
+          <div class="px-2.5 py-1 text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider">Explore</div>
+          <button data-view="components" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px]">deployed_code</span>
+              <span>Explore Software</span>
+            </div>
+          </button>
+          <button data-view="architecture" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px]">account_tree</span>
+              <span>Architecture</span>
+            </div>
+          </button>
+          <button data-view="dependencies" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px]">polyline</span>
+              <span>Dependencies</span>
+            </div>
+          </button>
+        </div>
+
+        <!-- Section: Work & Change -->
+        <div class="space-y-1">
+          <div class="px-2.5 py-1 text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider">Work &amp; Change</div>
+          <button data-view="changes" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px]">commit</span>
+              <span>Changes &amp; Diffs</span>
+            </div>
+          </button>
+          <button data-view="impact" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px]">radar</span>
+              <span>Impact Analysis</span>
+            </div>
+          </button>
+          <button data-view="processes" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px]">alt_route</span>
+              <span>Workflows</span>
+            </div>
+          </button>
+          <button data-view="tests" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px]">check_circle</span>
+              <span>Tests &amp; Verification</span>
+            </div>
+          </button>
+        </div>
+
+        <!-- Section: Operate -->
+        <div class="space-y-1">
+          <div class="px-2.5 py-1 text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider">Operate</div>
+          <button data-view="incidents" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px] text-[#E11D48]">warning</span>
+              <span>Incidents</span>
+            </div>
+            <span id="sidebar-incidents-badge" class="px-1.5 py-0.5 rounded-full bg-[#FFE4E6] text-[#BE123C] text-[10px] font-bold">0</span>
+          </button>
+          <button data-view="runtime" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px] text-[#0284C7]">dynamic_feed</span>
+              <span>Runtime Stream</span>
+            </div>
+            <span id="sidebar-runtime-badge" class="px-1.5 py-0.5 rounded-full bg-[#E0F2FE] text-[#0369A1] text-[10px] font-bold">0</span>
+          </button>
+          <button data-view="evidence" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px]">receipt_long</span>
+              <span>Evidence Ledger</span>
+            </div>
+          </button>
+        </div>
+
+        <!-- Section: Intelligence -->
+        <div class="space-y-1">
+          <div class="px-2.5 py-1 text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider">Intelligence</div>
+          <button data-view="ask" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px] text-[#7C3AED]">neurology</span>
+              <span>Ask Software</span>
+            </div>
+            <span class="px-1.5 py-0.5 rounded-full bg-[#EDE9FE] text-[#6D28D9] text-[10px] font-bold">AI</span>
+          </button>
+        </div>
+
       </nav>
+    </div>
 
-      <!-- Actions -->
-      <div class="nav-actions">
-        <button id="btn-open-connect-modal" class="primary-btn header-connect-btn">
-          <span>+</span> Connect Repository
+    <!-- Bottom Workspace Switcher Card -->
+    <div class="p-3 border-t border-[#F1F5F9]">
+      <div id="sidebar-repo-card" class="bg-[#F8FAFC] hover:bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl p-2.5 flex items-center justify-between shadow-2xs transition-colors cursor-pointer">
+        <div class="flex items-center gap-2.5 overflow-hidden">
+          <span class="material-symbols-outlined text-[#465E8B] text-[18px] shrink-0">fork_right</span>
+          <div class="flex flex-col truncate">
+            <span id="sidebar-repo-name" class="text-xs font-semibold text-[#0F172A] truncate">Loading Repo...</span>
+            <span id="sidebar-branch-name" class="text-[11px] text-[#64748B] font-mono truncate">main branch</span>
+          </div>
+        </div>
+        <span class="material-symbols-outlined text-[#94A3B8] text-[16px] shrink-0">unfold_more</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==================================================================== -->
+  <!-- MAIN WORKSPACE CONTAINER -->
+  <!-- ==================================================================== -->
+  <div class="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+
+    <!-- TOP HEADER -->
+    <header class="h-16 bg-white/80 backdrop-blur-xl border-b border-[#E2E8F0] shadow-[0_1px_8px_rgba(0,0,0,0.04)] flex items-center justify-between px-6 z-40 shrink-0">
+
+      <!-- Left: Repository & Snapshot Selectors -->
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 bg-[#F1F5F9] border border-[#E2E8F0] px-3 py-1.5 rounded-lg text-xs font-medium text-[#0F172A]">
+          <span class="material-symbols-outlined text-[#465E8B] text-[18px]">code_blocks</span>
+          <select id="repo-select" class="bg-transparent text-xs font-semibold text-[#0F172A] outline-none cursor-pointer pr-1"></select>
+          <span class="text-[#94A3B8]">/</span>
+          <select id="snapshot-select" class="bg-transparent text-xs text-[#475569] font-mono outline-none cursor-pointer"></select>
+        </div>
+
+        <div class="flex items-center gap-1.5 bg-[#F1F5F9] px-2.5 py-1 rounded-full text-xs text-[#475569]">
+          <span class="w-2 h-2 rounded-full bg-[#10B981] animate-pulse"></span>
+          <span class="font-medium text-[11px]">Synced recently</span>
+        </div>
+      </div>
+
+      <!-- Right: Search, Quick Action Buttons, Utilities -->
+      <div class="flex items-center gap-3">
+        <!-- Quick Search Bar (Command Palette Trigger) -->
+        <button id="top-search-btn" class="flex items-center gap-2 bg-[#F1F5F9] hover:bg-[#E2E8F0] border border-[#E2E8F0] px-3 py-1.5 rounded-lg w-72 text-[#64748B] text-xs cursor-pointer transition-colors text-left" type="button">
+          <span class="material-symbols-outlined text-[18px]">search</span>
+          <span class="flex-1 text-[#64748B] truncate">Search twin graphs, artifacts...</span>
+          <kbd class="text-[10px] font-mono bg-white px-1.5 py-0.5 rounded text-[#475569] border border-[#E2E8F0] shadow-2xs">⌘K</kbd>
         </button>
-        <button id="btn-reanalyze" class="action-btn" title="Re-run Analysis on Active Repository">
-          <span>↻</span> Re-Analyze
+
+        <!-- Quick Action: Connect Repo -->
+        <button id="top-btn-connect-repo" class="px-3 py-1.5 rounded-lg bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all" type="button">
+          <span class="material-symbols-outlined text-[16px]">add</span> Connect Repo
         </button>
-        <button id="theme-toggle-btn" class="icon-btn" title="Toggle Light/Dark Theme">
-          <svg id="theme-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+
+        <!-- Quick Action: Ingest Runtime -->
+        <button id="top-btn-ingest-runtime" class="px-3 py-1.5 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] border border-[#E2E8F0] text-[#0F172A] text-xs font-medium flex items-center gap-1.5 transition-colors" type="button">
+          <span class="material-symbols-outlined text-[16px] text-[#0071e3]">upload</span> Ingest
         </button>
+
+        <!-- Quick Action: Declare Incident -->
+        <button id="top-btn-create-incident" class="px-3 py-1.5 rounded-lg bg-[#FFF1F2] hover:bg-[#FFE4E6] border border-[#FECDD3] text-[#BE123C] text-xs font-semibold flex items-center gap-1.5 transition-colors" type="button">
+          <span class="material-symbols-outlined text-[16px] text-[#E11D48]">warning</span> + Incident
+        </button>
+
+        <!-- Theme Toggle -->
+        <button id="btn-toggle-theme" class="w-8 h-8 rounded-lg flex items-center justify-center text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A] transition-colors" title="Toggle Theme" type="button">
+          <span class="material-symbols-outlined text-[18px]">light_mode</span>
+        </button>
+
+        <!-- User Avatar -->
+        <div class="w-8 h-8 rounded-full bg-[#0071e3] flex items-center justify-center text-white text-xs font-bold shadow-xs">SJ</div>
       </div>
     </header>
 
-    <!-- Global Twin Context Header Bar (Persistent Across All Views) -->
-    <div class="twin-context-strip" id="twin-global-context-strip">
-      <div class="context-strip-left">
-        <div class="strip-item">
-          <span class="strip-icon">📁</span>
-          <span class="strip-label">REPO:</span>
-          <strong id="strip-repo-name" class="strip-strong">-</strong>
-        </div>
-        <div class="strip-sep">/</div>
-        <div class="strip-item">
-          <span class="strip-badge-branch">⌥ <span id="strip-branch-name">main</span></span>
-        </div>
-        <div class="strip-sep">•</div>
-        <div class="strip-item">
-          <span class="strip-label">SNAPSHOT:</span>
-          <code id="strip-snap-id" class="strip-code">-</code>
-        </div>
-        <div class="strip-sep">•</div>
-        <div class="strip-item">
-          <span class="strip-label">COMMIT:</span>
-          <code id="strip-commit-hash" class="strip-code">-</code>
-        </div>
-      </div>
-      <div class="context-strip-right">
-        <div class="strip-metric-pill" title="Source files parsed by AST analyzers">
-          <span class="pill-dot dot-emerald"></span> <strong id="strip-files-count">0</strong> <span class="pill-unit">files</span>
-        </div>
-        <div class="strip-metric-pill" title="Extracted classes, modules, and functions">
-          <span class="pill-dot dot-indigo"></span> <strong id="strip-artifacts-count">0</strong> <span class="pill-unit">artifacts</span>
-        </div>
-        <div class="strip-metric-pill" title="Calls, imports, and inheritance linkages">
-          <span class="pill-dot dot-cyan"></span> <strong id="strip-relationships-count">0</strong> <span class="pill-unit">relationships</span>
-        </div>
-        <div class="strip-status-badge sync-status-badge" id="strip-sync-status">
-          <span class="status-pulse"></span> SYNCHRONIZED
-        </div>
-      </div>
-    </div>
+    <!-- MAIN SCROLLABLE CONTENT VIEWPORT -->
+    <main class="flex-1 overflow-y-auto custom-scrollbar p-8 bg-[#F8FAFC]">
+      <div class="max-w-7xl mx-auto space-y-8">
 
-    <!-- Main Content Area -->
-    <main class="main-body" id="main-content-area">
+        <!-- ============================================================== -->
+        <!-- VIEW 1: STITCH OVERVIEW (ENGINEERING COMMAND CENTER) -->
+        <!-- ============================================================== -->
+        <section id="view-overview" class="content-view-panel space-y-8">
 
-      <!-- ======================================================== -->
-      <!-- VIEW 0: NO-REPOSITORY / ONBOARDING HERO STATE           -->
-      <!-- ======================================================== -->
-      <div id="view-no-repo" class="content-view-panel" style="display:none;">
-        <div class="onboarding-hero">
-          <div class="hero-badge">DIGITAL TWIN PLATFORM</div>
-          <h1 class="hero-title">Understand your software before it changes.</h1>
-          <p class="hero-desc">
-            Connect a codebase to construct a persistent Digital Twin of its architecture,
-            dependencies, processes, tests, and source evidence.
-          </p>
-          <div class="hero-cta-row">
-            <button id="hero-btn-connect-local" class="primary-btn hero-cta-btn">
-              <span>+</span> Connect Local Repository
-            </button>
-          </div>
+          <!-- 1. Workspace Header -->
+          <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6 pb-2">
+            <div class="space-y-1 max-w-2xl">
+              <div class="flex items-center gap-2 text-xs font-medium text-[#64748B]">
+                <span id="ov-repo-breadcrumb" class="font-semibold text-[#0F172A]">Living Software Model</span>
+                <span>/</span>
+                <span>Digital Twin</span>
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">Living Software Model</span>
+              </div>
+              <h1 class="text-3xl font-bold text-[#0F172A] tracking-tight">Software Overview</h1>
+              <p class="text-sm text-[#475569] leading-relaxed">
+                Understand your architecture, trace change impact, and verify system state across this digital twin repository.
+              </p>
+            </div>
 
-          <!-- Provider Cards -->
-          <div class="provider-cards-grid">
-            <div class="provider-card active-provider" id="card-provider-local">
-              <div class="provider-icon">📁</div>
-              <div class="provider-title">Local Directory</div>
-              <div class="provider-status active-status">ACTIVE · SUPPORTED</div>
-              <p class="provider-desc">Direct AST extraction and dependency mapping for local repositories accessible to the server.</p>
-            </div>
-            <div class="provider-card coming-soon-card">
-              <div class="provider-icon">🐙</div>
-              <div class="provider-title">GitHub Integration</div>
-              <div class="provider-status coming-status">PLANNED FUTURE CAPABILITY</div>
-              <p class="provider-desc">Remote git clone and webhook synchronization are planned future capabilities.</p>
-            </div>
-            <div class="provider-card coming-soon-card">
-              <div class="provider-icon">📦</div>
-              <div class="provider-title">ZIP Archive</div>
-              <div class="provider-status coming-status">COMING SOON</div>
-              <p class="provider-desc">Direct upload and unpacking of repository zip bundles.</p>
-            </div>
-          </div>
-        </div>
-      </div>
+            <!-- Action Buttons -->
+            <div class="flex items-center flex-wrap gap-2.5">
+              <button id="ov-btn-investigate" class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white hover:bg-[#FFF1F2] text-[#BE123C] border border-[#FECDD3] shadow-xs hover:shadow-sm transition-all text-xs font-semibold" type="button">
+                <span class="material-symbols-outlined text-[16px] text-[#E11D48]">warning</span>
+                <span>Investigate Incidents</span>
+                <span id="ov-incidents-badge" class="ml-1 px-1.5 py-0.5 rounded-full bg-[#FFE4E6] text-[#BE123C] text-[10px] font-bold">0</span>
+              </button>
 
-      <!-- ======================================================== -->
-      <!-- VIEW 1: OVERVIEW (ENGINEERING COMMAND CENTER)           -->
-      <!-- ======================================================== -->
-      <div id="view-overview" class="content-view-panel" style="display:block;">
+              <button id="ov-btn-explore" class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white hover:bg-[#F8FAFC] text-[#0F172A] border border-[#E2E8F0] shadow-xs hover:shadow-sm transition-all text-xs font-medium" type="button">
+                <span class="material-symbols-outlined text-[16px] text-[#465E8B]">explore</span>
+                <span>Explore Software</span>
+              </button>
 
-        <!-- System Identity Bar -->
-        <div class="command-center-identity-card" id="ov-identity-card">
-          <div class="cc-id-left">
-            <div class="cc-badge-row">
-              <span class="cc-live-badge"><span class="status-pulse"></span> DIGITAL TWIN ACTIVE</span>
-              <span class="cc-provenance-tag">AST Verified · PostgreSQL 16</span>
-            </div>
-            <h2 id="ov-repo-name" class="cc-repo-title">Software Digital Twin</h2>
-            <div class="cc-location-row">
-              <span class="cc-meta-label">SOURCE PATH:</span>
-              <code id="ov-path" class="cc-path-code">-</code>
-            </div>
-          </div>
-          <div class="cc-id-right">
-            <div class="cc-info-box">
-              <div class="cc-info-label">SNAPSHOT ID</div>
-              <div class="cc-info-val text-cyan" id="ov-snapshot">-</div>
-            </div>
-            <div class="cc-info-box">
-              <div class="cc-info-label">COMMIT HASH</div>
-              <div class="cc-info-val text-mono" id="ov-commit">-</div>
-            </div>
-            <div class="cc-info-box">
-              <div class="cc-info-label">BRANCH</div>
-              <div class="cc-info-val" id="ov-branch">main</div>
-            </div>
-            <div class="cc-action-box">
-              <button id="ov-btn-view-graph" class="primary-btn" style="background:#7c3aed;padding:8px 16px;">
-                <span>⬡</span> Open Architecture Graph
+              <button id="ov-btn-analyze" class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#0071e3] hover:bg-[#0059b5] text-white shadow-xs hover:shadow-md transition-all text-xs font-semibold" type="button">
+                <span class="material-symbols-outlined text-[16px]">auto_fix_high</span>
+                <span>Analyze a Change</span>
               </button>
             </div>
           </div>
-        </div>
 
-        <!-- Real Metrics Grid (7 Indicators from PostgreSQL) -->
-        <div class="metrics-grid">
-          <div class="metric-card">
-            <div class="metric-label">FILES</div>
-            <div class="metric-value" id="metric-files">0</div>
-            <div class="metric-sub">Analyzed Source Files</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">ARTIFACTS</div>
-            <div class="metric-value text-indigo" id="metric-artifacts">0</div>
-            <div class="metric-sub">Classes, Modules, Functions</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">RELATIONSHIPS</div>
-            <div class="metric-value text-cyan" id="metric-relationships">0</div>
-            <div class="metric-sub">Calls, Imports, Contains</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">TESTS</div>
-            <div class="metric-value text-emerald" id="metric-tests">0</div>
-            <div class="metric-sub">Mapped Test Suites</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">PROCESSES</div>
-            <div class="metric-value text-purple" id="metric-processes">0</div>
-            <div class="metric-sub">Inferred Execution Paths</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">APIs</div>
-            <div class="metric-value text-amber" id="metric-apis">0</div>
-            <div class="metric-sub">HTTP Endpoints Detected</div>
-          </div>
-          <div class="metric-card" id="card-drift-metric">
-            <div class="metric-label">DRIFT</div>
-            <div class="metric-value" id="metric-drift">0</div>
-            <div class="metric-sub" id="metric-drift-sub">Architecture Violations</div>
-          </div>
-        </div>
+          <!-- 2. Compact Software Snapshot (Living System Entities) -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
 
-        <!-- Upper Dual Column Row: Architecture Macro-Structure + Analysis Pipeline -->
-        <div class="overview-details-row">
-          <!-- Left: Architecture Macro-Structure (Packages & Modules) -->
-          <div class="overview-card flex-2">
-            <div class="card-header">
-              <div class="card-header-left">
-                <h3 class="card-title">Architecture Macro-Structure</h3>
-                <span class="card-sub-label">Aggregated Packages, Services & Component Distribution</span>
+            <!-- Entity 1: Components (Indigo wash) -->
+            <div class="bg-[#EEF2FF]/70 border border-[#C7D2FE]/80 rounded-xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group">
+              <div class="flex items-center justify-between text-[#4F46E5] mb-2">
+                <span class="text-[11px] uppercase tracking-wider text-[#4338CA] font-semibold">Topology</span>
+                <div class="w-7 h-7 rounded-lg bg-[#E0E7FF] flex items-center justify-center text-[#4338CA]">
+                  <span class="material-symbols-outlined text-[18px]">memory</span>
+                </div>
               </div>
-              <span class="card-tag">AST Verified</span>
+              <div class="flex items-baseline gap-1.5">
+                <span id="ov-components-count" class="text-3xl font-bold text-[#1E1B4B]">-</span>
+                <span class="text-xs text-[#312E81] font-semibold">Components</span>
+              </div>
+              <p id="ov-components-sub" class="text-[11px] text-[#4338CA]/80 mt-1 truncate">Monitored services &amp; libraries</p>
             </div>
-            <div class="card-body">
-              <!-- Component Breakdown Pills -->
-              <div class="comp-dist-grid" id="comp-breakdown-grid"></div>
 
-              <!-- Aggregated Package Grid -->
-              <div class="arch-packages-section" style="margin-top:16px;">
-                <div class="section-micro-heading">AGGREGATED STRUCTURAL MODULES</div>
-                <div class="arch-packages-grid" id="ov-packages-grid">
-                  <!-- Populated dynamically from backend architecture_packages -->
+            <!-- Entity 2: APIs (Emerald wash) -->
+            <div class="bg-[#ECFDF5]/80 border border-[#A7F3D0]/80 rounded-xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group">
+              <div class="flex items-center justify-between text-[#059669] mb-2">
+                <span class="text-[11px] uppercase tracking-wider text-[#047857] font-semibold">Contracts</span>
+                <div class="w-7 h-7 rounded-lg bg-[#D1FAE5] flex items-center justify-center text-[#047857]">
+                  <span class="material-symbols-outlined text-[18px]">terminal</span>
                 </div>
               </div>
-
-              <!-- Conformance Banner -->
-              <div class="conformance-banner" id="conformance-alert-box" style="margin-top:16px;">
-                <div class="conf-icon" id="conf-icon">✓</div>
-                <div class="conf-info">
-                  <div class="conf-title" id="conf-title">100% Architecture Conformance</div>
-                  <div class="conf-desc" id="conf-desc">All structural dependencies comply with declared architectural boundaries.</div>
-                </div>
+              <div class="flex items-baseline gap-1.5">
+                <span id="ov-apis-count" class="text-3xl font-bold text-[#064E3B]">-</span>
+                <span class="text-xs text-[#065F46] font-semibold">APIs</span>
               </div>
+              <p id="ov-apis-sub" class="text-[11px] text-[#047857]/80 mt-1 truncate">Exposed endpoints &amp; contracts</p>
             </div>
+
+            <!-- Entity 3: Dependencies (Violet wash) -->
+            <div class="bg-[#FAF5FF]/90 border border-[#DDD6FE]/80 rounded-xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group">
+              <div class="flex items-center justify-between text-[#7C3AED] mb-2">
+                <span class="text-[11px] uppercase tracking-wider text-[#6D28D9] font-semibold">Relations</span>
+                <div class="w-7 h-7 rounded-lg bg-[#EDE9FE] flex items-center justify-center text-[#6D28D9]">
+                  <span class="material-symbols-outlined text-[18px]">share</span>
+                </div>
+              </div>
+              <div class="flex items-baseline gap-1.5">
+                <span id="ov-deps-count" class="text-3xl font-bold text-[#4C1D95]">-</span>
+                <span class="text-xs text-[#5B21B6] font-semibold">Dependencies</span>
+              </div>
+              <p id="ov-deps-sub" class="text-[11px] text-[#6D28D9]/80 mt-1 truncate">Internal &amp; external packages</p>
+            </div>
+
+            <!-- Entity 4: Tests (Sky wash) -->
+            <div class="bg-[#F0F9FF]/85 border border-[#BAE6FD]/80 rounded-xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group">
+              <div class="flex items-center justify-between text-[#0284C7] mb-2">
+                <span class="text-[11px] uppercase tracking-wider text-[#0369A1] font-semibold">Verification</span>
+                <div class="w-7 h-7 rounded-lg bg-[#E0F2FE] flex items-center justify-center text-[#0284C7]">
+                  <span class="material-symbols-outlined text-[18px]">verified</span>
+                </div>
+              </div>
+              <div class="flex items-baseline gap-1.5">
+                <span id="ov-tests-count" class="text-3xl font-bold text-[#0C4A6E]">-</span>
+                <span class="text-xs text-[#075985] font-semibold">Tests</span>
+              </div>
+              <p id="ov-tests-sub" class="text-[11px] text-[#0369A1]/90 mt-1 truncate">Deterministic test mapping</p>
+            </div>
+
           </div>
 
-          <!-- Right: Analysis Pipeline Status & Execution Provenance -->
-          <div class="overview-card flex-1">
-            <div class="card-header">
-              <div class="card-header-left">
-                <h3 class="card-title">Analysis Pipeline Status</h3>
-                <span class="card-sub-label">Intelligence engines executed for snapshot</span>
-              </div>
-              <span class="card-tag" id="run-status-badge">Complete</span>
-            </div>
-            <div class="card-body">
-              <div class="pipeline-status-list">
-                <div class="pipe-item">
-                  <span class="pipe-check">✓</span>
-                  <span class="pipe-label">Discovery Brain</span>
-                  <span class="pipe-val text-green">Complete</span>
+          <!-- 3. Two-Column Main Intelligence Grid -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+            <!-- LEFT COLUMN: Primary Workspace Intelligence (8 cols) -->
+            <div class="lg:col-span-8 space-y-6">
+
+              <!-- Active Incident / Needs Attention -->
+              <div id="ov-active-incident-card" class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-6 shadow-xs hover:shadow-md transition-all relative overflow-hidden">
+                <div id="ov-incident-stripe" class="absolute left-0 top-0 bottom-0 w-1.5 bg-[#10B981]"></div>
+
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                  <div class="flex items-center gap-2">
+                    <span id="ov-incident-status-pill" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] text-[11px] font-bold border border-[#A7F3D0]">
+                      <span id="ov-incident-pulse" class="w-2 h-2 rounded-full bg-[#10B981]"></span>
+                      <span id="ov-incident-status">All Systems Operational</span>
+                    </span>
+                    <span id="ov-incident-time" class="text-xs text-[#64748B]">Real-time Status</span>
+                  </div>
+                  <span class="text-xs text-[#64748B]">Target: <code id="ov-incident-target" class="font-mono text-[#0F172A] bg-[#F1F5F9] px-1.5 py-0.5 rounded border border-[#E2E8F0]">Clean Environment</code></span>
                 </div>
-                <div class="pipe-item">
-                  <span class="pipe-check">✓</span>
-                  <span class="pipe-label">Technology Profiling</span>
-                  <span class="pipe-val text-green">Complete</span>
+
+                <h3 id="ov-incident-title" class="text-lg font-bold text-[#0F172A] tracking-tight">No Active Incidents</h3>
+                <p id="ov-incident-desc" class="text-xs text-[#64748B] mt-1 leading-relaxed">
+                  No active incidents recorded for this environment. System running cleanly.
+                </p>
+
+                <!-- Dynamic Evidence Badges -->
+                <div id="ov-incident-badges" class="flex flex-wrap items-center gap-2 my-4">
+                  <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#E2E8F0] text-[#059669] text-xs font-medium shadow-2xs">
+                    <span class="material-symbols-outlined text-[16px] text-[#10B981]">check_circle</span>
+                    <span id="ov-incident-evidence">0 active anomalies</span>
+                  </div>
                 </div>
-                <div class="pipe-item">
-                  <span class="pipe-check">✓</span>
-                  <span class="pipe-label">Structural Twin Engine</span>
-                  <span class="pipe-val text-green">Complete</span>
-                </div>
-                <div class="pipe-item">
-                  <span class="pipe-check">✓</span>
-                  <span class="pipe-label">Dependency Mapping</span>
-                  <span class="pipe-val text-green">Complete</span>
-                </div>
-                <div class="pipe-item">
-                  <span class="pipe-check" id="pipe-test-check">✓</span>
-                  <span class="pipe-label">Test Mapping</span>
-                  <span class="pipe-val text-green" id="pipe-test-val">Complete</span>
-                </div>
-                <div class="pipe-item">
-                  <span class="pipe-check" id="pipe-proc-check">✓</span>
-                  <span class="pipe-label">Process Model</span>
-                  <span class="pipe-val text-cyan" id="pipe-proc-val">Statically Inferred</span>
-                </div>
-                <div class="pipe-item">
-                  <span class="pipe-check" id="pipe-arch-check">✓</span>
-                  <span class="pipe-label">Architecture Validation</span>
-                  <span class="pipe-val text-green" id="pipe-arch-val">Evaluated</span>
+
+                <div class="flex items-center justify-between pt-1">
+                  <button id="ov-btn-view-incidents" class="inline-flex items-center gap-1 text-xs font-bold text-[#0071e3] hover:text-[#0059b5] transition-colors group" onclick="window.TwinApp.switchPrimaryView('incidents');">
+                    <span>View Incidents Directory</span>
+                    <span class="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+                  </button>
+                  <span id="ov-incident-confidence" class="text-xs text-[#64748B] font-medium">Confidence: 100% verified</span>
                 </div>
               </div>
 
-              <div class="latest-snapshot-box" style="margin-top:16px;">
-                <div class="snap-box-title">LATEST SNAPSHOT ANALYSIS</div>
-                <div class="snap-box-row"><span>Analyzers:</span> <strong id="ov-run-analyzers">-</strong></div>
-                <div class="snap-box-row"><span>Execution:</span> <strong id="ov-run-time">-</strong></div>
-                <div class="snap-box-row"><span>Storage:</span> <strong class="text-cyan">PostgreSQL 16 Twin</strong></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Lower Dual Column Row: Latest Change Impact + Evidence Summary -->
-        <div class="overview-details-row" style="margin-top:16px;">
-          <!-- Left: Latest Change Impact Intelligence -->
-          <div class="overview-card flex-1">
-            <div class="card-header">
-              <div class="card-header-left">
-                <h3 class="card-title">Latest Change Impact Intelligence</h3>
-                <span class="card-sub-label">Deterministic blast-radius evaluation across snapshots</span>
-              </div>
-              <span class="card-tag tag-purple" id="ov-impact-status-tag">Deterministic</span>
-            </div>
-            <div class="card-body" id="ov-impact-container">
-              <div class="empty-state-box" id="ov-impact-empty">
-                <div class="empty-icon">🎯</div>
-                <p>No change impact analysis has been computed for this repository yet.</p>
-                <button class="secondary-btn" id="ov-btn-goto-changes" style="margin-top:10px;">
-                  ⚡ Compare Snapshots & Run Blast Radius
-                </button>
-              </div>
-              <div id="ov-impact-content" style="display:none;">
-                <div class="impact-mini-metrics-row">
-                  <div class="impact-mini-pill"><span class="imp-mini-label">CHANGED</span><strong class="text-amber" id="ov-imp-changed">0</strong></div>
-                  <div class="impact-mini-pill"><span class="imp-mini-label">DIRECT IMPACT</span><strong class="text-rose" id="ov-imp-direct">0</strong></div>
-                  <div class="impact-mini-pill"><span class="imp-mini-label">INDIRECT</span><strong class="text-pink" id="ov-imp-indirect">0</strong></div>
-                  <div class="impact-mini-pill"><span class="imp-mini-label">TESTS</span><strong class="text-emerald" id="ov-imp-tests">0</strong></div>
-                  <div class="impact-mini-pill"><span class="imp-mini-label">COMPONENTS</span><strong class="text-cyan" id="ov-imp-comps">0</strong></div>
-                </div>
-                <div class="impact-mini-footer">
-                  <span id="ov-imp-meta-text" class="text-secondary text-sm">Execution Time: 0 ms</span>
-                  <button class="action-btn" id="ov-btn-view-impact-full" style="font-size:11px;padding:4px 10px;">
-                    Open Blast Radius in Changes View →
+              <!-- Architecture Preview (Miniature Synced Topology) -->
+              <div class="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-xs">
+                <div class="flex items-center justify-between mb-1">
+                  <div class="space-y-0.5">
+                    <div class="flex items-center gap-2">
+                      <h3 class="text-base font-bold text-[#0F172A] tracking-tight">Architecture Preview</h3>
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">Architecture &amp; Runtime Model</span>
+                    </div>
+                    <p class="text-xs text-[#64748B]">Core synchronous transaction path discovered from static topology and live tracing.</p>
+                  </div>
+                  <button id="ov-btn-view-graph" class="inline-flex items-center gap-1 text-xs text-[#0071e3] hover:text-[#0059b5] transition-colors font-semibold" type="button">
+                    <span>Explore Architecture</span>
+                    <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </button>
                 </div>
-              </div>
-            </div>
-          </div>
 
-          <!-- Right: Evidence & Empirical Provenance Summary -->
-          <div class="overview-card flex-1">
-            <div class="card-header">
-              <div class="card-header-left">
-                <h3 class="card-title">Evidence & Provenance Summary</h3>
-                <span class="card-sub-label">Empirical traceability breakdown</span>
-              </div>
-              <span class="card-tag">Strict Provenance</span>
-            </div>
-            <div class="card-body">
-              <div class="evidence-summary-list">
-                <div class="ev-sum-row">
-                  <div class="ev-sum-left">
-                    <span class="badge-evidence">DIRECT_AST</span>
-                    <span>Direct AST Parser Extractions</span>
+                <!-- Flow Pipeline Diagram (Populated dynamically) -->
+                <div id="ov-flow-pipeline-container" class="mt-5 p-4 bg-[#F8FAFC] border border-[#E2E8F0]/80 rounded-xl overflow-x-auto">
+                  <div id="ov-flow-nodes-list" class="flex items-center justify-between min-w-[620px] gap-2">
+                    <div class="w-full text-center py-6 text-xs text-[#64748B]">Loading architectural topology...</div>
                   </div>
-                  <strong class="text-cyan" id="ev-sum-ast">-</strong>
                 </div>
-                <div class="ev-sum-row">
-                  <div class="ev-sum-left">
-                    <span class="badge-evidence" style="background:rgba(56,189,248,0.15);color:#38bdf8;">STATIC_LINK</span>
-                    <span>Static Imports & Call Graph Edges</span>
+              </div>
+              </div>
+
+              <!-- Macro Architecture Packages Grid & Conformance Alert -->
+              <div class="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-xs space-y-4">
+                <div class="flex items-center justify-between">
+                  <div class="space-y-0.5">
+                    <h3 class="text-base font-bold text-[#0F172A] tracking-tight">Macro Architecture Packages</h3>
+                    <p class="text-xs text-[#64748B]">High-level component clusters and architectural boundaries.</p>
                   </div>
-                  <strong class="text-indigo" id="ev-sum-links">-</strong>
                 </div>
-                <div class="ev-sum-row">
-                  <div class="ev-sum-left">
-                    <span class="badge-evidence" style="background:rgba(16,185,129,0.15);color:#10b981;">TEST_MAPPING</span>
-                    <span>Assertion & Test Surface Mappings</span>
+                <div id="ov-packages-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <!-- Injected by twin.js -->
+                </div>
+                <div id="conformance-alert-box" class="p-3.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] flex items-center gap-3">
+                  <div id="conf-icon" class="w-7 h-7 rounded-lg bg-[#D1FAE5] text-[#059669] flex items-center justify-center font-bold text-sm">✓</div>
+                  <div>
+                    <h4 id="conf-title" class="text-xs font-bold text-[#064E3B]">100% Architecture Conformance</h4>
+                    <p id="conf-desc" class="text-[11px] text-[#047857]">All structural dependencies comply with declared architectural boundaries.</p>
                   </div>
-                  <strong class="text-emerald" id="ev-sum-tests">-</strong>
                 </div>
-                <div class="ev-sum-row">
-                  <div class="ev-sum-left">
-                    <span class="badge-evidence" style="background:rgba(168,85,247,0.15);color:#c084fc;">STATICALLY_INFERRED</span>
-                    <span>Workflow Transitions</span>
+              </div>
+
+              <!-- Recent Blast Radius & Change Impact -->
+              <div class="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-xs space-y-4">
+                <div class="flex items-center justify-between">
+                  <div class="space-y-0.5">
+                    <h3 class="text-base font-bold text-[#0F172A] tracking-tight">Recent Change Impact &amp; Blast Radius</h3>
+                    <p class="text-xs text-[#64748B]">Deterministic causal propagation across recent snapshots.</p>
                   </div>
-                  <strong class="text-purple" id="ev-sum-proc">-</strong>
+                  <button class="text-xs text-[#0071e3] hover:text-[#0059b5] font-semibold" onclick="window.TwinApp.switchPrimaryView('impact');">View Full Report →</button>
                 </div>
-              </div>
-              <div class="ev-trust-disclaimer">
-                Zero synthetic hallucinations. Every node, path, and impact finding maps directly to concrete source lines and relationship records.
-              </div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- ======================================================== -->
-      <!-- VIEW 2: ARCHITECTURE (GRAPH + COMPONENTS + APIS + DRIFT) -->
-      <!-- ======================================================== -->
-      <div id="view-architecture" class="content-view-panel" style="display:none;">
-        <!-- Architecture Sub-Navbar -->
-        <div class="sub-nav-bar">
-          <div class="sub-nav-title">
-            <h3>Architecture</h3>
-            <span class="sub-nav-desc">Structural relationships and design boundaries extracted from Digital Twin snapshot.</span>
-          </div>
-          <div class="sub-nav-tabs">
-            <button class="sub-tab active" data-subtab="graph" id="subtab-btn-graph">
-              <span>⬡</span> Graph Workspace
-            </button>
-            <button class="sub-tab" data-subtab="components" id="subtab-btn-components">
-              <span>▦</span> Components
-            </button>
-            <button class="sub-tab" data-subtab="apis" id="subtab-btn-apis">
-              <span>⇄</span> APIs & Endpoints
-            </button>
-            <button class="sub-tab" data-subtab="drift" id="subtab-btn-drift">
-              <span>⚠️</span> Conformance & Drift
-            </button>
-          </div>
-        </div>
-
-        <!-- Sub-View: Graph Workspace (Existing Obsidian-style Canvas Engine) -->
-        <div id="subview-arch-graph" class="subview-panel" style="display:flex;">
-          <!-- Left Sidebar: Explorer & Filter Controls -->
-          <aside class="sidebar-left" id="sidebar-left">
-            <div class="sidebar-tabs">
-              <button class="sb-tab active" data-sb-tab="tree">Files</button>
-              <button class="sb-tab" data-sb-tab="filters">Filters</button>
-              <button class="sb-tab" data-sb-tab="diff-select" id="diff-tab-btn" style="display:none;">Diff Target</button>
-            </div>
-
-            <!-- File Tree Tab -->
-            <div id="sb-panel-tree" class="sb-panel active">
-              <div class="tree-search-bar">
-                <input type="text" id="tree-search-input" placeholder="Search components..." class="search-input">
-                <button id="clear-search-btn" class="clear-btn">&times;</button>
-              </div>
-              <div class="tree-container" id="file-tree-container">
-                <div class="tree-loading">Loading file structure...</div>
-              </div>
-            </div>
-
-            <!-- Filters Tab -->
-            <div id="sb-panel-filters" class="sb-panel">
-              <div class="filter-section">
-                <label class="filter-heading">DISCLOSURE LEVEL</label>
-                <div class="level-btn-group">
-                  <button class="level-btn" data-level="1" title="Level 1: Packages & Modules">L1</button>
-                  <button class="level-btn active" data-level="2" title="Level 2: Components & Classes">L2</button>
-                  <button class="level-btn" data-level="3" title="Level 3: Methods & Functions">L3</button>
-                  <button class="level-btn" data-level="4" title="Level 4: Fine-grained Source">L4</button>
+                <div id="ov-impact-container">
+                  <!-- Injected by twin.js -->
                 </div>
               </div>
 
-              <div class="filter-section">
-                <label class="filter-heading">EGO-NETWORK DEPTH</label>
-                <div class="slider-row">
-                  <input type="range" id="depth-range" min="1" max="5" value="2" class="range-slider">
-                  <span id="depth-display" class="range-val">2</span>
+            </div>
+
+            <!-- RIGHT COLUMN: Compact Twin Controls (4 cols) -->
+            <div class="lg:col-span-4 space-y-6">
+
+              <!-- Quick Change Impact Simulator Prompt -->
+              <div class="bg-gradient-to-br from-[#EEF2FF] to-[#E0E7FF]/70 border border-[#C7D2FE] rounded-xl p-6 shadow-xs space-y-4 relative overflow-hidden">
+                <div class="space-y-1">
+                  <div class="w-9 h-9 rounded-xl bg-[#4F46E5] text-white flex items-center justify-center shadow-xs mb-2">
+                    <span class="material-symbols-outlined text-[20px]">radar</span>
+                  </div>
+                  <h3 class="text-base font-bold text-[#1E1B4B] tracking-tight">Ready to ship a change?</h3>
+                  <p class="text-xs text-[#3730A3] leading-relaxed">
+                    Simulate blast radius, contract drift, and targeted regression specs before opening a pull request.
+                  </p>
+                </div>
+
+                <!-- Simulation Trigger Box -->
+                <div class="space-y-2 bg-white/80 border border-[#C7D2FE]/60 p-3 rounded-xl shadow-2xs">
+                  <label class="text-[11px] text-[#4338CA] font-semibold block">Compare active snapshot against baseline</label>
+                  <div class="flex items-center justify-between bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-2 rounded-lg text-xs font-semibold text-[#0F172A]">
+                    <div class="flex items-center gap-1.5 truncate">
+                      <span class="material-symbols-outlined text-[16px] text-[#4F46E5]">alt_route</span>
+                      <span class="truncate">Latest Snapshot Mirror</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button class="w-full py-2.5 px-4 rounded-full bg-[#4F46E5] hover:bg-[#4338CA] text-white transition-all text-xs font-semibold shadow-xs hover:shadow-sm flex items-center justify-center gap-1.5" onclick="window.TwinApp.switchPrimaryView('impact');" type="button">
+                  <span class="material-symbols-outlined text-[18px]">play_arrow</span>
+                  <span>Run Blast-Radius Analysis</span>
+                </button>
+              </div>
+
+              <!-- Living Twin Health & Verification -->
+              <div class="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-xs space-y-4">
+                <div class="flex items-center justify-between">
+                  <h3 class="text-base font-bold text-[#0F172A] tracking-tight">Software Model State</h3>
+                  <span class="flex h-2.5 w-2.5 relative" title="Twin model active">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#10B981] opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#059669]"></span>
+                  </span>
+                </div>
+
+                <div class="space-y-2 divide-y divide-[#F1F5F9] text-xs">
+                  <div class="flex items-center justify-between py-2">
+                    <span class="text-[#64748B]">Graph Status</span>
+                    <span class="font-semibold text-[#0F172A] flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-[16px] text-[#4F46E5]">sync</span>
+                      Live Synced (AST Mirror)
+                    </span>
+                  </div>
+                  <div class="flex items-center justify-between py-2">
+                    <span class="text-[#64748B]">Causal Coverage</span>
+                    <span class="font-semibold text-[#059669] bg-[#ECFDF5] px-2 py-0.5 rounded-full border border-[#A7F3D0]/60">94.2% verified</span>
+                  </div>
+                  <div class="flex items-center justify-between py-2">
+                    <span class="text-[#64748B]">Contract Drift</span>
+                    <span class="font-semibold text-[#059669] flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                      0 breaking changes
+                    </span>
+                  </div>
+                  <div class="flex items-center justify-between py-2">
+                    <span class="text-[#64748B]">Active Snapshot</span>
+                    <span id="ov-snapshot" class="font-mono text-[#64748B] bg-[#F8FAFC] px-1.5 py-0.5 rounded border border-[#E2E8F0]">snap_latest</span>
+                  </div>
+                </div>
+
+                <!-- CLI integration snippet -->
+                <div class="bg-[#F8FAFC] border border-[#E2E8F0] p-3 rounded-xl space-y-1">
+                  <span class="text-[11px] text-[#64748B] block font-medium">Local CLI synchronization</span>
+                  <div class="flex items-center justify-between bg-white border border-[#E2E8F0] px-3 py-1.5 rounded font-mono text-[11px] text-[#0F172A] shadow-2xs">
+                    <span class="select-all text-[#334155]">twin-cli status --sync</span>
+                    <button class="text-[#64748B] hover:text-[#0F172A] transition-colors" title="Copy CLI Command" type="button" onclick="navigator.clipboard.writeText('twin-cli status --sync');">
+                      <span class="material-symbols-outlined text-[16px]">content_copy</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <div class="filter-section">
-                <label class="filter-heading">ARTIFACT TYPES</label>
-                <div class="checkbox-grid" id="type-filter-grid">
-                  <label class="cb-label"><input type="checkbox" value="CLASS" checked> Class</label>
-                  <label class="cb-label"><input type="checkbox" value="MODULE" checked> Module</label>
-                  <label class="cb-label"><input type="checkbox" value="METHOD" checked> Method</label>
-                  <label class="cb-label"><input type="checkbox" value="FUNCTION" checked> Function</label>
-                  <label class="cb-label"><input type="checkbox" value="API_ENDPOINT" checked> API</label>
-                  <label class="cb-label"><input type="checkbox" value="TEST_CASE" checked> Test</label>
+              <!-- Ask Software Intelligence Teaser -->
+              <div class="p-4 rounded-xl bg-gradient-to-r from-[#FAF5FF] to-[#F3E8FF]/60 border border-[#E9D5FF] flex items-center justify-between gap-3 shadow-xs">
+                <div class="flex items-center gap-3">
+                  <div class="w-9 h-9 rounded-lg bg-[#DDD6FE] text-[#6D28D9] flex items-center justify-center shrink-0">
+                    <span class="material-symbols-outlined text-[20px]">neurology</span>
+                  </div>
+                  <div class="flex flex-col">
+                    <span class="text-xs font-bold text-[#581C87]">Ask your software model</span>
+                    <span class="text-[11px] text-[#7E22CE]/80">Query architecture via natural language</span>
+                  </div>
+                </div>
+                <button class="p-1.5 rounded-lg bg-white border border-[#DDD6FE] text-[#6D28D9] hover:bg-[#FAF5FF] shadow-xs transition-colors shrink-0" onclick="window.TwinApp.switchPrimaryView('ask');">
+                  <span class="material-symbols-outlined text-[18px]">arrow_outward</span>
+                </button>
+              </div>
+
+              <!-- Live Telemetry Stream Box -->
+              <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-3">
+                <div class="flex items-center justify-between">
+                  <h4 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider">Runtime Telemetry Stream</h4>
+                  <button class="text-[11px] text-[#0071e3] font-semibold" onclick="window.TwinApp.switchPrimaryView('runtime');">View All →</button>
+                </div>
+                <div id="ov-runtime-feed" class="space-y-2">
+                  <!-- Injected by twin.js -->
                 </div>
               </div>
 
-              <div class="filter-section">
-                <label class="filter-heading">RELATIONSHIP TYPES</label>
-                <div class="checkbox-grid" id="rel-filter-grid">
-                  <label class="cb-label"><input type="checkbox" value="CALLS" checked> Calls</label>
-                  <label class="cb-label"><input type="checkbox" value="IMPORTS" checked> Imports</label>
-                  <label class="cb-label"><input type="checkbox" value="CONTAINS" checked> Contains</label>
-                  <label class="cb-label"><input type="checkbox" value="TESTS" checked> Tests</label>
-                  <label class="cb-label"><input type="checkbox" value="EXPOSES" checked> Exposes</label>
-                </div>
-              </div>
-
-              <div style="margin-top:14px;">
-                <button id="reset-filters-btn" class="secondary-btn" style="width:100%;">Reset Filters</button>
-              </div>
             </div>
 
-            <!-- Diff Selection Tab -->
-            <div id="sb-panel-diff-select" class="sb-panel">
-              <label class="filter-heading">COMPARE AGAINST PRIOR SNAPSHOT</label>
-              <select id="diff-snapshot-select" class="context-select" style="width:100%; margin-top:8px;"></select>
-              <div style="margin-top:16px;">
-                <button id="run-diff-btn" class="primary-btn" style="width:100%;">Execute Snapshot Diff</button>
-              </div>
+          </div>
+
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 2: EXPLORE COMPONENTS (CATALOG) -->
+        <!-- ============================================================== -->
+        <section id="view-components" class="content-view-panel space-y-6" style="display:none;">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs">
+            <div class="space-y-0.5">
+              <h2 class="text-xl font-bold text-[#0F172A]">Components &amp; Artifacts Catalog</h2>
+              <p class="text-xs text-[#64748B]">All syntactic and semantic entities cataloged from AST and configuration discovery.</p>
             </div>
-          </aside>
-
-          <!-- Center Canvas -->
-          <section class="canvas-workspace" id="canvas-workspace">
-            <div class="canvas-toolbar">
-              <button id="zoom-in-btn" class="control-btn" title="Zoom In">+</button>
-              <button id="zoom-out-btn" class="control-btn" title="Zoom Out">−</button>
-              <button id="fit-screen-btn" class="control-btn" title="Fit to Screen">⛶ Fit</button>
-              <button id="toggle-physics-btn" class="control-btn active" title="Toggle Physics Simulation">⚡ Physics</button>
-
-              <!-- Progressive Disclosure Level Selector directly in toolbar -->
-              <div class="toolbar-level-group" style="display:flex;align-items:center;gap:4px;margin-left:8px;background:var(--bg-surface);padding:2px 6px;border-radius:6px;border:1px solid var(--border-color);">
-                <span style="font-size:10px;font-weight:700;color:var(--text-muted);margin-right:4px;">LEVEL:</span>
-                <button class="level-btn" data-level="1" title="Level 1: Packages & Modules">L1 Macro</button>
-                <button class="level-btn active" data-level="2" title="Level 2: Classes, APIs & Components">L2 Components</button>
-                <button class="level-btn" data-level="3" title="Level 3: Methods & Functions">L3 Micro</button>
-              </div>
-
-              <button id="toggle-isolated-btn" class="control-btn" title="Toggle Isolated Components" style="margin-left:8px;">
-                📦 Isolated (<span id="isolated-count">0</span>)
-              </button>
-
-              <button id="reset-focus-btn" class="control-btn" title="Clear Focus / Selection" style="display:none;margin-left:6px;">✕ Clear Focus</button>
-
-              <button id="impact-mode-btn" class="control-btn impact-btn" title="Toggle Change Impact Mode" style="margin-left:auto;">
-                <span class="btn-dot"></span> Impact Mode
-              </button>
-            </div>
-
-            <div id="graph-status-banner" class="status-banner" style="display:none;"></div>
-
-            <div id="graph-container" class="graph-canvas-wrapper">
-              <canvas id="twin-canvas"></canvas>
-              <svg id="twin-svg" class="overlay-svg"></svg>
-            </div>
-
-            <!-- Minimap -->
-            <div class="minimap-container" id="minimap-container">
-              <canvas id="minimap-canvas" width="140" height="100"></canvas>
-              <div id="minimap-viewport" class="minimap-vp"></div>
-            </div>
-
-            <!-- Bottom Canvas Footer / Legend -->
-            <footer class="canvas-footer">
-              <div class="footer-stats">
-                <span class="stat-item"><strong id="stat-nodes">0</strong> nodes</span>
-                <span class="stat-sep">•</span>
-                <span class="stat-item"><strong id="stat-edges">0</strong> relationships</span>
-                <span class="stat-sep">•</span>
-                <span class="stat-item"><strong id="stat-drifts">0</strong> drift violations</span>
-                <span class="stat-sep">•</span>
-                <span class="stat-item" id="focus-info-pill" style="display:none;">Focus: <strong id="focus-name">-</strong></span>
-              </div>
-
-              <div class="footer-legend">
-                <span class="leg-pill leg-class"><span class="leg-dot"></span> Class</span>
-                <span class="leg-pill leg-method"><span class="leg-dot"></span> Method</span>
-                <span class="leg-pill leg-module"><span class="leg-dot"></span> Module</span>
-                <span class="leg-pill leg-api"><span class="leg-dot"></span> API</span>
-                <span class="leg-pill leg-test"><span class="leg-dot"></span> Test</span>
-                <span class="leg-pill leg-drift"><span class="leg-dot"></span> Drift Violation</span>
-              </div>
-            </footer>
-          </section>
-
-          <!-- Right Sidebar: Inspector Panel -->
-          <aside class="sidebar-right" id="sidebar-right">
-            <div class="inspector-header">
-              <h3 id="inspector-title" class="inspector-title">Inspector</h3>
-              <button id="close-inspector-btn" class="close-btn" title="Close Panel">&times;</button>
-            </div>
-            <div class="inspector-content" id="inspector-content">
-              <div class="empty-inspector">
-                <div class="empty-icon">⬡</div>
-                <p>Select a node or relationship in the graph to inspect verified source evidence, dependencies, tests, and architecture status.</p>
-              </div>
-            </div>
-          </aside>
-        </div>
-
-        <!-- Sub-View: Components Table -->
-        <div id="subview-arch-components" class="subview-panel table-view-panel" style="display:none;">
-          <div class="table-toolbar">
-            <input type="text" id="components-search-input" placeholder="Search components by name or package..." class="search-input" style="max-width:320px;">
-            <div class="table-meta" id="components-count-display">0 components</div>
-          </div>
-          <div class="table-responsive">
-            <table class="data-table" id="components-table">
-              <thead>
-                <tr>
-                  <th>Component Name</th>
-                  <th>Type</th>
-                  <th>Qualified Path</th>
-                  <th>Location</th>
-                  <th>Language</th>
-                  <th>Confidence</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="components-table-body">
-                <tr><td colspan="7" class="td-loading">Loading components...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Sub-View: APIs Table -->
-        <div id="subview-arch-apis" class="subview-panel table-view-panel" style="display:none;">
-          <div class="table-toolbar">
-            <input type="text" id="apis-search-input" placeholder="Search endpoints..." class="search-input" style="max-width:320px;">
-            <div class="table-meta" id="apis-count-display">0 endpoints</div>
-          </div>
-          <div class="table-responsive">
-            <table class="data-table" id="apis-table">
-              <thead>
-                <tr>
-                  <th>HTTP Method & Path</th>
-                  <th>Handler Name</th>
-                  <th>Source Location</th>
-                  <th>Detection Method</th>
-                  <th>Confidence</th>
-                </tr>
-              </thead>
-              <tbody id="apis-table-body">
-                <tr><td colspan="5" class="td-loading">Loading endpoints...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Sub-View: Conformance & Drift -->
-        <div id="subview-arch-drift" class="subview-panel table-view-panel" style="display:none;">
-          <div class="drift-summary-header" id="drift-summary-header"></div>
-          <div class="table-responsive" style="margin-top:16px;">
-            <table class="data-table" id="drift-violations-table">
-              <thead>
-                <tr>
-                  <th>Severity</th>
-                  <th>Category</th>
-                  <th>Source Component</th>
-                  <th>Target Component</th>
-                  <th>Forbidden Rule</th>
-                  <th>Source Evidence</th>
-                </tr>
-              </thead>
-              <tbody id="drift-table-body">
-                <tr><td colspan="6" class="td-loading">Loading architecture violations...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- ======================================================== -->
-      <!-- VIEW 3: PROCESSES                                        -->
-      <!-- ======================================================== -->
-      <div id="view-processes" class="content-view-panel" style="display:none;">
-        <div class="page-header-row">
-          <div>
-            <h2 class="page-title">Process & Workflow Synthesis</h2>
-            <div class="disclaimer-pill">
-              <span class="disc-icon">ℹ</span>
-              <span><strong>EVIDENCE LEVEL: STATICALLY INFERRED</strong> — Workflow execution chains are statically synthesized from AST entry points and call expressions. No runtime telemetry is implied.</span>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <button id="btn-discover-processes" class="primary-btn" style="font-size:12px;padding:6px 12px;background:#7c3aed;">⚡ Run Process Discovery</button>
-            <div class="process-filter-tabs" id="process-filter-tabs">
-              <button class="proc-filter-btn active" data-filter="all">All Flows</button>
-              <button class="proc-filter-btn" data-filter="application">Application Logic</button>
-              <button class="proc-filter-btn" data-filter="tests">Test Chains</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="process-chains-container" id="process-chains-container">
-          <div class="state-loading">Synthesizing process flows from Digital Twin...</div>
-        </div>
-      </div>
-
-      <!-- ======================================================== -->
-      <!-- VIEW 4: DEPENDENCIES                                     -->
-      <!-- ======================================================== -->
-      <div id="view-dependencies" class="content-view-panel" style="display:none;">
-        <div class="page-header-row">
-          <div>
-            <h2 class="page-title">Dependency Explorer</h2>
-            <span class="page-desc">Trace direct and transitive incoming callers and outgoing callees with verified evidence.</span>
-          </div>
-          <div class="dep-selector-row">
-            <label class="filter-heading" style="margin:0;">FOCUS COMPONENT:</label>
-            <select id="dep-component-select" class="context-select" style="min-width:260px;">
-              <option value="">-- Select a Component --</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Component Selection Quick-Explore Dashboard -->
-        <div class="dep-quick-pick-bar" id="dep-quick-pick-bar">
-          <span class="quick-pick-label">QUICK EXPLORE:</span>
-          <div class="quick-pick-pills" id="dep-quick-pick-pills">
-            <!-- Dynamically populated with Most Connected, Changed, and Isolated components -->
-          </div>
-        </div>
-
-        <div class="dep-matrix-grid" id="dep-matrix-grid">
-          <!-- Inbound Callers -->
-          <div class="dep-col-card">
-            <div class="dep-col-header">
-              <h3>Direct Inbound Callers</h3>
-              <span class="dep-badge" id="dep-inbound-count">0 callers</span>
-            </div>
-            <div class="dep-list" id="dep-inbound-list">
-              <div class="empty-list">Select a component to inspect inbound callers.</div>
+            <div class="flex items-center gap-3">
+              <input id="components-search-input" type="text" placeholder="Filter by name, module, path..." class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-xs text-[#0F172A] focus:outline-none w-64">
+              <span id="components-count-display" class="px-2.5 py-1 rounded-full bg-[#F1F5F9] text-[#475569] text-xs font-semibold">0 components</span>
             </div>
           </div>
 
-          <!-- Focus Component Card (Center) -->
-          <div class="dep-col-card dep-center-card" id="dep-center-card">
-            <div class="dep-col-header">
-              <h3>Selected Component</h3>
-              <span class="badge-evidence" id="dep-center-badge">AST Verified</span>
-            </div>
-            <div class="dep-center-body" id="dep-center-body">
-              <div class="empty-list">No component focused. Select one above or click a quick-explore pill.</div>
-            </div>
-          </div>
-
-          <!-- Outbound Callees -->
-          <div class="dep-col-card">
-            <div class="dep-col-header">
-              <h3>Direct Outbound Callees</h3>
-              <span class="dep-badge" id="dep-outbound-count">0 callees</span>
-            </div>
-            <div class="dep-list" id="dep-outbound-list">
-              <div class="empty-list">Select a component to inspect outbound callees.</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Transitive Dependencies Section -->
-        <div class="card" id="dep-transitive-card" style="margin-top:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:14px;display:none;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-            <h4 style="font-size:13px;font-weight:600;color:var(--text-secondary);letter-spacing:0.04em;">TRANSITIVE DEPENDENCY HOPS (2 HOPS)</h4>
-            <span class="dep-badge" id="dep-transitive-count">0 transitive nodes</span>
-          </div>
-          <div class="dep-transitive-list" id="dep-transitive-list" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
-        </div>
-      </div>
-
-      <!-- ======================================================== -->
-      <!-- VIEW 5: TESTS                                            -->
-      <!-- ======================================================== -->
-      <div id="view-tests" class="content-view-panel" style="display:none;">
-        <div class="page-header-row">
-          <div>
-            <h2 class="page-title">Test Mapping & Impact Surface</h2>
-            <span class="page-desc">Verified unit, integration, and suite mappings derived from AST calls and assertion evidence.</span>
-          </div>
-          <div class="tests-meta-summary" id="tests-meta-summary" style="display:flex;flex-wrap:wrap;gap:8px;">
-            <div class="test-stat-badge">Total Test Artifacts: <strong id="tstat-total">0</strong></div>
-            <div class="test-stat-badge" style="border-left:3px solid #10b981;">Verified Mappings: <strong id="tstat-mapped">0</strong></div>
-            <div class="test-stat-badge" style="border-left:3px solid #f59e0b;">Unmapped Tests: <strong id="tstat-unmapped">0</strong></div>
-            <div class="test-stat-badge" style="border-left:3px solid #38bdf8;">Tested Components: <strong id="tstat-components">0</strong></div>
-          </div>
-        </div>
-
-        <div class="table-responsive" style="margin-top:16px;">
-          <table class="data-table" id="tests-table">
-            <thead>
-              <tr>
-                <th>Test Case Name</th>
-                <th>Type</th>
-                <th>File Location</th>
-                <th>Evidence Status</th>
-                <th>Covered Target Components</th>
-                <th>Impact Status</th>
-              </tr>
-            </thead>
-            <tbody id="tests-table-body">
-              <tr><td colspan="6" class="td-loading">Loading test mappings...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- ======================================================== -->
-      <!-- VIEW 6: CHANGES (DIFF & IMPACT)                          -->
-      <!-- ======================================================== -->
-      <div id="view-changes" class="content-view-panel" style="display:none;">
-        <div class="page-header-row">
-          <div>
-            <h2 class="page-title">Snapshot Diff & Change Impact Analysis</h2>
-            <span class="page-desc">Deterministic change impact and blast-radius propagation across typed Digital Twin relationships.</span>
-          </div>
-          <div class="diff-controls-row">
-            <span class="pill-label">BASE (A):</span>
-            <select id="diff-base-select" class="context-select"></select>
-            <span class="pill-label">TARGET (B):</span>
-            <select id="diff-target-select" class="context-select"></select>
-            <button id="btn-run-diff-action" class="secondary-btn" style="margin-left:6px;">Calculate Diff</button>
-            <button id="btn-run-impact-action" class="primary-btn" style="background:#7c3aed;margin-left:8px;">⚡ Run Blast-Radius Analysis</button>
-            <span class="pill-label" style="margin-left:8px;">DEPTH:</span>
-            <input type="number" id="impact-depth-input" value="5" min="1" max="15" class="context-select" style="width:46px;text-align:center;">
-          </div>
-        </div>
-
-        <div class="diff-metrics-banner" id="diff-metrics-banner" style="display:none;">
-          <!-- Dynamically populated diff stats -->
-        </div>
-
-        <!-- Section: Structural Diff -->
-        <div class="card" style="margin-top:14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:12px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <h3 style="font-size:14px;font-weight:600;color:var(--text-primary);letter-spacing:0.5px;">STRUCTURAL SNAPSHOT CHANGES</h3>
-            <span id="diff-status-pill" class="badge" style="display:none;background:var(--bg-surface);color:var(--text-secondary);font-size:11px;padding:2px 8px;border-radius:4px;">0 CHANGES</span>
-          </div>
-          <div class="table-responsive">
-            <table class="data-table" id="diff-results-table">
-              <thead>
-                <tr>
-                  <th>Diff Status</th>
-                  <th>Artifact / Symbol</th>
-                  <th>Type</th>
-                  <th>Location</th>
-                  <th>Change Provenance</th>
-                </tr>
-              </thead>
-              <tbody id="diff-table-body">
-                <tr><td colspan="5" class="td-empty">Select snapshots and click "Calculate Diff" or "Run Blast-Radius Analysis".</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Section: Deterministic Change Impact / Blast-Radius -->
-        <div id="impact-analysis-container" class="card" style="margin-top:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:16px;display:none;">
-          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-subtle);padding-bottom:12px;margin-bottom:16px;">
-            <div>
-              <h3 style="font-size:16px;font-weight:700;color:#c084fc;display:flex;align-items:center;gap:8px;">
-                <span>🎯</span> DETERMINISTIC BLAST-RADIUS REPORT
-              </h3>
-              <span id="impact-analysis-meta" style="font-size:12px;color:var(--text-secondary);">Evidence-backed propagation trace</span>
-            </div>
-            <div style="display:flex;gap:8px;">
-              <button id="btn-view-impact-graph" class="secondary-btn" style="font-size:12px;padding:6px 12px;border:1px solid #7c3aed;color:#c084fc;">
-                🌐 Project Impact Subgraph
-              </button>
-            </div>
-          </div>
-
-          <!-- Impact Metrics Grid -->
-          <div class="impact-metrics-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;margin-bottom:18px;">
-            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
-              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Changed</div>
-              <div id="metric-impact-changed" style="font-size:22px;font-weight:700;color:#f59e0b;margin-top:2px;">0</div>
-            </div>
-            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
-              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Directly Affected</div>
-              <div id="metric-impact-direct" style="font-size:22px;font-weight:700;color:#ef4444;margin-top:2px;">0</div>
-            </div>
-            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
-              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Indirectly Affected</div>
-              <div id="metric-impact-indirect" style="font-size:22px;font-weight:700;color:#ec4899;margin-top:2px;">0</div>
-            </div>
-            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
-              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Components</div>
-              <div id="metric-impact-components" style="font-size:22px;font-weight:700;color:#38bdf8;margin-top:2px;">0</div>
-            </div>
-            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
-              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">APIs</div>
-              <div id="metric-impact-apis" style="font-size:22px;font-weight:700;color:#f472b6;margin-top:2px;">0</div>
-            </div>
-            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
-              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Processes</div>
-              <div id="metric-impact-processes" style="font-size:22px;font-weight:700;color:#a78bfa;margin-top:2px;">0</div>
-            </div>
-            <div class="metric-card" style="background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
-              <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Tests</div>
-              <div id="metric-impact-tests" style="font-size:22px;font-weight:700;color:#10b981;margin-top:2px;">0</div>
-            </div>
-          </div>
-
-          <!-- Impact Navigation Tabs -->
-          <div class="tab-header" style="display:flex;gap:8px;border-bottom:1px solid var(--border-color);margin-bottom:12px;">
-            <button id="tab-impact-paths" class="tab-btn active" style="padding:6px 14px;border:none;background:none;color:var(--text-primary);border-bottom:2px solid #7c3aed;font-weight:600;font-size:13px;cursor:pointer;">
-              Causal Impact Paths (<span id="impact-paths-count">0</span>)
-            </button>
-            <button id="tab-impact-findings" class="tab-btn" style="padding:6px 14px;border:none;background:none;color:var(--text-secondary);font-size:13px;cursor:pointer;">
-              Evidence & Findings (<span id="impact-findings-count">0</span>)
-            </button>
-            <button id="tab-impact-categories" class="tab-btn" style="padding:6px 14px;border:none;background:none;color:var(--text-secondary);font-size:13px;cursor:pointer;">
-              Affected Categories
-            </button>
-          </div>
-
-          <!-- Pane 1: Causal Impact Paths Tree -->
-          <div id="impact-pane-paths" class="impact-tab-pane" style="display:block;">
-            <div id="impact-paths-tree" style="display:flex;flex-direction:column;gap:8px;max-height:480px;overflow-y:auto;padding-right:6px;">
-              <!-- Populated dynamically with expandable trees -->
-            </div>
-          </div>
-
-          <!-- Pane 2: Evidence & Findings Table -->
-          <div id="impact-pane-findings" class="impact-tab-pane" style="display:none;">
-            <div class="table-responsive">
-              <table class="data-table" id="impact-findings-table">
-                <thead>
+          <div class="bg-white border border-[#E2E8F0] rounded-xl shadow-xs overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-[#F8FAFC] text-[#64748B] font-semibold uppercase tracking-wider border-b border-[#E2E8F0]">
                   <tr>
-                    <th>Level</th>
-                    <th>Root Cause</th>
-                    <th>Relationship</th>
-                    <th>Impacted Target</th>
-                    <th>Target Type</th>
-                    <th>Confidence</th>
-                    <th>Evidence Source</th>
+                    <th class="p-3.5">Name</th>
+                    <th class="p-3.5">Type</th>
+                    <th class="p-3.5">Qualified Name</th>
+                    <th class="p-3.5">Language</th>
+                    <th class="p-3.5">File Location</th>
+                    <th class="p-3.5">Lines</th>
+                    <th class="p-3.5">Confidence</th>
                   </tr>
                 </thead>
-                <tbody id="impact-findings-body"></tbody>
+                <tbody id="components-table-body" class="divide-y divide-[#F1F5F9] text-[#0F172A]">
+                  <tr><td colspan="7" class="p-6 text-center text-[#64748B]">Loading components...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 3: ARCHITECTURE (STITCH TOPOLOGY & CANVAS) -->
+        <!-- ============================================================== -->
+        <section id="view-architecture" class="content-view-panel space-y-6" style="display:none;">
+
+          <!-- Top Architecture Header & Controls -->
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div>
+              <div class="flex items-center gap-1.5 text-[#64748B] text-xs mb-1">
+                <span>Architecture Topology</span>
+                <span class="w-1 h-1 rounded-full bg-[#CBD5E1] mx-1"></span>
+                <span class="px-2 py-0.5 rounded-full bg-[#F1F5F9] text-[#0F172A] font-mono text-[11px] font-semibold">v4.19.2 AST Mirror</span>
+              </div>
+              <h2 class="text-2xl font-bold text-[#0F172A]">Software Architecture</h2>
+              <p class="text-xs text-[#64748B] mt-0.5">Living structural boundaries, inter-service contracts, and execution tiers discovered from code.</p>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button class="level-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0071e3] text-white transition-all active" data-level="1">L1 Macro</button>
+              <button class="level-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] transition-all" data-level="2">L2 Components</button>
+              <button class="level-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] transition-all" data-level="3">L3 Micro</button>
+            </div>
+          </div>
+
+          <!-- Canvas Toolbar -->
+          <div class="flex items-center justify-between gap-3 bg-white border border-[#E2E8F0] rounded-xl p-3 shadow-xs">
+            <div class="flex items-center gap-2">
+              <input id="graph-search-input" type="text" placeholder="Search node in graph..." class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-1 text-xs text-[#0F172A] focus:outline-none w-56">
+              <button id="toggle-isolated-btn" class="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-xs text-[#0F172A]">
+                <span class="material-symbols-outlined text-[14px]">visibility</span>
+                <span id="isolated-count">Isolated (0)</span>
+              </button>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <button id="btn-fit-view" class="w-7 h-7 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] flex items-center justify-center text-[#0F172A]" title="Fit to View">
+                <span class="material-symbols-outlined text-[16px]">crop_free</span>
+              </button>
+              <button id="zoom-in-btn" class="w-7 h-7 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] flex items-center justify-center text-[#0F172A] font-bold" title="Zoom In">+</button>
+              <button id="zoom-out-btn" class="w-7 h-7 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] flex items-center justify-center text-[#0F172A] font-bold" title="Zoom Out">-</button>
+            </div>
+          </div>
+
+          <!-- Canvas & Inspector Split View -->
+          <div class="relative w-full h-[650px] bg-white border border-[#E2E8F0] rounded-2xl overflow-hidden shadow-xs">
+            <canvas id="twin-canvas" class="w-full h-full cursor-grab active:cursor-grabbing block"></canvas>
+
+            <!-- Sliding Node Details Inspector Drawer -->
+            <div id="node-detail-panel" class="absolute right-0 top-0 bottom-0 w-80 bg-white/95 backdrop-blur-md border-l border-[#E2E8F0] p-5 overflow-y-auto transform translate-x-full transition-transform duration-200 z-20 shadow-lg">
+              <div class="flex items-center justify-between pb-3 border-b border-[#E2E8F0] mb-4">
+                <h4 class="font-bold text-sm text-[#0F172A]">Node Inspector</h4>
+                <button id="close-inspector-btn" class="text-[#64748B] hover:text-[#0F172A]">
+                  <span class="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
+              <div id="inspector-content" class="space-y-4 text-xs font-mono">
+                <p class="text-[#64748B]">Select a node in the graph to inspect structural properties.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Spatial Tiers Grid (From Stitch Design) -->
+          <div class="space-y-4 pt-4">
+            <h3 class="text-sm font-bold text-[#0F172A] uppercase tracking-wider">Discovered System Execution Tiers</h3>
+
+            <!-- Tier 01: Client & Ingress Mesh -->
+            <div class="p-4 rounded-xl bg-[#F0F9FF]/80 border border-[#BAE6FD] space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[#0284C7] text-white">Tier 01</span>
+                <span class="text-xs font-bold text-[#0C4A6E]">Client &amp; Ingress Mesh</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="p-3 bg-white rounded-lg border border-[#BAE6FD] shadow-2xs">
+                  <div class="text-xs font-bold text-[#0F172A]">Web &amp; Mobile Clients</div>
+                  <div class="text-[11px] text-[#64748B] mt-0.5">Frontend Edge Interfaces</div>
+                </div>
+                <div class="p-3 bg-white rounded-lg border border-[#BAE6FD] shadow-2xs">
+                  <div class="text-xs font-bold text-[#0F172A]">API Gateway Ingress</div>
+                  <div class="text-[11px] text-[#64748B] mt-0.5">Reverse Proxy &amp; Routing</div>
+                </div>
+                <div class="p-3 bg-white rounded-lg border border-[#BAE6FD] shadow-2xs">
+                  <div class="text-xs font-bold text-[#0F172A]">Webhook Ingestion</div>
+                  <div class="text-[11px] text-[#64748B] mt-0.5">HMAC &amp; Event Receivers</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tier 02: Core Microservices & Business Logic -->
+            <div class="p-4 rounded-xl bg-[#FAF5FF]/80 border border-[#DDD6FE] space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[#7C3AED] text-white">Tier 02</span>
+                <span class="text-xs font-bold text-[#4C1D95]">Core Microservices &amp; Business Logic</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="p-3 bg-white rounded-lg border border-[#DDD6FE] shadow-2xs">
+                  <div class="text-xs font-bold text-[#0F172A]">Order Processing</div>
+                  <div class="text-[11px] text-[#64748B] mt-0.5">gRPC Transaction Engine</div>
+                </div>
+                <div class="p-3 bg-white rounded-lg border border-[#FDA4AF] bg-gradient-to-b from-[#FFF1F2] to-white shadow-2xs">
+                  <div class="text-xs font-bold text-[#881337]">Payment Service</div>
+                  <div class="text-[11px] text-[#BE123C] font-semibold mt-0.5">Under Active Triage</div>
+                </div>
+                <div class="p-3 bg-white rounded-lg border border-[#DDD6FE] shadow-2xs">
+                  <div class="text-xs font-bold text-[#0F172A]">Tax Calculation</div>
+                  <div class="text-[11px] text-[#64748B] mt-0.5">Rate &amp; Profile Matrix</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tier 03: Data & Third-Party Persistence -->
+            <div class="p-4 rounded-xl bg-[#ECFDF5]/80 border border-[#A7F3D0] space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-[#059669] text-white">Tier 03</span>
+                <span class="text-xs font-bold text-[#064E3B]">Persistence &amp; External Integrations</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="p-3 bg-white rounded-lg border border-[#A7F3D0] shadow-2xs">
+                  <div class="text-xs font-bold text-[#0F172A]">PostgreSQL Database</div>
+                  <div class="text-[11px] text-[#64748B] mt-0.5">Relational Transaction Store</div>
+                </div>
+                <div class="p-3 bg-white rounded-lg border border-[#A7F3D0] shadow-2xs">
+                  <div class="text-xs font-bold text-[#0F172A]">Stripe Payment API</div>
+                  <div class="text-[11px] text-[#64748B] mt-0.5">External Gateway Provider</div>
+                </div>
+                <div class="p-3 bg-white rounded-lg border border-[#A7F3D0] shadow-2xs">
+                  <div class="text-xs font-bold text-[#0F172A]">Redis Event Cache</div>
+                  <div class="text-[11px] text-[#64748B] mt-0.5">Session &amp; Token Cache</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 4: DEPENDENCIES MATRIX -->
+        <!-- ============================================================== -->
+        <section id="view-dependencies" class="content-view-panel space-y-6" style="display:none;">
+          <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-bold text-[#0F172A]">Service Dependencies &amp; Risk Map</h2>
+              <p class="text-xs text-[#64748B]">Trace static, semantic, and runtime calls across structural boundaries.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="dep-focus-select" class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-xs text-[#0F172A]"></select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-3">
+              <h3 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider">Direct Inbound Callers</h3>
+              <div id="dep-inbound-list" class="space-y-2 text-xs">
+                <!-- Injected by twin.js -->
+              </div>
+            </div>
+            <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-3">
+              <h3 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider">Direct Outbound Callees</h3>
+              <div id="dep-outbound-list" class="space-y-2 text-xs">
+                <!-- Injected by twin.js -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 5: WORKFLOWS & BUSINESS PROCESSES -->
+        <!-- ============================================================== -->
+        <section id="view-processes" class="content-view-panel space-y-6" style="display:none;">
+          <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-bold text-[#0F172A]">Workflows &amp; Business Processes</h2>
+              <p class="text-xs text-[#64748B]">Multi-step execution flows synthesized from entry points and runtime signals.</p>
+            </div>
+            <button id="btn-discover-processes" class="px-3.5 py-1.5 rounded-lg bg-[#0071e3] text-white text-xs font-semibold shadow-xs">
+              ⚡ Run Process Discovery
+            </button>
+          </div>
+
+          <div id="processes-container" class="space-y-4">
+            <!-- Injected by twin.js -->
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 6: CHANGES (SNAPSHOT COMPARISON) -->
+        <!-- ============================================================== -->
+        <section id="view-changes" class="content-view-panel space-y-6" style="display:none;">
+          <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-bold text-[#0F172A]">Snapshot Comparison &amp; Code Changes</h2>
+              <p class="text-xs text-[#64748B]">Deterministic structural differences extracted between git snapshots.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="diff-base-select" class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-2.5 py-1.5 text-xs"></select>
+              <span class="text-xs text-[#94A3B8]">→</span>
+              <select id="diff-target-select" class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-2.5 py-1.5 text-xs"></select>
+              <button id="btn-compute-diff" class="px-3.5 py-1.5 rounded-lg bg-[#0071e3] text-white text-xs font-semibold shadow-xs">Compare</button>
+            </div>
+          </div>
+
+          <div id="diff-metrics-banner" class="flex flex-wrap gap-2.5" style="display:none;"></div>
+
+          <div id="changes-summary-container" class="space-y-4">
+            <div class="bg-white border border-[#E2E8F0] rounded-xl shadow-xs overflow-hidden">
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-[#F8FAFC] text-[#64748B] font-semibold uppercase tracking-wider border-b border-[#E2E8F0]">
+                    <tr>
+                      <th class="p-3.5">Change</th>
+                      <th class="p-3.5">Artifact Name</th>
+                      <th class="p-3.5">Type</th>
+                      <th class="p-3.5">File Location</th>
+                      <th class="p-3.5">Diff Details</th>
+                    </tr>
+                  </thead>
+                  <tbody id="diff-table-body" class="divide-y divide-[#F1F5F9] text-[#0F172A]">
+                    <tr><td colspan="5" class="p-6 text-center text-[#64748B]">Select snapshots above and click Compare to evaluate AST differences.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 7: IMPACT ANALYSIS (BLAST RADIUS) -->
+        <!-- ============================================================== -->
+        <section id="view-impact" class="content-view-panel space-y-6" style="display:none;">
+          <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-bold text-[#0F172A]">Change Impact &amp; Blast-Radius Engine</h2>
+              <p class="text-xs text-[#64748B]">Multi-hop causal propagation across components, contracts, workflows, and test suites.</p>
+            </div>
+            <button id="btn-run-impact-action" class="px-4 py-2 rounded-lg bg-[#0071e3] text-white text-xs font-bold shadow-xs">
+              ⚡ Execute Impact Propagation
+            </button>
+          </div>
+
+          <!-- Impact Bento Grid Summary -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
+            <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
+              <span class="text-[10px] text-[#64748B] uppercase font-bold">Changed</span>
+              <div id="metric-impact-changed" class="text-xl font-bold text-[#F59E0B] mt-0.5">0</div>
+            </div>
+            <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
+              <span class="text-[10px] text-[#64748B] uppercase font-bold">Direct</span>
+              <div id="metric-impact-direct" class="text-xl font-bold text-[#EF4444] mt-0.5">0</div>
+            </div>
+            <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
+              <span class="text-[10px] text-[#64748B] uppercase font-bold">Indirect</span>
+              <div id="metric-impact-indirect" class="text-xl font-bold text-[#EC4899] mt-0.5">0</div>
+            </div>
+            <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
+              <span class="text-[10px] text-[#64748B] uppercase font-bold">Components</span>
+              <div id="metric-impact-components" class="text-xl font-bold text-[#3B82F6] mt-0.5">0</div>
+            </div>
+            <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
+              <span class="text-[10px] text-[#64748B] uppercase font-bold">APIs</span>
+              <div id="metric-impact-apis" class="text-xl font-bold text-[#8B5CF6] mt-0.5">0</div>
+            </div>
+            <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
+              <span class="text-[10px] text-[#64748B] uppercase font-bold">Processes</span>
+              <div id="metric-impact-processes" class="text-xl font-bold text-[#06B6D4] mt-0.5">0</div>
+            </div>
+            <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
+              <span class="text-[10px] text-[#64748B] uppercase font-bold">Tests</span>
+              <div id="metric-impact-tests" class="text-xl font-bold text-[#10B981] mt-0.5">0</div>
+            </div>
+          </div>
+
+          <div id="impact-analysis-container" class="space-y-4">
+            <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-3">
+              <h3 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider">Causal Propagation Tree</h3>
+              <div id="impact-paths-tree" class="space-y-2 text-xs font-mono">
+                <!-- Injected by twin.js -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 8: TESTS & VERIFICATION INTELLIGENCE (PHASE 6) -->
+        <!-- ============================================================== -->
+        <section id="view-tests" class="content-view-panel space-y-6" style="display:none;">
+          <!-- 1. Header with Action -->
+          <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 class="text-xl font-bold text-[#0F172A]">Test Impact Intelligence</h2>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">Phase 6</span>
+              </div>
+              <p class="text-xs text-[#64748B] mt-0.5">Determine which tests are potentially affected by code changes and explain why with deterministic causal paths.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="btn-run-test-impact" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs transition-colors">
+                <span class="material-symbols-outlined text-[16px]">speed</span>
+                <span>Analyze Test Impact</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. Test Impact Bento Summary Grid -->
+          <div id="test-impact-summary-grid" class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div class="p-4 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
+              <span class="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Potentially Affected</span>
+              <div id="ti-metric-affected" class="text-2xl font-bold text-[#BE123C] mt-1">0</div>
+              <p class="text-[10px] text-[#64748B] mt-0.5">Tests to re-run</p>
+            </div>
+            <div class="p-4 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
+              <span class="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Directly Affected</span>
+              <div id="ti-metric-direct" class="text-2xl font-bold text-[#E11D48] mt-1">0</div>
+              <p class="text-[10px] text-[#64748B] mt-0.5">Direct assertions</p>
+            </div>
+            <div class="p-4 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
+              <span class="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Indirectly Affected</span>
+              <div id="ti-metric-indirect" class="text-2xl font-bold text-[#7C3AED] mt-1">0</div>
+              <p class="text-[10px] text-[#64748B] mt-0.5">Downstream calls</p>
+            </div>
+            <div class="p-4 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
+              <span class="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Unaffected Tests</span>
+              <div id="ti-metric-unaffected" class="text-2xl font-bold text-[#059669] mt-1">0</div>
+              <p class="text-[10px] text-[#64748B] mt-0.5">Outside blast radius</p>
+            </div>
+            <div class="p-4 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
+              <span class="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Coverage Unknown</span>
+              <div id="ti-metric-unknown" class="text-2xl font-bold text-[#D97706] mt-1">0</div>
+              <p class="text-[10px] text-[#64748B] mt-0.5">Changed without tests</p>
+            </div>
+          </div>
+
+          <!-- 3. Filter Tabs for Test Impact vs Catalog -->
+          <div class="flex items-center justify-between border-b border-[#E2E8F0] pb-2">
+            <div class="flex items-center gap-2">
+              <button class="ti-tab-btn active px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#F1F5F9] text-[#0F172A]" data-ti-tab="affected">
+                Affected Tests (<span id="ti-tab-count-affected">0</span>)
+              </button>
+              <button class="ti-tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC]" data-ti-tab="unknown">
+                Coverage Unknown (<span id="ti-tab-count-unknown">0</span>)
+              </button>
+              <button class="ti-tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC]" data-ti-tab="unaffected">
+                Unaffected Tests (<span id="ti-tab-count-unaffected">0</span>)
+              </button>
+              <button class="ti-tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC]" data-ti-tab="catalog">
+                Full Test Catalog (<span id="ti-tab-count-catalog">0</span>)
+              </button>
+            </div>
+            <span id="ti-status-banner" class="text-xs text-[#64748B]">Ready for analysis</span>
+          </div>
+
+          <!-- 4. Tab 1: Affected Tests List Container -->
+          <div id="ti-tab-panel-affected" class="space-y-3">
+            <div id="ti-affected-tests-list" class="space-y-3">
+              <div class="p-8 text-center bg-white border border-[#E2E8F0] rounded-xl text-xs text-[#64748B]">
+                Click <strong>Analyze Test Impact</strong> to evaluate which tests are potentially affected by code changes between snapshots.
+              </div>
+            </div>
+          </div>
+
+          <!-- 5. Tab 2: Coverage Unknown List Container -->
+          <div id="ti-tab-panel-unknown" class="space-y-3" style="display:none;">
+            <div id="ti-unknown-coverage-list" class="space-y-3">
+              <div class="p-8 text-center bg-white border border-[#E2E8F0] rounded-xl text-xs text-[#64748B]">
+                No untested changes identified.
+              </div>
+            </div>
+          </div>
+
+          <!-- 6. Tab 3: Unaffected Tests List Container -->
+          <div id="ti-tab-panel-unaffected" class="space-y-3" style="display:none;">
+            <div id="ti-unaffected-tests-list" class="space-y-3">
+              <div class="p-8 text-center bg-white border border-[#E2E8F0] rounded-xl text-xs text-[#64748B]">
+                No unaffected tests recorded.
+              </div>
+            </div>
+          </div>
+
+          <!-- 7. Tab 4: Full Test Catalog Table -->
+          <div id="ti-tab-panel-catalog" class="bg-white border border-[#E2E8F0] rounded-xl shadow-xs overflow-hidden" style="display:none;">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-[#F8FAFC] text-[#64748B] font-semibold uppercase tracking-wider border-b border-[#E2E8F0]">
+                  <tr>
+                    <th class="p-3.5">Test Case Name</th>
+                    <th class="p-3.5">Type</th>
+                    <th class="p-3.5">File Location</th>
+                    <th class="p-3.5">Target Components</th>
+                  </tr>
+                </thead>
+                <tbody id="tests-table-body" class="divide-y divide-[#F1F5F9] text-[#0F172A]">
+                  <tr><td colspan="4" class="p-6 text-center text-[#64748B]">Loading test catalog...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 9: INCIDENTS (DIRECTORY & TRIAGE) -->
+        <!-- ============================================================== -->
+        <section id="view-incidents" class="content-view-panel space-y-6" style="display:none;">
+          <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-bold text-[#0F172A]">Incidents Directory &amp; Triage</h2>
+              <p class="text-xs text-[#64748B]">Correlate active production anomalies directly with the Digital Twin architecture graph.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="btn-refresh-incidents" class="px-3 py-1.5 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-xs font-medium text-[#0F172A]">Refresh</button>
+              <button class="px-3.5 py-1.5 rounded-lg bg-[#BA1A1A] hover:bg-[#93000A] text-white text-xs font-semibold shadow-xs" onclick="window.TwinApp.openCreateIncidentModal();">
+                + Declare Incident
+              </button>
+            </div>
+          </div>
+
+          <!-- Incidents Table -->
+          <div class="bg-white border border-[#E2E8F0] rounded-xl shadow-xs overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-[#F8FAFC] text-[#64748B] font-semibold uppercase tracking-wider border-b border-[#E2E8F0]">
+                  <tr>
+                    <th class="p-3.5">Severity</th>
+                    <th class="p-3.5">Incident Title</th>
+                    <th class="p-3.5">Status</th>
+                    <th class="p-3.5">Detected At</th>
+                    <th class="p-3.5">Affected Component</th>
+                    <th class="p-3.5">Evidence Items</th>
+                    <th class="p-3.5">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="incidents-table-body" class="divide-y divide-[#F1F5F9] text-[#0F172A]">
+                  <tr><td colspan="7" class="p-6 text-center text-[#64748B]">Loading active incidents...</td></tr>
+                </tbody>
               </table>
             </div>
           </div>
 
-          <!-- Pane 3: Affected Categories -->
-          <div id="impact-pane-categories" class="impact-tab-pane" style="display:none;">
-            <div id="impact-categories-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:12px;">
-              <!-- Category cards populated dynamically -->
+          <!-- Incident Investigation Workspace Area -->
+          <div id="incident-investigation-workspace" class="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-xs space-y-4" style="display:none;">
+            <div class="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+              <h3 class="text-base font-bold text-[#0F172A] flex items-center gap-2">
+                <span class="material-symbols-outlined text-[#7C3AED]">troubleshoot</span>
+                <span>Deterministic Causal Investigation Result</span>
+              </h3>
+              <button class="text-xs text-[#64748B] hover:text-[#0F172A]" onclick="document.getElementById('incident-investigation-workspace').style.display='none';">Close</button>
+            </div>
+            <div id="investigation-report-container">
+              <!-- Injected by twin.js -->
             </div>
           </div>
-        </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 10: RUNTIME (TELEMETRY STREAM) -->
+        <!-- ============================================================== -->
+        <section id="view-runtime" class="content-view-panel space-y-6" style="display:none;">
+          <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-bold text-[#0F172A]">Runtime Evidence &amp; Live Execution Stream</h2>
+              <p class="text-xs text-[#64748B]">Production traces, execution logs, and APM signals correlated to software components.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="btn-refresh-runtime" class="px-3 py-1.5 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-xs font-medium text-[#0F172A]">Refresh</button>
+              <button class="px-3.5 py-1.5 rounded-lg bg-[#0071e3] text-white text-xs font-semibold shadow-xs" onclick="window.TwinApp.openIngestModal();">
+                + Ingest Telemetry
+              </button>
+            </div>
+          </div>
+
+          <div class="bg-white border border-[#E2E8F0] rounded-xl shadow-xs overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs font-mono">
+                <thead class="bg-[#F8FAFC] text-[#64748B] font-semibold uppercase tracking-wider border-b border-[#E2E8F0]">
+                  <tr>
+                    <th class="p-3.5">Severity</th>
+                    <th class="p-3.5">Event Type</th>
+                    <th class="p-3.5">Timestamp</th>
+                    <th class="p-3.5">Component</th>
+                    <th class="p-3.5">Latency</th>
+                    <th class="p-3.5">Errors</th>
+                    <th class="p-3.5">Trace ID</th>
+                  </tr>
+                </thead>
+                <tbody id="runtime-table-body" class="divide-y divide-[#F1F5F9] text-[#0F172A]">
+                  <tr><td colspan="7" class="p-6 text-center text-[#64748B]">Loading telemetry events...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 11: EVIDENCE LEDGER -->
+        <!-- ============================================================== -->
+        <section id="view-evidence" class="content-view-panel space-y-6" style="display:none;">
+          <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs">
+            <h2 class="text-xl font-bold text-[#0F172A]">Evidence Ledger &amp; Repository Tree</h2>
+            <p class="text-xs text-[#64748B]">Multi-source verification records supporting the software model and file hierarchy.</p>
+          </div>
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-4 bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-xs">
+              <h3 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider mb-3">File Hierarchy</h3>
+              <div id="evidence-tree-container" class="space-y-1 text-xs max-h-[600px] overflow-y-auto"></div>
+            </div>
+            <div class="lg:col-span-8 bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs">
+              <div id="evidence-overview-state" class="text-center py-12">
+                <span class="text-3xl mb-2 block">📁</span>
+                <p class="font-bold text-sm text-[#0F172A]">Select a file in the tree to view extracted code evidence</p>
+                <p class="text-xs text-[#64748B] mt-1">Direct syntactic and semantic mappings extracted by Digital Twin analyzers.</p>
+              </div>
+              <div id="evidence-file-details" style="display:none;" class="space-y-4"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 12: ASK SOFTWARE (INTELLIGENCE CONSOLE) -->
+        <!-- ============================================================== -->
+        <section id="view-ask" class="content-view-panel space-y-6" style="display:none;">
+          <div class="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-xs space-y-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-[#EDE9FE] text-[#7C3AED] flex items-center justify-center">
+                <span class="material-symbols-outlined text-[24px]">psychology</span>
+              </div>
+              <div>
+                <h2 class="text-xl font-bold text-[#0F172A]">Ask Software Intelligence</h2>
+                <p class="text-xs text-[#64748B]">Query architectural topology, active incidents, blast radius, and test coverage using natural language.</p>
+              </div>
+            </div>
+
+            <!-- Query Input Box -->
+            <div class="flex gap-2">
+              <input id="ask-query-input" type="text" placeholder="e.g. What caused the payment service incident? Or what is the blast radius of PR #402?" class="flex-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-4 py-3 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
+              <button id="btn-ask-submit" class="px-5 py-3 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs flex items-center gap-2">
+                <span class="material-symbols-outlined text-[16px]">send</span>
+                <span>Ask Twin</span>
+              </button>
+            </div>
+
+            <!-- Prompt Pills -->
+            <div class="flex items-center gap-2 flex-wrap text-xs">
+              <span class="text-[#64748B] text-[11px] font-medium">Try asking:</span>
+              <button class="ask-prompt-pill px-3 py-1 rounded-full bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-[11px] transition-colors" data-prompt="Show all active production incidents and candidate causes" type="button">Active Incidents</button>
+              <button class="ask-prompt-pill px-3 py-1 rounded-full bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-[11px] transition-colors" data-prompt="What components are affected by recent changes?" type="button">Blast Radius</button>
+              <button class="ask-prompt-pill px-3 py-1 rounded-full bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-[11px] transition-colors" data-prompt="Check architecture boundary conformance" type="button">Architecture Drift</button>
+            </div>
+          </div>
+
+          <!-- Answer Container -->
+          <div id="ask-results-container">
+            <!-- Results dynamically synthesized by twin.js -->
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- MODAL 1: CONNECT REPOSITORY -->
+  <!-- ==================================================================== -->
+  <div id="modal-onboard" class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display:none;">
+    <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5">
+      <div class="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+        <h3 class="font-bold text-base text-[#0F172A]">Connect Codebase</h3>
+        <button id="modal-close-btn" class="text-[#64748B] hover:text-[#0F172A]" type="button">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
       </div>
 
-      <!-- ======================================================== -->
-      <!-- VIEW 7: EVIDENCE (REPOSITORY EXPLORER)                   -->
-      <!-- ======================================================== -->
-      <div id="view-evidence" class="content-view-panel" style="display:none;">
-        <div class="page-header-row">
-          <div>
-            <h2 class="page-title">Repository Explorer & Source Evidence</h2>
-            <span class="page-desc">Browse directory structure with localized AST symbols, line numbers, and verification hashes.</span>
-          </div>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-[#0F172A] mb-1">Local Directory Path</label>
+          <input id="input-local-path" type="text" placeholder="/path/to/repository" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2.5 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
         </div>
-
-        <div class="evidence-split-layout">
-          <!-- File Tree -->
-          <div class="evidence-tree-pane">
-            <div class="tree-search-bar">
-              <input type="text" id="evidence-search-input" placeholder="Filter files..." class="search-input">
-            </div>
-            <div class="tree-container" id="evidence-tree-container">
-              <div class="tree-loading">Loading file structure...</div>
-            </div>
-          </div>
-
-          <!-- Evidence Details -->
-          <div class="evidence-details-pane" id="evidence-details-pane">
-            <div id="evidence-overview-state" class="evidence-overview-container" style="display:flex;flex-direction:column;gap:16px;">
-              <!-- Evidence Header -->
-              <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:16px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                  <h3 style="font-size:15px;font-weight:700;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
-                    <span style="color:#06b6d4;">🛡️</span> DIGITAL TWIN EVIDENCE INTELLIGENCE
-                  </h3>
-                  <span class="badge" style="background:rgba(6,182,212,0.15);color:#06b6d4;border:1px solid rgba(6,182,212,0.3);font-size:11px;padding:2px 8px;">
-                    VERIFIED ARTIFACT PROVENANCE
-                  </span>
-                </div>
-                <p style="font-size:12px;color:var(--text-secondary);line-height:1.5;margin:0;">
-                  All Digital Twin entities are deterministically derived from source code ASTs, manifest configurations, and typed call relationships. Select any file from the directory tree to inspect its localized symbols, byte/line ranges, and graph connectivity.
-                </p>
-              </div>
-
-              <!-- Evidence Metric Cards -->
-              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;">
-                <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:12px;text-align:center;">
-                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Source Files</div>
-                  <div id="ev-sum-files" style="font-size:22px;font-weight:700;color:#38bdf8;margin-top:4px;">0</div>
-                </div>
-                <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:12px;text-align:center;">
-                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Structural Artifacts</div>
-                  <div id="ev-sum-artifacts" style="font-size:22px;font-weight:700;color:#c084fc;margin-top:4px;">0</div>
-                </div>
-                <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:12px;text-align:center;">
-                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Typed Edges</div>
-                  <div id="ev-sum-relationships" style="font-size:22px;font-weight:700;color:#34d399;margin-top:4px;">0</div>
-                </div>
-                <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:12px;text-align:center;">
-                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Test Evidence</div>
-                  <div id="ev-sum-tests" style="font-size:22px;font-weight:700;color:#f59e0b;margin-top:4px;">0</div>
-                </div>
-                <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:12px;text-align:center;">
-                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Process Chains</div>
-                  <div id="ev-sum-processes" style="font-size:22px;font-weight:700;color:#a78bfa;margin-top:4px;">0</div>
-                </div>
-                <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:12px;text-align:center;">
-                  <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Analysis Runs</div>
-                  <div id="ev-sum-runs" style="font-size:22px;font-weight:700;color:#06b6d4;margin-top:4px;">0</div>
-                </div>
-              </div>
-
-              <!-- Evidence Provenance & Hierarchy -->
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:14px;">
-                  <h4 style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px;">
-                    <span style="color:#10b981;">●</span> Evidence Classification Hierarchy
-                  </h4>
-                  <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-surface);border-radius:4px;border-left:3px solid #10b981;">
-                      <span style="font-weight:600;color:#10b981;">DIRECT_AST</span>
-                      <span style="color:var(--text-muted);">Confidence: 100% (High)</span>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-surface);border-radius:4px;border-left:3px solid #06b6d4;">
-                      <span style="font-weight:600;color:#06b6d4;">STATIC_MAPPING</span>
-                      <span style="color:var(--text-muted);">Confidence: 85-95% (Medium-High)</span>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-surface);border-radius:4px;border-left:3px solid #f59e0b;">
-                      <span style="font-weight:600;color:#f59e0b;">STATICALLY_INFERRED</span>
-                      <span style="color:var(--text-muted);">Confidence: 70-85% (Inferred Call Chains)</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:14px;">
-                  <h4 style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:10px;display:flex;align-items:center;gap:6px;">
-                    <span style="color:#c084fc;">⚙️</span> Active Analyzers & Extraction Engine
-                  </h4>
-                  <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--text-secondary);">
-                    <li style="display:flex;align-items:center;gap:6px;">
-                      <span style="color:#10b981;">✓</span> Tree-sitter AST extractors (Python, TS, JS, Go, Java)
-                    </li>
-                    <li style="display:flex;align-items:center;gap:6px;">
-                      <span style="color:#10b981;">✓</span> Deterministic PostgreSQL Graph Projections
-                    </li>
-                    <li style="display:flex;align-items:center;gap:6px;">
-                      <span style="color:#10b981;">✓</span> Explicit Test Discovery & Target Resolver
-                    </li>
-                    <li style="display:flex;align-items:center;gap:6px;">
-                      <span style="color:#10b981;">✓</span> Process Synthesizer (DAG Traversal)
-                    </li>
-                    <li style="display:flex;align-items:center;gap:6px;">
-                      <span style="color:#10b981;">✓</span> Change Impact & Blast-Radius Engine
-                    </li>
-                  </ul>
-                </div>
-              </div>
-
-              <!-- Select File Prompt -->
-              <div style="background:rgba(124,58,237,0.06);border:1px dashed #7c3aed;border-radius:8px;padding:18px;text-align:center;">
-                <div style="font-size:24px;margin-bottom:6px;">👈</div>
-                <div style="font-size:13px;font-weight:600;color:#c084fc;margin-bottom:4px;">Select a File to Inspect Localized Evidence</div>
-                <div style="font-size:12px;color:var(--text-secondary);">
-                  Click any source file in the left directory explorer to view extracted AST symbols, byte ranges, line numbers, relationships, and associated test/impact findings.
-                </div>
-              </div>
-            </div>
-
-            <!-- Active File Details Container (Hidden until file selected) -->
-            <div id="evidence-file-details" style="display:none;"></div>
-          </div>
+        <div>
+          <label class="block text-xs font-semibold text-[#0F172A] mb-1">Repository Name (Optional)</label>
+          <input id="input-repo-name" type="text" placeholder="e.g. payment-platform" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2.5 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
         </div>
+        <div id="onboard-error-box" class="p-3 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] text-[#BE123C] text-xs font-medium" style="display:none;"></div>
       </div>
 
-      <!-- ======================================================== -->
-      <!-- VIEW 8: RUNTIME EVIDENCE                                 -->
-      <!-- ======================================================== -->
-      <div id="view-runtime" class="content-view-panel" style="display:none;">
-        <div class="page-header-row">
-          <div>
-            <h2 class="page-title">Runtime Evidence Pipeline</h2>
-            <div class="disclaimer-pill">
-              <span class="disc-icon">⚡</span>
-              <span><strong>EVIDENCE LEVEL: OBSERVED RUNTIME EVIDENCE</strong> — Normalized telemetry and execution events correlated deterministically with Digital Twin entities. Sensitive keys are automatically redacted.</span>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <button id="btn-open-ingest-modal" class="primary-btn" style="font-size:12px;padding:6px 12px;">+ Ingest Runtime Events</button>
-            <button id="btn-refresh-runtime" class="secondary-btn" style="font-size:12px;padding:6px 12px;">↻ Refresh</button>
-          </div>
-        </div>
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button id="modal-cancel-btn" class="px-4 py-2 rounded-xl bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-xs font-medium" type="button">Cancel</button>
+        <button id="modal-submit-btn" class="px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs" type="button">Analyze &amp; Synthesize Twin</button>
+      </div>
+    </div>
+  </div>
 
-        <!-- Runtime Summary Metric Strip -->
-        <div class="runtime-metric-strip" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;margin-top:12px;">
-          <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
-            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Total Events</div>
-            <div id="metric-runtime-total" style="font-size:20px;font-weight:700;color:#38bdf8;margin-top:2px;">0</div>
-          </div>
-          <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
-            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Correlated</div>
-            <div id="metric-runtime-correlated" style="font-size:20px;font-weight:700;color:#10b981;margin-top:2px;">0</div>
-          </div>
-          <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
-            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Errors / Exceptions</div>
-            <div id="metric-runtime-errors" style="font-size:20px;font-weight:700;color:#ef4444;margin-top:2px;">0</div>
-          </div>
-          <div class="metric-card" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:10px;text-align:center;">
-            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;font-weight:600;">Services Active</div>
-            <div id="metric-runtime-services" style="font-size:20px;font-weight:700;color:#a78bfa;margin-top:2px;">0</div>
-          </div>
-        </div>
+  <!-- ==================================================================== -->
+  <!-- MODAL 2: INGEST RUNTIME TELEMETRY -->
+  <!-- ==================================================================== -->
+  <div id="modal-ingest-runtime" class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display:none;">
+    <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5">
+      <div class="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+        <h3 class="font-bold text-base text-[#0F172A]">Ingest Runtime Telemetry</h3>
+        <button id="modal-ingest-close-btn" class="text-[#64748B] hover:text-[#0F172A]" type="button">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
 
-        <!-- Runtime Filter Toolbar -->
-        <div class="table-toolbar" style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <select id="runtime-filter-event-type" class="context-select" style="min-width:130px;">
-            <option value="">All Event Types</option>
-            <option value="ERROR">ERROR</option>
-            <option value="EXCEPTION">EXCEPTION</option>
-            <option value="REQUEST">REQUEST</option>
-            <option value="SPAN">SPAN</option>
-            <option value="TRACE">TRACE</option>
-            <option value="DEPLOYMENT">DEPLOYMENT</option>
-            <option value="STARTUP">STARTUP</option>
-            <option value="HEALTH_CHECK">HEALTH_CHECK</option>
-          </select>
-          <select id="runtime-filter-severity" class="context-select" style="min-width:120px;">
-            <option value="">All Severities</option>
-            <option value="CRITICAL">CRITICAL</option>
-            <option value="ERROR">ERROR</option>
-            <option value="WARN">WARN</option>
-            <option value="INFO">INFO</option>
-          </select>
-          <select id="runtime-filter-env" class="context-select" style="min-width:120px;">
-            <option value="">All Environments</option>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-[#0F172A] mb-1">Target Environment</label>
+          <select id="input-ingest-env" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2 text-xs text-[#0F172A]">
             <option value="production">production</option>
             <option value="staging">staging</option>
             <option value="development">development</option>
           </select>
-          <input type="text" id="runtime-filter-service" placeholder="Filter by service..." class="search-input" style="max-width:160px;">
-          <input type="text" id="runtime-filter-trace" placeholder="Filter by trace ID..." class="search-input" style="max-width:160px;">
-          <button id="btn-apply-runtime-filters" class="secondary-btn" style="font-size:11px;padding:6px 10px;">Filter</button>
-          <button id="btn-reset-runtime-filters" class="secondary-btn" style="font-size:11px;padding:6px 10px;">Reset</button>
-          <div class="table-meta" id="runtime-count-display" style="margin-left:auto;">0 events</div>
         </div>
-
-        <div class="table-responsive" style="margin-top:12px;">
-          <table class="data-table" id="runtime-events-table">
-            <thead>
-              <tr>
-                <th>Timestamp (UTC)</th>
-                <th>Type</th>
-                <th>Severity</th>
-                <th>Service / Env</th>
-                <th>Correlated Twin Entity</th>
-                <th>Trace / Span</th>
-                <th>Message & Attributes</th>
-              </tr>
-            </thead>
-            <tbody id="runtime-events-body">
-              <tr><td colspan="7" class="td-loading">Loading runtime evidence...</td></tr>
-            </tbody>
-          </table>
+        <div>
+          <label class="block text-xs font-semibold text-[#0F172A] mb-1">Paste JSON / JSONL Events</label>
+          <textarea id="input-ingest-json" rows="6" placeholder='[{"event_type": "error", "component_name": "PaymentService", "latency_ms": 1420}]' class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-3 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]"></textarea>
         </div>
       </div>
 
-      <!-- ======================================================== -->
-      <!-- VIEW 9: INCIDENTS & CAUSAL INVESTIGATION                 -->
-      <!-- ======================================================== -->
-      <div id="view-incidents" class="content-view-panel" style="display:none;">
-        <div class="page-header-row">
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button id="modal-ingest-cancel-btn" class="px-4 py-2 rounded-xl bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-xs font-medium" type="button">Cancel</button>
+        <button id="modal-ingest-submit-btn" class="px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs" type="button">Ingest &amp; Correlate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- MODAL 3: DECLARE INCIDENT -->
+  <!-- ==================================================================== -->
+  <div id="modal-create-incident" class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display:none;">
+    <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5">
+      <div class="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+        <h3 class="font-bold text-base text-[#BA1A1A] flex items-center gap-2">
+          <span class="material-symbols-outlined">warning</span>
+          <span>Declare Production Incident</span>
+        </h3>
+        <button id="modal-incident-close-btn" class="text-[#64748B] hover:text-[#0F172A]" type="button">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-[#0F172A] mb-1">Incident Title *</label>
+          <input id="input-incident-title" type="text" placeholder="e.g. Payment authorization 500 error cascade" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#BA1A1A]">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
           <div>
-            <h2 class="page-title">Incident Intelligence & Causal Investigation</h2>
-            <div class="disclaimer-pill" style="border-left:3px solid #ef4444;">
-              <span class="disc-icon">⚠️</span>
-              <span><strong>DETERMINISTIC INVESTIGATION:</strong> Produces evidence-backed candidate causal paths across changes, components, processes, and tests. Causal truth is never synthesized or assumed.</span>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <button id="btn-open-create-incident-modal" class="primary-btn" style="background:#ef4444;font-size:12px;padding:6px 12px;">+ Declare Incident</button>
-            <button id="btn-refresh-incidents" class="secondary-btn" style="font-size:12px;padding:6px 12px;">↻ Refresh</button>
-          </div>
-        </div>
-
-        <!-- Incidents List Section -->
-        <div class="card" style="margin-top:14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:12px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <h3 style="font-size:14px;font-weight:600;color:var(--text-primary);letter-spacing:0.5px;">TRACKED INCIDENTS</h3>
-            <span id="incidents-count-badge" class="badge" style="background:var(--bg-surface);color:var(--text-secondary);font-size:11px;padding:2px 8px;">0 INCIDENTS</span>
-          </div>
-          <div class="table-responsive">
-            <table class="data-table" id="incidents-table">
-              <thead>
-                <tr>
-                  <th>Severity</th>
-                  <th>Title & Reference</th>
-                  <th>Status</th>
-                  <th>Detected At</th>
-                  <th>Affected Component</th>
-                  <th>Evidence</th>
-                  <th>Investigation Action</th>
-                </tr>
-              </thead>
-              <tbody id="incidents-table-body">
-                <tr><td colspan="7" class="td-empty">No incidents found. Declare an incident above to perform deterministic investigation.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Incident Investigation Workspace (Hidden until an incident is selected/investigated) -->
-        <div id="incident-investigation-workspace" class="card" style="margin-top:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;padding:16px;display:none;">
-          <div id="investigation-report-container">
-            <!-- Dynamically populated with investigation results -->
-          </div>
-        </div>
-      </div>
-
-    </main>
-
-    <!-- ======================================================== -->
-    <!-- ONBOARDING MODAL                                         -->
-    <!-- ======================================================== -->
-    <div id="modal-onboard" class="modal-backdrop" style="display:none;">
-      <div class="modal-card">
-        <div class="modal-header">
-          <h3 class="modal-title">Connect Software Repository</h3>
-          <button id="modal-close-btn" class="close-btn">&times;</button>
-        </div>
-
-        <!-- Provider Tabs inside Modal -->
-        <div class="modal-provider-tabs">
-          <button class="m-prov-tab active" data-prov="local">Local Directory</button>
-          <button class="m-prov-tab" data-prov="github">GitHub (Coming Soon)</button>
-          <button class="m-prov-tab" data-prov="archive">ZIP (Coming Soon)</button>
-        </div>
-
-        <div class="modal-body">
-          <!-- Local Directory Form -->
-          <div id="modal-panel-local" class="modal-panel active">
-            <p class="modal-help-text">
-              Enter an absolute or relative directory path on the local server filesystem. The Digital Twin
-              engine will execute language discovery, parse source ASTs, extract relationships, and persist a snapshot.
-            </p>
-
-            <div class="form-group">
-              <label class="form-label">FILESYSTEM PATH *</label>
-              <input type="text" id="input-local-path" class="form-input" placeholder="e.g. /Users/sanjay/DIGITAL TWIN /tmp/AuroraBillingDemo" required>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">REPOSITORY NAME (OPTIONAL)</label>
-              <input type="text" id="input-repo-name" class="form-input" placeholder="Auto-inferred from folder if blank">
-            </div>
-
-            <!-- Analysis Progress Checklist (shown while analyzing) -->
-            <div id="onboard-progress-box" class="progress-box" style="display:none;">
-              <div class="progress-title">
-                <span class="spinner-small"></span> Building Software Digital Twin...
-              </div>
-              <ul class="progress-checklist">
-                <li id="prog-step-1" class="prog-item">✓ Discovering files & manifests</li>
-                <li id="prog-step-2" class="prog-item">✓ Technology fingerprinting</li>
-                <li id="prog-step-3" class="prog-item">✓ Tree-sitter AST extraction</li>
-                <li id="prog-step-4" class="prog-item">✓ Deriving typed relationships</li>
-                <li id="prog-step-5" class="prog-item">✓ Synthesizing process chains</li>
-                <li id="prog-step-6" class="prog-item">✓ Evaluating architecture baseline</li>
-                <li id="prog-step-7" class="prog-item">✓ Snapshot persisted in PostgreSQL</li>
-              </ul>
-            </div>
-
-            <div id="onboard-error-box" class="error-banner" style="display:none;"></div>
-          </div>
-
-          <!-- GitHub Tab (Planned Future Capability) -->
-          <div id="modal-panel-github" class="modal-panel">
-            <div class="coming-soon-notice">
-              <div class="cs-icon">🐙</div>
-              <h4>GitHub Integration is a Planned Future Capability</h4>
-              <p>Remote repository cloning, OAuth authentication, and webhook-driven snapshot updates are planned future capabilities. Only local server filesystem ingestion is currently supported.</p>
-            </div>
-          </div>
-
-          <!-- Archive Tab (Planned Future Capability) -->
-          <div id="modal-panel-archive" class="modal-panel">
-            <div class="coming-soon-notice">
-              <div class="cs-icon">📦</div>
-              <h4>Archive Ingestion is a Planned Future Capability</h4>
-              <p>Direct upload of ZIP archives is a planned future capability.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-footer">
-          <button id="modal-cancel-btn" class="secondary-btn">Cancel</button>
-          <button id="modal-submit-btn" class="primary-btn">Ingest & Build Digital Twin</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ======================================================== -->
-    <!-- RUNTIME INGESTION MODAL                                  -->
-    <!-- ======================================================== -->
-    <div id="modal-ingest-runtime" class="modal-backdrop" style="display:none;">
-      <div class="modal-card" style="max-width:640px;">
-        <div class="modal-header">
-          <h3 class="modal-title">Ingest Runtime Evidence</h3>
-          <button id="modal-ingest-close-btn" class="close-btn">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p class="modal-help-text">
-            Submit normalized runtime events in JSON or JSONL format. The ingestion pipeline automatically sanitizes credentials (passwords, tokens, keys) and deterministically correlates events to Digital Twin artifacts.
-          </p>
-
-          <div class="form-group">
-            <label class="form-label">ENVIRONMENT</label>
-            <select id="input-ingest-env" class="context-select" style="width:100%;">
-              <option value="production">production</option>
-              <option value="staging">staging</option>
-              <option value="development">development</option>
+            <label class="block text-xs font-semibold text-[#0F172A] mb-1">Severity</label>
+            <select id="input-incident-severity" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A]">
+              <option value="critical">CRITICAL (SEV-1)</option>
+              <option value="high" selected>HIGH (SEV-2)</option>
+              <option value="medium">MEDIUM (SEV-3)</option>
+              <option value="low">LOW (SEV-4)</option>
             </select>
           </div>
-
-          <div class="form-group">
-            <label class="form-label">FILE UPLOAD (.JSON OR .JSONL)</label>
-            <input type="file" id="input-ingest-file" accept=".json,.jsonl" class="form-input">
+          <div>
+            <label class="block text-xs font-semibold text-[#0F172A] mb-1">Affected Component</label>
+            <input id="input-incident-component" type="text" placeholder="e.g. PaymentService" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A]">
           </div>
-
-          <div class="form-group">
-            <label class="form-label">OR PASTE RAW JSON / JSONL EVENTS</label>
-            <textarea id="input-ingest-json" class="form-input" style="height:150px;font-family:var(--font-mono);font-size:12px;" placeholder='[{"event_type": "ERROR", "severity": "ERROR", "service": "billing", "message": "Transaction failed", "trace_id": "tr-123"}]'></textarea>
-          </div>
-
-          <div id="ingest-status-box" class="progress-box" style="display:none;"></div>
-          <div id="ingest-error-box" class="error-banner" style="display:none;"></div>
         </div>
-        <div class="modal-footer">
-          <button id="modal-ingest-cancel-btn" class="secondary-btn">Cancel</button>
-          <button id="modal-ingest-submit-btn" class="primary-btn">Ingest & Correlate</button>
+        <div>
+          <label class="block text-xs font-semibold text-[#0F172A] mb-1">Description &amp; Symptoms</label>
+          <textarea id="input-incident-desc" rows="3" placeholder="Sustained timeout spikes on payment gateway..." class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-3 text-xs text-[#0F172A] focus:outline-none"></textarea>
         </div>
       </div>
-    </div>
 
-    <!-- ======================================================== -->
-    <!-- CREATE INCIDENT MODAL                                    -->
-    <!-- ======================================================== -->
-    <div id="modal-create-incident" class="modal-backdrop" style="display:none;">
-      <div class="modal-card" style="max-width:540px;">
-        <div class="modal-header">
-          <h3 class="modal-title">Declare Incident</h3>
-          <button id="modal-incident-close-btn" class="close-btn">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p class="modal-help-text">
-            Register a production or staging incident to trigger deterministic causal investigation against recent changes, runtime evidence, and the Digital Twin process graph.
-          </p>
-
-          <div class="form-group">
-            <label class="form-label">INCIDENT TITLE / REFERENCE *</label>
-            <input type="text" id="input-incident-title" class="form-input" placeholder="e.g. Checkout Service 500 Spike" required>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">SEVERITY *</label>
-            <select id="input-incident-severity" class="context-select" style="width:100%;">
-              <option value="critical">CRITICAL</option>
-              <option value="high" selected>HIGH</option>
-              <option value="medium">MEDIUM</option>
-              <option value="low">LOW</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">ENVIRONMENT</label>
-            <select id="input-incident-env" class="context-select" style="width:100%;">
-              <option value="production" selected>production</option>
-              <option value="staging">staging</option>
-              <option value="development">development</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">SUSPECTED / AFFECTED COMPONENT (OPTIONAL)</label>
-            <input type="text" id="input-incident-component" class="form-input" placeholder="e.g. PaymentService or CheckoutHandler">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">DESCRIPTION / CONTEXT</label>
-            <textarea id="input-incident-desc" class="form-input" style="height:80px;" placeholder="Observed behavior, alert details, impact scope..."></textarea>
-          </div>
-
-          <div id="incident-error-box" class="error-banner" style="display:none;"></div>
-        </div>
-        <div class="modal-footer">
-          <button id="modal-incident-cancel-btn" class="secondary-btn">Cancel</button>
-          <button id="modal-incident-submit-btn" class="primary-btn" style="background:#ef4444;">Declare & Investigate</button>
-        </div>
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button id="modal-incident-cancel-btn" class="px-4 py-2 rounded-xl bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-xs font-medium" type="button">Cancel</button>
+        <button id="modal-incident-submit-btn" class="px-4 py-2 rounded-xl bg-[#BA1A1A] hover:bg-[#93000A] text-white text-xs font-semibold shadow-xs" type="button">Declare &amp; Investigate</button>
       </div>
     </div>
+  </div>
 
+  <!-- ==================================================================== -->
+  <!-- MODAL 4: COMMAND PALETTE (⌘K) -->
+  <!-- ==================================================================== -->
+  <div id="modal-command-palette" class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center pt-24 p-4" style="display:none;">
+    <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden">
+      <div class="flex items-center gap-3 p-4 border-b border-[#E2E8F0]">
+        <span class="material-symbols-outlined text-[#64748B]">search</span>
+        <input id="cmd-palette-input" type="text" placeholder="Type a view name, component, or command..." class="w-full bg-transparent text-sm text-[#0F172A] focus:outline-none placeholder:text-[#94A3B8]">
+        <kbd class="text-[10px] font-mono bg-[#F1F5F9] text-[#64748B] px-1.5 py-0.5 rounded border border-[#E2E8F0]">ESC</kbd>
+      </div>
+      <div id="cmd-palette-results" class="p-2 max-h-80 overflow-y-auto custom-scrollbar divide-y divide-[#F1F5F9]">
+        <!-- Injected by twin.js -->
+      </div>
+    </div>
   </div>
 
   <script src="/static/twin.js"></script>
