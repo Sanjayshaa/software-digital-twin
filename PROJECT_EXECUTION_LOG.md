@@ -172,6 +172,9 @@ All endpoints run on `http://localhost:8000`:
 | `POST` | `/repositories/{id}/test-impact` | Executes deterministic test impact between target and base snapshots |
 | `GET` | `/repositories/{id}/test-impact/{id}` | Retrieves persisted test impact analysis results and evidence |
 | `GET` | `/repositories/{id}/tests-catalog` | Retrieves mapped test suites and catalog for repository snapshot |
+| `POST` | `/repositories/{id}/risk-analysis` | Executes deterministic risk intelligence assessment and guardrail evaluation |
+| `GET` | `/repositories/{id}/risk-analysis/{id}` | Retrieves persisted risk assessment results and evidence breakdown |
+| `GET` | `/repositories/{id}/architecture/guardrails` | Evaluates architectural boundary guardrails for snapshot |
 
 ---
 
@@ -609,6 +612,35 @@ All endpoints run on `http://localhost:8000`:
      - Added 7 comprehensive test scenarios in `backend/tests/test_test_impact.py`.
      - Full test suite: **84 / 84 passing in 1.63s**.
      - Documented in `docs/TEST_IMPACT.md`.
+
+### Log Entry #19: Phase 7 — Risk Intelligence & Architecture Guardrails
+- **Timestamp**: `2026-09-28T23:20:00+05:30`
+- **Originating Prompt**:
+  > *"Phase 7 — Risk Intelligence & Architecture Guardrails. Move from 'What may be affected?' and 'Which tests may be affected?' to 'How significant is this change, what evidence contributes, and which architecture guardrails are relevant?'"*
+- **Actions Taken**:
+  1. **Deterministic Risk Intelligence Engine**:
+     - Implemented `RiskIntelligenceEngine` in `backend/app/services/risk/engine.py` coordinating 9 evidence-based risk factors: `IMPACT_BREADTH`, `IMPACT_DEPTH`, `TEST_IMPACT`, `ARCHITECTURE_DRIFT`, `DEPENDENCY_COUPLING`, `RUNTIME_ACTIVITY`, `INCIDENT_HISTORY`, `API_SURFACE`, and `UNKNOWN_EVIDENCE`.
+     - Strict epistemic separation between **RISK** (`LOW`, `MODERATE`, `HIGH`, `CRITICAL`) and **CONFIDENCE** (`HIGH`, `MEDIUM`, `LOW`).
+     - Grounded in empirical facts with zero generative hallucinations and zero fake probability claims.
+     - Epistemic gap tracking: missing telemetry or unmapped tests are reported as `UNKNOWN`, never assumed as low risk.
+  2. **Architecture Boundary Guardrails**:
+     - Implemented `ArchitectureGuardrailEvaluator` in `backend/app/services/risk/guardrails.py` evaluating `FORBIDDEN_DEPENDENCY`, `LAYER_VIOLATION`, `BOUNDARY_VIOLATION`, `CIRCULAR_DEPENDENCY`, `UNEXPECTED_EXTERNAL_DEPENDENCY`, `UNEXPECTED_COUPLING`, and `ARCHITECTURE_BYPASS`.
+     - Returns deterministic statuses (`PASS`, `WARN`, `VIOLATION`, `UNKNOWN`) with line-level evidence and explanation.
+  3. **Service & Database Persistence**:
+     - Implemented `RiskIntelligenceService` (`backend/app/services/risk/service.py`) persisting runs into PostgreSQL `AnalysisRun` (`run_type="risk_analysis"`) and `RiskAssessment` records.
+  4. **REST API Router**:
+     - Implemented `backend/app/api/risk.py`:
+       - `POST /repositories/{id}/risk-analysis`: Executes multi-factor risk assessment and guardrail evaluation.
+       - `GET /repositories/{id}/risk-analysis/{id}`: Retrieves stored risk assessment.
+       - `GET /repositories/{id}/architecture/guardrails`: Evaluates architecture guardrails for snapshot.
+     - Registered in `backend/main.py`.
+  5. **Frontend UI Experience**:
+     - Integrated Risk Signals and Architecture Guardrails into `view-impact` with transparent category badges, confidence indicators, contributing risk factors grid, guardrails table, and engineer recommendations.
+     - Wired with truthful empty states ("No runtime evidence available", "No related incidents recorded", "Architecture status unknown").
+  6. **Verification & Regression**:
+     - Added 19 comprehensive test scenarios in `backend/tests/test_risk_intelligence.py`.
+     - Full test suite: **103 / 103 passing in 1.95s** (all 84 baseline tests preserved).
+     - Documented in `docs/RISK_INTELLIGENCE.md`.
 
 ---
 

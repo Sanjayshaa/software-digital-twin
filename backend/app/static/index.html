@@ -902,6 +902,71 @@
                 <!-- Injected by twin.js -->
               </div>
             </div>
+
+            <!-- ============================================================== -->
+            <!-- PHASE 7: RISK SIGNALS & ARCHITECTURE GUARDRAILS -->
+            <!-- ============================================================== -->
+            <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-5">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E2E8F0] pb-4">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <h3 class="text-sm font-bold text-[#0F172A] uppercase tracking-wider">Risk Intelligence &amp; Architecture Guardrails</h3>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]">Phase 7</span>
+                  </div>
+                  <p class="text-xs text-[#64748B] mt-0.5">Deterministic synthesis of change breadth, test exposure, architectural conformance, runtime activity, and historical incidents.</p>
+                </div>
+                <button id="btn-run-risk-action" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0F172A] hover:bg-[#1E293B] text-white text-xs font-semibold shadow-xs transition-colors">
+                  <span class="material-symbols-outlined text-[15px]">security</span>
+                  <span>Evaluate Risk &amp; Guardrails</span>
+                </button>
+              </div>
+
+              <div id="risk-analysis-empty-state" class="py-6 text-center text-xs text-[#64748B]">
+                Click <strong>Evaluate Risk &amp; Guardrails</strong> to compute deterministic risk signals and verify architectural boundaries for this change.
+              </div>
+
+              <div id="risk-analysis-content" class="space-y-5" style="display:none;">
+                <!-- 1. Risk Assessment Banner -->
+                <div id="risk-assessment-banner" class="p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div class="space-y-1">
+                    <div class="flex items-center gap-2.5">
+                      <span class="text-xs font-bold uppercase tracking-wider text-[#64748B]">Overall Risk Assessment:</span>
+                      <span id="risk-category-badge" class="px-2.5 py-1 rounded-md text-xs font-bold">--</span>
+                      <span id="risk-confidence-badge" class="px-2 py-0.5 rounded text-[11px] font-semibold">Confidence: --</span>
+                    </div>
+                    <p id="risk-explanation-text" class="text-xs text-[#334155] leading-relaxed"></p>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <span class="text-[10px] text-[#64748B] uppercase font-bold">Evidence Composite Score</span>
+                    <div id="risk-overall-score" class="text-2xl font-black text-[#0F172A]">--/100</div>
+                  </div>
+                </div>
+
+                <!-- 2. Risk Signals Grid -->
+                <div class="space-y-2">
+                  <h4 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider">Contributing Risk Signals</h4>
+                  <div id="risk-signals-grid" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <!-- Injected by twin.js -->
+                  </div>
+                </div>
+
+                <!-- 3. Architecture Guardrails -->
+                <div class="space-y-2">
+                  <h4 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider">Architecture Boundary Guardrails</h4>
+                  <div id="guardrail-results-list" class="space-y-2">
+                    <!-- Injected by twin.js -->
+                  </div>
+                </div>
+
+                <!-- 4. Recommendations -->
+                <div class="p-4 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] space-y-2">
+                  <h4 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider">Engineer Decision &amp; Action Recommendations</h4>
+                  <ul id="risk-recommendations-list" class="space-y-1 text-xs text-[#475569] list-disc list-inside">
+                    <!-- Injected by twin.js -->
+                  </ul>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 

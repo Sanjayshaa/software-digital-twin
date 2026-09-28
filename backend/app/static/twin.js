@@ -2322,6 +2322,11 @@
       impactBtn.onclick = () => executeChangeImpactAnalysis();
     }
 
+    const riskBtn = document.getElementById('btn-run-risk-action');
+    if (riskBtn) {
+      riskBtn.onclick = () => executeRiskAnalysis();
+    }
+
     const viewGraphBtn = document.getElementById('btn-view-impact-graph');
     if (viewGraphBtn) {
       viewGraphBtn.onclick = () => projectImpactGraph();
@@ -2593,12 +2598,174 @@
         });
       }
 
+      // Automatically evaluate Phase 7 Risk Intelligence & Architecture Guardrails
+      executeRiskAnalysis().catch(() => {});
+
     } catch (err) {
       if (metaSpan) {
         metaSpan.innerHTML = `<span style="color:#ef4444;">Error: ${escapeHtml(err.message)}</span>`;
       }
       if (diffTbody) {
         diffTbody.innerHTML = `<tr><td colspan="5" class="td-empty" style="color:#ef4444;">Analysis failed: ${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+  }
+
+  async function executeRiskAnalysis() {
+    const baseSelect = document.getElementById('diff-base-select');
+    const targetSelect = document.getElementById('diff-target-select');
+    const depthInput = document.getElementById('impact-depth-input');
+    const emptyState = document.getElementById('risk-analysis-empty-state');
+    const content = document.getElementById('risk-analysis-content');
+    const btn = document.getElementById('btn-run-risk-action');
+
+    if (!baseSelect || !targetSelect) return;
+    const baseId = baseSelect.value;
+    const targetId = targetSelect.value;
+    const maxDepth = depthInput ? parseInt(depthInput.value, 10) || 5 : 5;
+
+    if (!baseId || !targetId) {
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-symbols-outlined text-[15px] animate-spin">refresh</span> Evaluating...';
+    }
+
+    try {
+      const res = await fetch(`/repositories/${state.currentRepoId}/risk-analysis`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base_snapshot_id: baseId,
+          target_snapshot_id: targetId,
+          max_depth: maxDepth,
+          environment: 'production',
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `Risk analysis failed with HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      if (emptyState) emptyState.style.display = 'none';
+      if (content) content.style.display = 'block';
+
+      // 1. Overall Category & Confidence
+      const catBadge = document.getElementById('risk-category-badge');
+      if (catBadge) {
+        catBadge.textContent = data.overall_category;
+        catBadge.className = `px-2.5 py-1 rounded-md text-xs font-bold risk-badge-${data.overall_category.toLowerCase()}`;
+      }
+
+      const confBadge = document.getElementById('risk-confidence-badge');
+      if (confBadge) {
+        confBadge.textContent = `Confidence: ${data.confidence}`;
+        confBadge.className = `px-2 py-0.5 rounded text-[11px] font-semibold confidence-badge-${data.confidence.toLowerCase()}`;
+      }
+
+      const explanationEl = document.getElementById('risk-explanation-text');
+      if (explanationEl) {
+        explanationEl.textContent = data.explanation;
+      }
+
+      const scoreEl = document.getElementById('risk-overall-score');
+      if (scoreEl) {
+        scoreEl.textContent = `${data.overall_score}/100`;
+      }
+
+      // 2. Risk Signals Grid
+      const signalsGrid = document.getElementById('risk-signals-grid');
+      if (signalsGrid) {
+        signalsGrid.innerHTML = '';
+        (data.risk_factors || []).forEach(f => {
+          const card = document.createElement('div');
+          card.className = 'p-3 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0] space-y-1.5';
+          let sevClass = 'bg-[#F1F5F9] text-[#475569]';
+          if (f.severity === 'CRITICAL') sevClass = 'bg-[#FEE2E2] text-[#991B1B]';
+          else if (f.severity === 'HIGH') sevClass = 'bg-[#FFEDD5] text-[#C2410C]';
+          else if (f.severity === 'MEDIUM') sevClass = 'bg-[#FEF9C3] text-[#854D0E]';
+          else if (f.severity === 'LOW') sevClass = 'bg-[#DCFCE7] text-[#166534]';
+
+          card.innerHTML = `
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-[#0F172A]">${escapeHtml(f.name)}</span>
+              <span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${sevClass}">${f.severity}</span>
+            </div>
+            <div class="text-[11px] text-[#475569] leading-snug space-y-0.5">
+              ${(f.evidence || []).slice(0, 3).map(e => `<div>• ${escapeHtml(e)}</div>`).join('')}
+            </div>
+            <div class="text-[10px] text-[#94A3B8] flex items-center justify-between pt-1 border-t border-[#E2E8F0]">
+              <span>Score: ${f.score}/100</span>
+              <span>${f.status}</span>
+            </div>
+          `;
+          signalsGrid.appendChild(card);
+        });
+      }
+
+      // 3. Architecture Guardrails
+      const guardrailsList = document.getElementById('guardrail-results-list');
+      if (guardrailsList) {
+        guardrailsList.innerHTML = '';
+        if (!data.guardrail_results || data.guardrail_results.length === 0) {
+          guardrailsList.innerHTML = '<div class="p-3 bg-gray-50 rounded-lg text-xs text-gray-500">Architecture status unknown.</div>';
+        } else {
+          data.guardrail_results.forEach(g => {
+            const gCard = document.createElement('div');
+            gCard.className = 'guardrail-card p-3 bg-white rounded-lg border border-[#E2E8F0] flex flex-col sm:flex-row sm:items-center justify-between gap-2';
+
+            let statusBadge = '';
+            if (g.status === 'PASS') {
+              statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#DCFCE7] text-[#166534] border border-[#BBF7D0]">PASS</span>';
+            } else if (g.status === 'WARN') {
+              statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#FEF9C3] text-[#854D0E] border border-[#FEF08A]">WARN</span>';
+            } else if (g.status === 'VIOLATION') {
+              statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#FEE2E2] text-[#991B1B] border border-[#FECACA]">VIOLATION</span>';
+            } else {
+              statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">UNKNOWN</span>';
+            }
+
+            gCard.innerHTML = `
+              <div class="space-y-0.5">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-bold text-[#0F172A]">[${escapeHtml(g.rule_id)}] ${escapeHtml(g.rule_name)}</span>
+                  ${statusBadge}
+                  <span class="text-[10px] text-[#64748B] font-mono">${escapeHtml(g.guardrail_type)}</span>
+                </div>
+                <p class="text-xs text-[#475569]">${escapeHtml(g.explanation)}</p>
+                ${(g.evidence && g.evidence.length > 0) ? `<div class="text-[11px] text-[#64748B] font-mono mt-1">${escapeHtml(g.evidence[0])}</div>` : ''}
+              </div>
+            `;
+            guardrailsList.appendChild(gCard);
+          });
+        }
+      }
+
+      // 4. Recommendations
+      const recList = document.getElementById('risk-recommendations-list');
+      if (recList) {
+        recList.innerHTML = '';
+        (data.recommendations || []).forEach(r => {
+          const li = document.createElement('li');
+          li.textContent = r;
+          recList.appendChild(li);
+        });
+      }
+
+    } catch (err) {
+      if (emptyState) {
+        emptyState.style.display = 'block';
+        emptyState.innerHTML = `<span style="color:#ef4444;">Risk evaluation failed: ${escapeHtml(err.message)}</span>`;
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="material-symbols-outlined text-[15px]">security</span> Evaluate Risk &amp; Guardrails';
       }
     }
   }
@@ -4479,6 +4646,7 @@
     triggerOnboarding,
     executeChangeImpactAnalysis,
     executeTestImpactAnalysis,
+    executeRiskAnalysis,
     loadTestsView,
     loadRuntimeView,
     loadIncidentsView,
