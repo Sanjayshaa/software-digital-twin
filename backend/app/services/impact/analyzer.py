@@ -9,6 +9,7 @@ import uuid
 from typing import Dict, List, Set, Optional
 from sqlalchemy.orm import Session
 
+from app.models.entities import StructuralArtifact, ArtifactRelationship
 from app.services.impact.models import (
     ChangeSet,
     ImpactConfig,
@@ -45,6 +46,11 @@ class ChangeImpactAnalyzer:
         base_snapshot_id: str,
         target_snapshot_id: str,
         config: Optional[ImpactConfig] = None,
+        change_set: Optional[ChangeSet] = None,
+        target_artifacts: Optional[List[StructuralArtifact]] = None,
+        target_rels: Optional[List[ArtifactRelationship]] = None,
+        base_artifacts: Optional[List[StructuralArtifact]] = None,
+        base_rels: Optional[List[ArtifactRelationship]] = None,
     ) -> ImpactResult:
         """
         Runs deterministic change impact analysis between base_snapshot_id and target_snapshot_id.
@@ -53,13 +59,14 @@ class ChangeImpactAnalyzer:
         cfg = config or ImpactConfig()
         analysis_id = f"impact_{uuid.uuid4().hex[:12]}"
 
-        # 1. Detect Changes (symbol-level where supported, file-level fallback)
-        change_set: ChangeSet = self.detector.detect_changes(
-            db=db,
-            repository_id=repository_id,
-            base_snapshot_id=base_snapshot_id,
-            target_snapshot_id=target_snapshot_id,
-        )
+        # 1. Detect Changes (symbol-level where supported, file-level fallback) or use provided change_set
+        if change_set is None:
+            change_set = self.detector.detect_changes(
+                db=db,
+                repository_id=repository_id,
+                base_snapshot_id=base_snapshot_id,
+                target_snapshot_id=target_snapshot_id,
+            )
 
         # Handle No-Change scenario
         if not change_set.changes:
@@ -92,6 +99,10 @@ class ChangeImpactAnalyzer:
             db=db,
             change_set=change_set,
             config=cfg,
+            target_artifacts=target_artifacts,
+            target_rels=target_rels,
+            base_artifacts=base_artifacts,
+            base_rels=base_rels,
         )
 
         # 3. Canonicalize explainable Impact Paths

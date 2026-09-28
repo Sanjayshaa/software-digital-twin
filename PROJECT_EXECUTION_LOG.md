@@ -640,7 +640,44 @@ All endpoints run on `http://localhost:8000`:
   6. **Verification & Regression**:
      - Added 19 comprehensive test scenarios in `backend/tests/test_risk_intelligence.py`.
      - Full test suite: **103 / 103 passing in 1.95s** (all 84 baseline tests preserved).
-     - Documented in `docs/RISK_INTELLIGENCE.md`.
+
+### Log Entry #20: Phase 8 — What-If / Scenario Simulation
+- **Timestamp**: `2026-09-29T00:15:00+05:30`
+- **Originating Prompt**:
+  > *"Phase 8 — What-If / Scenario Simulation. Move from 'Analyze a change that already exists' to 'Let me explore a proposed change before I actually make it' without modifying source files, git working trees, or base snapshots."*
+- **Actions Taken**:
+  1. **Deterministic Scenario Simulation Engine**:
+     - Built `backend/app/services/simulation/` package comprising:
+       - `models.py`: Bounded mutation primitives (`MODIFY_SYMBOL`, `ADD_DEPENDENCY`, `REMOVE_DEPENDENCY`, `MODIFY_API`, `MODIFY_COMPONENT_RELATIONSHIP`), scenario schema, and structured results.
+       - `validator.py`: `ScenarioValidator` verifying source/target existence, edge existence for removals, ambiguity detection, and cycle warnings.
+       - `virtual_twin.py`: `VirtualTwinModel` in-memory artifact/relationship graph cloning and mutation without touching DB snapshot or source files.
+       - `engine.py`: `ScenarioSimulationEngine` orchestrating validation, virtual twin mutation, virtual changeset construction, and execution of deterministic Phase 4–7 engines.
+       - `service.py`: `ScenarioService` managing scenario lifecycle and persistence into `Scenario` and `ScenarioResult` models.
+  2. **Non-Destructive Reuse of Intelligence Engines**:
+     - Extended `ImpactPropagator`, `ImpactAnalyzer`, `TestImpactEngine`, `ArchitectureGuardrailEvaluator`, and `RiskIntelligenceEngine` to natively accept in-memory virtual artifacts and relationships.
+     - Critical safety verification: `BASE TWIN == BASE TWIN BEFORE SCENARIO` confirmed by `test_scenario_25_critical_base_twin_immutability`.
+  3. **Strict Epistemic Evidence Separation**:
+     - Classified evidence explicitly into `SIMULATED_STRUCTURAL`, `OBSERVED_RUNTIME`, `HISTORICAL_INCIDENT`, and `UNKNOWN_EVIDENCE`.
+     - Prohibited speculative predictive claims ("definitely breaks", "will fail", "guaranteed outage").
+  4. **State Comparison (Current vs. Proposed)**:
+     - `VirtualTwinComparison` computes added/removed relationships, newly affected components, and risk differences.
+  5. **REST API Endpoints**:
+     - `POST /repositories/{id}/scenarios`: Creates a scenario.
+     - `GET /repositories/{id}/scenarios`: Lists repository scenarios.
+     - `GET /repositories/{id}/scenarios/{scenario_id}`: Retrieves scenario and simulation results.
+     - `POST /repositories/{id}/scenarios/{scenario_id}/analyze`: Executes simulation on scenario.
+     - `DELETE /repositories/{id}/scenarios/{scenario_id}`: Removes temporary scenario.
+     - `POST /repositories/{id}/simulate`: One-shot simulation execution endpoint.
+  6. **UI Simulation Workspace**:
+     - Added What-If Simulation navigation and full workspace (`view-simulation`) in `backend/app/static/index.html` and `twin.js`.
+     - Interactive mutation builder supporting symbol modifications, dependency additions/removals, and API changes.
+     - Metric cards for simulated risk, affected components, affected APIs, test impact, and guardrails.
+     - Base vs. Proposed comparison card, evidence tabs, and past simulation history drawer.
+  7. **Verification & Regression**:
+     - Preserved all 103 baseline tests from Phases 1–7.
+     - Added 25 comprehensive test scenarios in `backend/tests/test_simulation.py` covering all 24 required mutation, validation, isolation, and lifecycle scenarios.
+     - Full regression suite: **128 / 128 tests passing in 2.71s**.
+     - Detailed documentation created in `docs/SCENARIO_SIMULATION.md`.
 
 ---
 

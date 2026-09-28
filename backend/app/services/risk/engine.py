@@ -64,6 +64,9 @@ class RiskIntelligenceEngine:
         config: Optional[RiskConfig] = None,
         precomputed_impact: Optional[ImpactResult] = None,
         precomputed_test_impact: Optional[TestImpactResult] = None,
+        precomputed_guardrails: Optional[List[GuardrailResult]] = None,
+        target_artifacts: Optional[List[StructuralArtifact]] = None,
+        target_relationships: Optional[List[ArtifactRelationship]] = None,
     ) -> RiskAssessmentResult:
         """
         Executes deterministic, evidence-driven Risk Intelligence analysis between two snapshots.
@@ -104,18 +107,25 @@ class RiskIntelligenceEngine:
             )
 
         # 3. Evaluate Architecture Guardrails
-        guardrail_results = self.guardrail_evaluator.evaluate_guardrails(
-            db=db,
-            repository_id=repository_id,
-            snapshot_id=target_snapshot_id,
-            changed_artifact_ids=changed_artifact_ids,
-            impacted_artifact_ids=impacted_artifact_ids,
-            baseline_path=cfg.baseline_path,
-        )
+        if precomputed_guardrails is not None:
+            guardrail_results = precomputed_guardrails
+        else:
+            guardrail_results = self.guardrail_evaluator.evaluate_guardrails(
+                db=db,
+                repository_id=repository_id,
+                snapshot_id=target_snapshot_id,
+                changed_artifact_ids=changed_artifact_ids,
+                impacted_artifact_ids=impacted_artifact_ids,
+                baseline_path=cfg.baseline_path,
+                artifacts=target_artifacts,
+                relationships=target_relationships,
+            )
 
         # 4. Query Snapshot Structural Artifacts & Relationships for Coupling & API Analysis
-        target_artifacts = db.query(StructuralArtifact).filter_by(snapshot_id=target_snapshot_id).all()
-        target_relationships = db.query(ArtifactRelationship).filter_by(snapshot_id=target_snapshot_id).all()
+        if target_artifacts is None:
+            target_artifacts = db.query(StructuralArtifact).filter_by(snapshot_id=target_snapshot_id).all()
+        if target_relationships is None:
+            target_relationships = db.query(ArtifactRelationship).filter_by(snapshot_id=target_snapshot_id).all()
         art_map = {a.id: a for a in target_artifacts}
 
         # 5. Query Phase 5 Runtime Events for affected components

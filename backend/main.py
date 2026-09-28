@@ -19,6 +19,7 @@ from app.api.process import router as process_router
 from app.api.incident import router as incident_router
 from app.api.testing import router as testing_router
 from app.api.risk import router as risk_router
+from app.api.simulation import router as simulation_router
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -84,6 +85,7 @@ app.include_router(process_router)
 app.include_router(incident_router)
 app.include_router(testing_router)
 app.include_router(risk_router)
+app.include_router(simulation_router)
 
 
 if __name__ == "__main__":

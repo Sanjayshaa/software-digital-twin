@@ -50,6 +50,8 @@ class ArchitectureGuardrailEvaluator:
         changed_artifact_ids: Optional[Set[str]] = None,
         impacted_artifact_ids: Optional[Set[str]] = None,
         baseline_path: Optional[str] = None,
+        artifacts: Optional[List[StructuralArtifact]] = None,
+        relationships: Optional[List[ArtifactRelationship]] = None,
     ) -> List[GuardrailResult]:
         """
         Evaluates architecture rules and produces structured GuardrailResult items.
@@ -90,9 +92,11 @@ class ArchitectureGuardrailEvaluator:
                 )
             ]
 
-        # Load artifacts and relationships for snapshot
-        artifacts = db.query(StructuralArtifact).filter_by(snapshot_id=snapshot_id).all()
-        relationships = db.query(ArtifactRelationship).filter_by(snapshot_id=snapshot_id).all()
+        # Load artifacts and relationships for snapshot (or use in-memory collections)
+        if artifacts is None:
+            artifacts = db.query(StructuralArtifact).filter_by(snapshot_id=snapshot_id).all()
+        if relationships is None:
+            relationships = db.query(ArtifactRelationship).filter_by(snapshot_id=snapshot_id).all()
 
         art_map = {a.id: a for a in artifacts}
         qual_to_art = {a.qualified_name: a for a in artifacts}

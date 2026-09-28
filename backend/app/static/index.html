@@ -148,6 +148,13 @@
               <span>Tests &amp; Verification</span>
             </div>
           </button>
+          <button data-view="simulation" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px] text-[#0071e3]">science</span>
+              <span>What-If Simulation</span>
+            </div>
+            <span class="px-1.5 py-0.5 rounded-full bg-[#E0F2FE] text-[#0369A1] text-[10px] font-bold">Phase 8</span>
+          </button>
         </div>
 
         <!-- Section: Operate -->
@@ -1239,6 +1246,261 @@
           <!-- Answer Container -->
           <div id="ask-results-container">
             <!-- Results dynamically synthesized by twin.js -->
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 13: WHAT-IF / SCENARIO SIMULATION WORKSPACE (PHASE 8) -->
+        <!-- ============================================================== -->
+        <section id="view-simulation" class="content-view-panel space-y-6" style="display:none;">
+          <!-- Workspace Header -->
+          <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-[24px] text-[#0071e3]">science</span>
+                <h2 class="text-xl font-bold text-[#0F172A]">What-If / Scenario Simulation Workspace</h2>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">Phase 8 Deterministic</span>
+              </div>
+              <p class="text-xs text-[#64748B] mt-1">Explore hypothetical changes before writing code or committing. Virtual twin isolation guarantees zero modifications to real repositories or snapshots.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] font-mono text-[#64748B] bg-[#F1F5F9] px-2.5 py-1 rounded-lg border border-[#E2E8F0]" id="sim-active-base-snap">Base: Loading...</span>
+              <button id="btn-new-simulation-reset" class="px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-xs font-semibold text-[#0F172A] transition-colors flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">restart_alt</span>
+                <span>Reset Form</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Two-Column Simulation Grid -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- LEFT COLUMN: PROPOSED CHANGE DESIGNER (5 cols) -->
+            <div class="lg:col-span-5 space-y-4">
+              <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-4">
+                <div class="flex items-center justify-between border-b border-[#F1F5F9] pb-3">
+                  <h3 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[16px] text-[#0071e3]">tune</span>
+                    <span>1. Design Proposed Change</span>
+                  </h3>
+                  <span class="text-[10px] text-[#64748B] font-medium">Virtual Mutation</span>
+                </div>
+
+                <!-- Mutation Type Selector -->
+                <div>
+                  <label class="block text-[11px] font-semibold text-[#475569] uppercase tracking-wider mb-2">Change Type</label>
+                  <div class="grid grid-cols-2 gap-1.5" id="sim-type-button-group">
+                    <button type="button" class="sim-type-btn active px-2.5 py-2 text-left rounded-lg border text-xs font-medium transition-all border-[#0071e3] bg-[#EFF6FF] text-[#0071e3]" data-type="MODIFY_SYMBOL">
+                      <div class="font-bold flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">code</span> Modify Symbol</div>
+                      <div class="text-[10px] text-[#64748B] mt-0.5 truncate">Function, Method, Class</div>
+                    </button>
+                    <button type="button" class="sim-type-btn px-2.5 py-2 text-left rounded-lg border text-xs font-medium transition-all border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] hover:bg-[#F1F5F9]" data-type="ADD_DEPENDENCY">
+                      <div class="font-bold flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">add_link</span> Add Dependency</div>
+                      <div class="text-[10px] text-[#64748B] mt-0.5 truncate">Service A → Service B</div>
+                    </button>
+                    <button type="button" class="sim-type-btn px-2.5 py-2 text-left rounded-lg border text-xs font-medium transition-all border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] hover:bg-[#F1F5F9]" data-type="REMOVE_DEPENDENCY">
+                      <div class="font-bold flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">link_off</span> Remove Dependency</div>
+                      <div class="text-[10px] text-[#64748B] mt-0.5 truncate">Decouple dependency</div>
+                    </button>
+                    <button type="button" class="sim-type-btn px-2.5 py-2 text-left rounded-lg border text-xs font-medium transition-all border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] hover:bg-[#F1F5F9]" data-type="MODIFY_API">
+                      <div class="font-bold flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">api</span> Modify API</div>
+                      <div class="text-[10px] text-[#64748B] mt-0.5 truncate">Contract / Route change</div>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Scenario Name Input -->
+                <div>
+                  <label class="block text-[11px] font-semibold text-[#475569] mb-1">Scenario Name</label>
+                  <input id="input-sim-name" type="text" placeholder="e.g. Decouple Payment Gateway from Checkout" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
+                </div>
+
+                <!-- Source Entity (Conditional) -->
+                <div id="sim-source-container" style="display:none;">
+                  <label class="block text-[11px] font-semibold text-[#475569] mb-1">Source Entity (Origin)</label>
+                  <input id="input-sim-source" type="text" placeholder="e.g. CheckoutService" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
+                </div>
+
+                <!-- Target Entity (Always visible) -->
+                <div>
+                  <label id="sim-target-label" class="block text-[11px] font-semibold text-[#475569] mb-1">Target Symbol / Entity</label>
+                  <input id="input-sim-target" type="text" placeholder="e.g. PaymentService.calculate_tax" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
+                </div>
+
+                <!-- Relationship Type (Conditional) -->
+                <div id="sim-reltype-container" style="display:none;">
+                  <label class="block text-[11px] font-semibold text-[#475569] mb-1">Relationship Type</label>
+                  <select id="select-sim-reltype" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
+                    <option value="DEPENDS_ON">DEPENDS_ON</option>
+                    <option value="CALLS">CALLS</option>
+                    <option value="IMPORTS">IMPORTS</option>
+                    <option value="PERSISTS_TO">PERSISTS_TO</option>
+                    <option value="TESTS">TESTS</option>
+                  </select>
+                </div>
+
+                <!-- Description / Rationale -->
+                <div>
+                  <label class="block text-[11px] font-semibold text-[#475569] mb-1">Hypothesis / Rationale</label>
+                  <textarea id="input-sim-desc" rows="2" placeholder="e.g. Verify whether removing this dependency prevents blast radius from reaching order workflows." class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3] resize-none"></textarea>
+                </div>
+
+                <!-- Run Simulation Button -->
+                <button id="btn-run-simulation" class="w-full py-2.5 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all">
+                  <span class="material-symbols-outlined text-[18px]">bolt</span>
+                  <span id="btn-run-simulation-text">Run Deterministic Simulation</span>
+                </button>
+                <div id="sim-error-box" class="p-3 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] text-[#BE123C] text-xs font-medium" style="display:none;"></div>
+              </div>
+
+              <!-- Saved Scenario History Card -->
+              <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-3">
+                <div class="flex items-center justify-between border-b border-[#F1F5F9] pb-2">
+                  <h3 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[16px] text-[#64748B]">history</span>
+                    <span>Scenario History</span>
+                  </h3>
+                  <span id="sim-history-count" class="text-[10px] text-[#64748B] font-mono">0 saved</span>
+                </div>
+                <div id="sim-history-list" class="space-y-2 max-h-56 overflow-y-auto custom-scrollbar">
+                  <div class="text-[11px] text-[#94A3B8] italic text-center py-4">No saved scenarios yet for this repository.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- RIGHT COLUMN: SIMULATION RESULTS & VIRTUAL TWIN (7 cols) -->
+            <div class="lg:col-span-7 space-y-4">
+
+              <!-- Initial Placeholder -->
+              <div id="sim-placeholder-card" class="bg-white border border-[#E2E8F0] rounded-xl p-10 shadow-xs text-center space-y-4">
+                <div class="w-16 h-16 rounded-2xl bg-[#EFF6FF] text-[#0071e3] mx-auto flex items-center justify-center shadow-xs">
+                  <span class="material-symbols-outlined text-[32px]">biotech</span>
+                </div>
+                <div class="max-w-md mx-auto space-y-1">
+                  <h3 class="text-base font-bold text-[#0F172A]">Simulate Before You Commit</h3>
+                  <p class="text-xs text-[#64748B] leading-relaxed">
+                    Define a hypothetical change on the left and run simulation.
+                    The engine clones your Digital Twin into an isolated virtual projection, analyzes propagation, verifies guardrails, and synthesizes risk without touching source files.
+                  </p>
+                </div>
+                <div class="grid grid-cols-3 gap-3 max-w-sm mx-auto pt-2 text-left">
+                  <div class="p-2.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+                    <div class="text-[11px] font-bold text-[#0F172A]">100% Isolated</div>
+                    <div class="text-[10px] text-[#64748B]">Zero git mutations</div>
+                  </div>
+                  <div class="p-2.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+                    <div class="text-[11px] font-bold text-[#0F172A]">Deterministic</div>
+                    <div class="text-[10px] text-[#64748B]">Zero hallucination</div>
+                  </div>
+                  <div class="p-2.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+                    <div class="text-[11px] font-bold text-[#0F172A]">Explainable</div>
+                    <div class="text-[10px] text-[#64748B]">Full provenance</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Results Content View (Hidden Initially) -->
+              <div id="sim-results-card" class="space-y-4" style="display:none;">
+
+                <!-- Status & Title Banner -->
+                <div class="bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-xs flex items-center justify-between">
+                  <div class="space-y-0.5">
+                    <div class="flex items-center gap-2">
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DCFCE7] text-[#15803D] border border-[#BBF7D0]">
+                        ● Simulation Complete
+                      </span>
+                      <h3 id="sim-res-name" class="text-sm font-bold text-[#0F172A]">Scenario Name</h3>
+                    </div>
+                    <p id="sim-res-sub" class="text-[11px] text-[#64748B]">1 mutation touching 2 virtual entities</p>
+                  </div>
+                  <span id="sim-res-time" class="text-[11px] font-mono text-[#64748B] bg-[#F1F5F9] px-2 py-1 rounded">2.4ms</span>
+                </div>
+
+                <!-- 4 Bento Cards -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] shadow-2xs">
+                    <span class="text-[10px] text-[#64748B] uppercase font-bold">Simulated Impact</span>
+                    <div id="sim-metric-impact" class="text-lg font-bold text-[#0071e3] mt-0.5">0 nodes</div>
+                    <span id="sim-metric-depth" class="text-[10px] text-[#64748B]">Depth: 0</span>
+                  </div>
+                  <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] shadow-2xs">
+                    <span class="text-[10px] text-[#64748B] uppercase font-bold">Guardrails</span>
+                    <div id="sim-metric-guardrails" class="text-lg font-bold text-[#10B981] mt-0.5">0 violations</div>
+                    <span id="sim-metric-guardrails-sub" class="text-[10px] text-[#64748B]">Baseline pass</span>
+                  </div>
+                  <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] shadow-2xs">
+                    <span class="text-[10px] text-[#64748B] uppercase font-bold">Scenario Risk</span>
+                    <div id="sim-metric-risk" class="text-lg font-bold text-[#10B981] mt-0.5">LOW</div>
+                    <span id="sim-metric-risk-score" class="text-[10px] text-[#64748B]">Score: 0 / 100</span>
+                  </div>
+                  <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] shadow-2xs">
+                    <span class="text-[10px] text-[#64748B] uppercase font-bold">Test Impact</span>
+                    <div id="sim-metric-tests" class="text-lg font-bold text-[#6366F1] mt-0.5">0 tests</div>
+                    <span id="sim-metric-tests-unknown" class="text-[10px] text-[#64748B]">0 unknown</span>
+                  </div>
+                </div>
+
+                <!-- Explainable Why Callout -->
+                <div class="bg-gradient-to-r from-[#EFF6FF] to-white border border-[#BFDBFE] rounded-xl p-4 shadow-2xs space-y-1">
+                  <div class="text-[11px] font-bold text-[#1E40AF] uppercase tracking-wider flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[16px]">psychology</span>
+                    <span>Deterministic Scenario Explanation</span>
+                  </div>
+                  <p id="sim-res-explanation" class="text-xs text-[#1E3A8A] leading-relaxed font-medium">
+                    Scenario explanation will appear here.
+                  </p>
+                </div>
+
+                <!-- Comparison: Current State vs Scenario State -->
+                <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-3">
+                  <h4 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[16px] text-[#465E8B]">compare_arrows</span>
+                    <span>Twin Comparison: Baseline vs Scenario</span>
+                  </h4>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div class="p-3 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
+                      <span class="text-[10px] font-bold text-[#16A34A] uppercase flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[14px]">add_circle</span> Added Relationships
+                      </span>
+                      <div id="sim-comp-added" class="space-y-1 text-[11px] font-mono">None</div>
+                    </div>
+                    <div class="p-3 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
+                      <span class="text-[10px] font-bold text-[#DC2626] uppercase flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[14px]">remove_circle</span> Removed Relationships
+                      </span>
+                      <div id="sim-comp-removed" class="space-y-1 text-[11px] font-mono">None</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Multi-Category Evidence Ledger -->
+                <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-3">
+                  <div class="flex items-center justify-between border-b border-[#F1F5F9] pb-2">
+                    <h4 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider flex items-center gap-2">
+                      <span class="material-symbols-outlined text-[16px] text-[#0071e3]">fact_check</span>
+                      <span>Separated Simulation Evidence</span>
+                    </h4>
+                    <span class="text-[10px] text-[#64748B]">Simulated vs Observed</span>
+                  </div>
+                  <div id="sim-evidence-ledger" class="space-y-2 text-xs">
+                    <!-- Injected dynamically -->
+                  </div>
+                </div>
+
+                <!-- Assumptions & Unknowns -->
+                <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-3">
+                  <h4 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[16px] text-[#F59E0B]">visibility</span>
+                    <span>Assumptions &amp; Coverage Unknowns</span>
+                  </h4>
+                  <ul id="sim-assumptions-list" class="space-y-1.5 text-xs text-[#64748B] list-disc list-inside">
+                    <!-- Injected dynamically -->
+                  </ul>
+                </div>
+
+              </div>
+            </div>
+
           </div>
         </section>
 

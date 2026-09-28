@@ -33,6 +33,10 @@ class ImpactPropagator:
         db: Session,
         change_set: ChangeSet,
         config: ImpactConfig,
+        target_artifacts: Optional[List[StructuralArtifact]] = None,
+        target_rels: Optional[List[ArtifactRelationship]] = None,
+        base_artifacts: Optional[List[StructuralArtifact]] = None,
+        base_rels: Optional[List[ArtifactRelationship]] = None,
     ) -> List[ImpactFinding]:
         """
         Traverses relationships starting from all items in the ChangeSet up to config.max_depth.
@@ -42,27 +46,31 @@ class ImpactPropagator:
             return []
 
         # Load all relationships for baseline and target snapshots into memory for fast bounded traversal
-        base_rels = (
-            db.query(ArtifactRelationship)
-            .filter_by(snapshot_id=change_set.base_snapshot_id)
-            .all()
-        )
-        target_rels = (
-            db.query(ArtifactRelationship)
-            .filter_by(snapshot_id=change_set.target_snapshot_id)
-            .all()
-        )
+        if base_rels is None:
+            base_rels = (
+                db.query(ArtifactRelationship)
+                .filter_by(snapshot_id=change_set.base_snapshot_id)
+                .all()
+            )
+        if target_rels is None:
+            target_rels = (
+                db.query(ArtifactRelationship)
+                .filter_by(snapshot_id=change_set.target_snapshot_id)
+                .all()
+            )
 
-        base_artifacts = (
-            db.query(StructuralArtifact)
-            .filter_by(snapshot_id=change_set.base_snapshot_id)
-            .all()
-        )
-        target_artifacts = (
-            db.query(StructuralArtifact)
-            .filter_by(snapshot_id=change_set.target_snapshot_id)
-            .all()
-        )
+        if base_artifacts is None:
+            base_artifacts = (
+                db.query(StructuralArtifact)
+                .filter_by(snapshot_id=change_set.base_snapshot_id)
+                .all()
+            )
+        if target_artifacts is None:
+            target_artifacts = (
+                db.query(StructuralArtifact)
+                .filter_by(snapshot_id=change_set.target_snapshot_id)
+                .all()
+            )
 
         # Artifact lookups
         art_map_target = {a.id: a for a in target_artifacts}

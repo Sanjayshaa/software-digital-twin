@@ -79,6 +79,7 @@
     initAskSoftware();
     initEventListeners();
     initPhase5Handlers();
+    initSimulationHandlers();
     fetchRepositories();
   });
 
@@ -265,6 +266,8 @@
       loadRuntimeView();
     } else if (viewName === 'incidents') {
       loadIncidentsView();
+    } else if (viewName === 'simulation') {
+      loadSimulationView();
     } else if (viewName === 'ask') {
       setTimeout(() => document.getElementById('ask-query-input')?.focus(), 50);
     }
@@ -4625,6 +4628,348 @@
     }
   }
 
+  // ====================================================================
+  // PHASE 8: WHAT-IF / SCENARIO SIMULATION WORKSPACE
+  // ====================================================================
+  let currentSimulationType = 'MODIFY_SYMBOL';
+
+  function initSimulationHandlers() {
+    const typeButtons = document.querySelectorAll('.sim-type-btn');
+    typeButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        typeButtons.forEach(b => {
+          b.className = 'sim-type-btn px-2.5 py-2 text-left rounded-lg border text-xs font-medium transition-all border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] hover:bg-[#F1F5F9]';
+        });
+        btn.className = 'sim-type-btn active px-2.5 py-2 text-left rounded-lg border text-xs font-medium transition-all border-[#0071e3] bg-[#EFF6FF] text-[#0071e3]';
+        currentSimulationType = btn.dataset.type;
+        updateSimulationFormFields();
+      });
+    });
+
+    const runBtn = document.getElementById('btn-run-simulation');
+    if (runBtn) {
+      runBtn.addEventListener('click', runSimulationAction);
+    }
+
+    const resetBtn = document.getElementById('btn-new-simulation-reset');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', resetSimulationForm);
+    }
+  }
+
+  function updateSimulationFormFields() {
+    const srcContainer = document.getElementById('sim-source-container');
+    const relContainer = document.getElementById('sim-reltype-container');
+    const targetLabel = document.getElementById('sim-target-label');
+    const targetInput = document.getElementById('input-sim-target');
+
+    if (currentSimulationType === 'ADD_DEPENDENCY' || currentSimulationType === 'REMOVE_DEPENDENCY' || currentSimulationType === 'MODIFY_COMPONENT_RELATIONSHIP') {
+      if (srcContainer) srcContainer.style.display = 'block';
+      if (relContainer) relContainer.style.display = (currentSimulationType === 'ADD_DEPENDENCY' || currentSimulationType === 'MODIFY_COMPONENT_RELATIONSHIP') ? 'block' : 'none';
+      if (targetLabel) targetLabel.textContent = 'Target Entity (Destination)';
+      if (targetInput) targetInput.placeholder = 'e.g. PaymentService';
+    } else if (currentSimulationType === 'MODIFY_API') {
+      if (srcContainer) srcContainer.style.display = 'none';
+      if (relContainer) relContainer.style.display = 'none';
+      if (targetLabel) targetLabel.textContent = 'API Route / Endpoint';
+      if (targetInput) targetInput.placeholder = 'e.g. /api/v1/orders or POST /payments';
+    } else {
+      if (srcContainer) srcContainer.style.display = 'none';
+      if (relContainer) relContainer.style.display = 'none';
+      if (targetLabel) targetLabel.textContent = 'Target Symbol / Entity';
+      if (targetInput) targetInput.placeholder = 'e.g. PaymentService.calculate_tax';
+    }
+  }
+
+  function resetSimulationForm() {
+    const nameInput = document.getElementById('input-sim-name');
+    const targetInput = document.getElementById('input-sim-target');
+    const sourceInput = document.getElementById('input-sim-source');
+    const descInput = document.getElementById('input-sim-desc');
+    const errBox = document.getElementById('sim-error-box');
+
+    if (nameInput) nameInput.value = '';
+    if (targetInput) targetInput.value = '';
+    if (sourceInput) sourceInput.value = '';
+    if (descInput) descInput.value = '';
+    if (errBox) errBox.style.display = 'none';
+
+    const resultsCard = document.getElementById('sim-results-card');
+    const placeholder = document.getElementById('sim-placeholder-card');
+    if (resultsCard) resultsCard.style.display = 'none';
+    if (placeholder) placeholder.style.display = 'block';
+  }
+
+  async function loadSimulationView() {
+    const badge = document.getElementById('sim-active-base-snap');
+    const snapId = state.currentSnapshotId || (state.snapshots && state.snapshots[0]?.id) || 'default';
+    if (badge) badge.textContent = `Base Snapshot: ${snapId.substring(0, 10)}`;
+
+    if (!state.currentRepoId) return;
+
+    // Load saved scenarios history
+    try {
+      const res = await fetch(`/repositories/${state.currentRepoId}/scenarios`);
+      if (res.ok) {
+        const scenarios = await res.json();
+        renderSimulationHistory(scenarios);
+      }
+    } catch (err) {
+      console.warn('Could not load scenario history:', err);
+    }
+  }
+
+  function renderSimulationHistory(scenarios) {
+    const list = document.getElementById('sim-history-list');
+    const count = document.getElementById('sim-history-count');
+    if (!list) return;
+
+    if (count) count.textContent = `${scenarios.length} saved`;
+
+    if (!scenarios || scenarios.length === 0) {
+      list.innerHTML = '<div class="text-[11px] text-[#94A3B8] italic text-center py-4">No saved scenarios yet for this repository.</div>';
+      return;
+    }
+
+    list.innerHTML = scenarios.map(s => `
+      <div class="p-2.5 rounded-lg border border-[#E2E8F0] hover:border-[#CBD5E1] bg-[#F8FAFC] flex items-center justify-between gap-2 cursor-pointer transition-colors sim-history-item" data-id="${s.id}">
+        <div class="min-w-0">
+          <div class="text-xs font-semibold text-[#0F172A] truncate">${escapeHtml(s.name)}</div>
+          <div class="text-[10px] text-[#64748B] flex items-center gap-1.5 mt-0.5">
+            <span class="font-mono">${s.status}</span>
+            <span>•</span>
+            <span>${(s.mutations || []).length} mutations</span>
+          </div>
+        </div>
+        <button class="px-2 py-1 rounded bg-white border border-[#E2E8F0] text-[10px] font-semibold text-[#0071e3] hover:bg-[#EFF6FF] shrink-0" onclick="window.TwinApp.inspectScenario('${s.id}')">
+          Simulate
+        </button>
+      </div>
+    `).join('');
+  }
+
+  async function inspectScenario(scenarioId) {
+    if (!state.currentRepoId) return;
+    try {
+      const res = await fetch(`/repositories/${state.currentRepoId}/scenarios/${scenarioId}/analyze`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        renderSimulationResult(data);
+      }
+    } catch (err) {
+      alert('Error simulating scenario: ' + err.message);
+    }
+  }
+
+  async function runSimulationAction() {
+    if (!state.currentRepoId) {
+      alert('Please connect or select a repository first.');
+      return;
+    }
+
+    const nameInput = document.getElementById('input-sim-name');
+    const targetInput = document.getElementById('input-sim-target');
+    const sourceInput = document.getElementById('input-sim-source');
+    const relSelect = document.getElementById('select-sim-reltype');
+    const descInput = document.getElementById('input-sim-desc');
+    const errBox = document.getElementById('sim-error-box');
+    const runBtn = document.getElementById('btn-run-simulation');
+    const runBtnText = document.getElementById('btn-run-simulation-text');
+
+    const targetVal = targetInput ? targetInput.value.trim() : '';
+    if (!targetVal) {
+      if (errBox) {
+        errBox.style.display = 'block';
+        errBox.textContent = 'Please specify a target entity or symbol.';
+      }
+      return;
+    }
+
+    const sourceVal = sourceInput ? sourceInput.value.trim() : '';
+    const nameVal = nameInput && nameInput.value.trim() ? nameInput.value.trim() : `What-If: ${currentSimulationType} on ${targetVal}`;
+    const descVal = descInput ? descInput.value.trim() : '';
+    const relVal = relSelect ? relSelect.value : 'DEPENDS_ON';
+    const baseSnap = state.currentSnapshotId || (state.snapshots && state.snapshots[0]?.id) || 'default';
+
+    if (errBox) errBox.style.display = 'none';
+    if (runBtn) runBtn.disabled = true;
+    if (runBtnText) runBtnText.textContent = 'Simulating Virtual Twin...';
+
+    const proposedChanges = [
+      {
+        mutation_id: `mut_${Date.now()}`,
+        mutation_type: currentSimulationType,
+        target: targetVal,
+        source: sourceVal || null,
+        relationship_type: relVal,
+        description: descVal || null,
+      }
+    ];
+
+    try {
+      const res = await fetch(`/repositories/${state.currentRepoId}/simulate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: nameVal,
+          description: descVal,
+          base_snapshot_id: baseSnap,
+          proposed_changes: proposedChanges,
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(errData.detail || 'Simulation execution failed.');
+      }
+
+      const resultData = await res.json();
+      renderSimulationResult(resultData);
+      loadSimulationView(); // refresh scenario history
+    } catch (err) {
+      if (errBox) {
+        errBox.style.display = 'block';
+        errBox.textContent = err.message;
+      }
+    } finally {
+      if (runBtn) runBtn.disabled = false;
+      if (runBtnText) runBtnText.textContent = 'Run Deterministic Simulation';
+    }
+  }
+
+  function renderSimulationResult(data) {
+    const resultsCard = document.getElementById('sim-results-card');
+    const placeholder = document.getElementById('sim-placeholder-card');
+    if (placeholder) placeholder.style.display = 'none';
+    if (resultsCard) resultsCard.style.display = 'block';
+
+    // Header info
+    const nameElem = document.getElementById('sim-res-name');
+    const subElem = document.getElementById('sim-res-sub');
+    const timeElem = document.getElementById('sim-res-time');
+    const whyElem = document.getElementById('sim-res-explanation');
+
+    if (nameElem) nameElem.textContent = data.name || 'Scenario Result';
+    if (subElem) subElem.textContent = `${(data.proposed_changes || []).length} mutations touching ${data.impact.changed_artifacts.length} virtual entities`;
+    if (timeElem) timeElem.textContent = `${data.execution_time_ms || 0}ms`;
+    if (whyElem) whyElem.textContent = data.risk?.explanation || 'Simulation completed.';
+
+    // 4 Bento metrics
+    const totalImpactNodes = (data.impact.affected_components || []).length + (data.impact.affected_apis || []).length;
+    const impactElem = document.getElementById('sim-metric-impact');
+    const depthElem = document.getElementById('sim-metric-depth');
+    if (impactElem) impactElem.textContent = `${totalImpactNodes} nodes`;
+    if (depthElem) depthElem.textContent = `Max depth: ${data.impact.max_propagation_depth || 0}`;
+
+    const newViolationsCount = (data.comparison?.new_guardrail_violations || []).length;
+    const guardrailElem = document.getElementById('sim-metric-guardrails');
+    const guardrailSub = document.getElementById('sim-metric-guardrails-sub');
+    if (guardrailElem) {
+      guardrailElem.textContent = `${newViolationsCount} violations`;
+      guardrailElem.className = newViolationsCount > 0 ? 'text-lg font-bold text-[#DC2626] mt-0.5' : 'text-lg font-bold text-[#10B981] mt-0.5';
+    }
+    if (guardrailSub) guardrailSub.textContent = newViolationsCount > 0 ? 'Boundary breached' : 'Baseline pass';
+
+    const riskElem = document.getElementById('sim-metric-risk');
+    const riskScore = document.getElementById('sim-metric-risk-score');
+    const riskCategory = data.risk?.scenario_risk_category || 'LOW';
+    if (riskElem) {
+      riskElem.textContent = riskCategory;
+      if (riskCategory === 'HIGH' || riskCategory === 'CRITICAL') {
+        riskElem.className = 'text-lg font-bold text-[#DC2626] mt-0.5';
+      } else if (riskCategory === 'MODERATE') {
+        riskElem.className = 'text-lg font-bold text-[#D97706] mt-0.5';
+      } else {
+        riskElem.className = 'text-lg font-bold text-[#10B981] mt-0.5';
+      }
+    }
+    if (riskScore) riskScore.textContent = `Score: ${data.risk?.overall_score || 0} / 100 (${data.risk?.confidence_level || 'HIGH'})`;
+
+    const totalTests = (data.tests?.directly_affected_tests || []).length + (data.tests?.indirectly_affected_tests || []).length;
+    const testElem = document.getElementById('sim-metric-tests');
+    const testUnknown = document.getElementById('sim-metric-tests-unknown');
+    if (testElem) testElem.textContent = `${totalTests} tests`;
+    if (testUnknown) testUnknown.textContent = `${data.tests?.unknown_coverage_count || 0} unknown coverage`;
+
+    // Comparison
+    const addedElem = document.getElementById('sim-comp-added');
+    const removedElem = document.getElementById('sim-comp-removed');
+
+    const addedList = data.comparison?.added_relationships || [];
+    if (addedElem) {
+      if (addedList.length === 0) {
+        addedElem.innerHTML = '<span class="text-[#94A3B8] italic">No relationships added</span>';
+      } else {
+        addedElem.innerHTML = addedList.map(a => `
+          <div class="px-2 py-1 rounded bg-[#DCFCE7] text-[#15803D] font-mono text-[11px] truncate">
+            + ${escapeHtml(a.source)} → ${escapeHtml(a.target)} (${a.relationship_type})
+          </div>
+        `).join('');
+      }
+    }
+
+    const removedList = data.comparison?.removed_relationships || [];
+    if (removedElem) {
+      if (removedList.length === 0) {
+        removedElem.innerHTML = '<span class="text-[#94A3B8] italic">No relationships removed</span>';
+      } else {
+        removedElem.innerHTML = removedList.map(r => `
+          <div class="px-2 py-1 rounded bg-[#FEE2E2] text-[#B91C1C] font-mono text-[11px] truncate line-through">
+            - ${escapeHtml(r.source)} ↛ ${escapeHtml(r.target)}
+          </div>
+        `).join('');
+      }
+    }
+
+    // Separated Evidence Ledger
+    const evidenceLedger = document.getElementById('sim-evidence-ledger');
+    if (evidenceLedger) {
+      const items = data.evidence || [];
+      if (items.length === 0) {
+        evidenceLedger.innerHTML = '<div class="text-[11px] text-[#94A3B8] italic">No evidence generated for this scenario.</div>';
+      } else {
+        evidenceLedger.innerHTML = items.slice(0, 15).map(ev => {
+          let badgeColor = 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]';
+          let icon = 'account_tree';
+          if (ev.category === 'OBSERVED_RUNTIME') {
+            badgeColor = 'bg-[#E0F2FE] text-[#0369A1] border-[#BAE6FD]';
+            icon = 'dynamic_feed';
+          } else if (ev.category === 'HISTORICAL_INCIDENT') {
+            badgeColor = 'bg-[#FFE4E6] text-[#BE123C] border-[#FECDD3]';
+            icon = 'warning';
+          } else if (ev.category === 'UNKNOWN_EVIDENCE') {
+            badgeColor = 'bg-[#FEF3C7] text-[#92400E] border-[#FDE68A]';
+            icon = 'help_outline';
+          }
+
+          return `
+            <div class="p-2.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] space-y-1">
+              <div class="flex items-center justify-between gap-2">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}">
+                  <span class="material-symbols-outlined text-[12px]">${icon}</span>
+                  ${ev.category}
+                </span>
+                <span class="text-[11px] font-semibold text-[#0F172A] truncate">${escapeHtml(ev.label)}</span>
+              </div>
+              <p class="text-[11px] text-[#64748B] leading-relaxed">${escapeHtml(ev.description)}</p>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // Assumptions & Unknowns
+    const assumptionsList = document.getElementById('sim-assumptions-list');
+    if (assumptionsList) {
+      const allAssumptions = [...(data.assumptions || []), ...(data.unknowns || []).map(u => `Coverage unknown: ${u}`)];
+      if (allAssumptions.length === 0) {
+        assumptionsList.innerHTML = '<li>Baseline assumptions stationary.</li>';
+      } else {
+        assumptionsList.innerHTML = allAssumptions.map(a => `<li>${escapeHtml(a)}</li>`).join('');
+      }
+    }
+  }
+
   function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -4654,6 +4999,9 @@
     openConnectModal,
     openIngestModal,
     openCreateIncidentModal,
+    loadSimulationView,
+    runSimulationAction,
+    inspectScenario,
     openCommandPalette: () => window.openCommandPalette?.(),
   };
 

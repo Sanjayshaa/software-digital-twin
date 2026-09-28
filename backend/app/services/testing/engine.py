@@ -42,6 +42,11 @@ class TestImpactEngine:
         base_snapshot_id: str,
         target_snapshot_id: str,
         config: Optional[TestImpactConfig] = None,
+        change_set: Optional[ChangeSet] = None,
+        target_artifacts: Optional[List[StructuralArtifact]] = None,
+        base_artifacts: Optional[List[StructuralArtifact]] = None,
+        target_rels: Optional[List[ArtifactRelationship]] = None,
+        base_rels: Optional[List[ArtifactRelationship]] = None,
     ) -> TestImpactResult:
         import time
         import uuid
@@ -49,35 +54,40 @@ class TestImpactEngine:
         start_time = time.time()
         config = config or TestImpactConfig()
 
-        # 1. Detect Changes between snapshots
-        change_set: ChangeSet = self.detector.detect_changes(
-            db=db,
-            repository_id=repository_id,
-            base_snapshot_id=base_snapshot_id,
-            target_snapshot_id=target_snapshot_id,
-        )
+        # 1. Detect Changes between snapshots (or use provided change_set)
+        if change_set is None:
+            change_set = self.detector.detect_changes(
+                db=db,
+                repository_id=repository_id,
+                base_snapshot_id=base_snapshot_id,
+                target_snapshot_id=target_snapshot_id,
+            )
 
         # 2. Fetch all artifacts and relationships for target and base snapshots
-        target_artifacts = (
-            db.query(StructuralArtifact)
-            .filter_by(snapshot_id=target_snapshot_id)
-            .all()
-        )
-        base_artifacts = (
-            db.query(StructuralArtifact)
-            .filter_by(snapshot_id=base_snapshot_id)
-            .all()
-        )
-        target_rels = (
-            db.query(ArtifactRelationship)
-            .filter_by(snapshot_id=target_snapshot_id)
-            .all()
-        )
-        base_rels = (
-            db.query(ArtifactRelationship)
-            .filter_by(snapshot_id=base_snapshot_id)
-            .all()
-        )
+        if target_artifacts is None:
+            target_artifacts = (
+                db.query(StructuralArtifact)
+                .filter_by(snapshot_id=target_snapshot_id)
+                .all()
+            )
+        if base_artifacts is None:
+            base_artifacts = (
+                db.query(StructuralArtifact)
+                .filter_by(snapshot_id=base_snapshot_id)
+                .all()
+            )
+        if target_rels is None:
+            target_rels = (
+                db.query(ArtifactRelationship)
+                .filter_by(snapshot_id=target_snapshot_id)
+                .all()
+            )
+        if base_rels is None:
+            base_rels = (
+                db.query(ArtifactRelationship)
+                .filter_by(snapshot_id=base_snapshot_id)
+                .all()
+            )
 
         # Combined artifacts lookup
         art_by_id: Dict[str, StructuralArtifact] = {}
