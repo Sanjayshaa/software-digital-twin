@@ -15,7 +15,9 @@ import base64
 import json
 import time
 import secrets
-from typing import Optional, Dict, Any, Set
+import os
+import uuid
+from typing import Optional, Dict, Any, Set, Tuple
 from pydantic import BaseModel
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -32,7 +34,7 @@ from app.models.entities import User, Repository
 
 class AuthenticatedPrincipal(BaseModel):
     user_id: str
-    username: str
+    username: str = "engineer"
     email: Optional[str] = None
     role: str = "engineer"  # admin, engineer, viewer
     is_authenticated: bool = True
@@ -156,16 +158,26 @@ def _b64_url_decode(data_str: str) -> bytes:
 
 
 def create_access_token(
-    user_id: str,
-    username: str,
+    user_id: Optional[str] = None,
+    username: Optional[str] = None,
     role: str = "engineer",
     email: Optional[str] = None,
     expires_in_seconds: Optional[int] = None,
     secret_key: Optional[str] = None,
+    data: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Issues a cryptographically signed HMAC-SHA256 JWT access token.
     """
+    if data:
+        user_id = data.get("sub", user_id or "usr_anon")
+        username = data.get("username", username or user_id or "engineer")
+        role = data.get("role", role)
+        email = data.get("email", email)
+
+    user_id = user_id or "usr_anon"
+    username = username or "engineer"
+
     key = (secret_key or settings.SECRET_KEY).encode("utf-8")
     now = int(time.time())
     ttl = expires_in_seconds if expires_in_seconds is not None else (settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
@@ -360,9 +372,11 @@ def resolve_authorized_repo(
     if not repo:
         return None
 
-    # System fixtures without an owner are accessible for internal test harnesses
+    # System fixtures without an owner are accessible ONLY during pytest execution
     if repo.owner_id is None and repo.environment in ["TEST", "FIXTURE"]:
-        return repo
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return repo
+        return None
 
     # Guest / Unauthenticated: Deny access to any owned repository or user workspace
     if not principal:
@@ -378,6 +392,32 @@ def resolve_authorized_repo(
 
     # Deny cross-user access
     return None
+
+
+def provision_guest_user(db: Session) -> Tuple[User, str]:
+    """
+    Provisions an ephemeral, isolated guest identity and returns (user, jwt_token).
+    Enforces that anonymous workspaces have an isolated user identity,
+    guaranteeing multi-tenant non-disclosure against all other guests and registered users.
+    """
+    unique_suffix = uuid.uuid4().hex[:12]
+    guest_user = User(
+        id=f"usr_guest_{unique_suffix}",
+        username=f"guest_{unique_suffix}",
+        email=f"guest_{unique_suffix}@guest.digitaltwin.local",
+        hashed_password=hash_password(secrets.token_urlsafe(32)),
+        role="guest",
+        is_active=True,
+    )
+    db.add(guest_user)
+    db.commit()
+    db.refresh(guest_user)
+    token = create_access_token(
+        user_id=guest_user.id,
+        username=guest_user.username,
+        role="guest",
+    )
+    return guest_user, token
 
 
 def get_authorized_repository(

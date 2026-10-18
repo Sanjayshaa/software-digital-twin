@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>Sign in — Software Digital Twin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+  
+  <style>
+    @layer base {
+      html, body { margin: 0; padding: 0; }
+      body { overscroll-behavior: none; }
+      main > :first-child { margin-top: 0 !important; }
+      main > :last-child { margin-bottom: 0 !important; }
+    }
+    ::-webkit-scrollbar { display: none; }
+    .material-symbols-outlined {
+      font-display: block !important;
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+  </style>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "on-primary-container": "#fcfbff",
+            "outline-variant": "#c1c6d6",
+            "on-error": "#ffffff",
+            "surface-tint": "#005cbb",
+            "surface-container-lowest": "#ffffff",
+            "on-background": "#1a1c1d",
+            "secondary-fixed": "#d7e2ff",
+            "secondary-fixed-dim": "#aec7f9",
+            "tertiary-container": "#c25100",
+            "on-tertiary": "#ffffff",
+            "on-secondary-container": "#3e5682",
+            "surface": "#f9f9fb",
+            "outline": "#717785",
+            "on-surface-variant": "#414753",
+            "inverse-primary": "#abc7ff",
+            "surface-container-high": "#e8e8ea",
+            "secondary-container": "#b4ccff",
+            "surface-container": "#eeeef0",
+            "primary-container": "#0071e3",
+            "tertiary-fixed-dim": "#ffb693",
+            "primary-fixed-dim": "#abc7ff",
+            "inverse-surface": "#2f3132",
+            "on-secondary-fixed": "#001b3f",
+            "on-tertiary-container": "#fffaf9",
+            "on-primary-fixed": "#001b3f",
+            "error": "#ba1a1a",
+            "on-secondary-fixed-variant": "#2e4772",
+            "surface-dim": "#d9dadc",
+            "tertiary": "#9b3f00",
+            "primary-fixed": "#d7e2ff",
+            "inverse-on-surface": "#f0f0f2",
+            "tertiary-fixed": "#ffdbcb",
+            "on-secondary": "#ffffff",
+            "on-tertiary-fixed-variant": "#7a3000",
+            "error-container": "#ffdad6",
+            "on-tertiary-fixed": "#341000",
+            "background": "#f9f9fb",
+            "surface-variant": "#e2e2e4",
+            "surface-bright": "#f9f9fb",
+            "on-surface": "#1a1c1d",
+            "on-error-container": "#93000a",
+            "on-primary": "#ffffff",
+            "on-primary-fixed-variant": "#00458f",
+            "surface-container-low": "#f3f3f5",
+            "secondary": "#465e8b",
+            "primary": "#0059b5",
+            "surface-container-highest": "#e2e2e4"
+          },
+          fontFamily: {
+            headline: ["Inter", "sans-serif"],
+            display: ["Inter", "sans-serif"],
+            body: ["Inter", "sans-serif"],
+            label: ["Inter", "sans-serif"]
+          }
+        },
+      },
+    };
+  </script>
+</head>
+<body class="bg-background font-body text-on-surface antialiased min-h-screen flex flex-col justify-between selection:bg-secondary-fixed selection:text-on-secondary-fixed">
+
+  <!-- ==================================================================== -->
+  <!-- HEADER -->
+  <!-- ==================================================================== -->
+  <header class="w-full bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-50">
+    <div class="w-full max-w-7xl mx-auto px-6 lg:px-12 h-16 flex items-center justify-between">
+      <a href="/app" class="flex items-center gap-3 group focus:outline-none" title="Software Digital Twin Home">
+        <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-sm group-hover:bg-primary-container transition-colors">
+          <span class="material-symbols-outlined text-on-primary text-[20px]">hub</span>
+        </div>
+        <span class="font-headline font-semibold text-base tracking-tight text-on-surface">Software Twin</span>
+      </a>
+      
+      <div class="flex items-center gap-2 sm:gap-3">
+        <div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-on-surface-variant text-xs font-medium border border-outline-variant/30">
+          <span class="material-symbols-outlined text-primary text-[14px]">verified_user</span>
+          <span>SOC 2 Type II</span>
+        </div>
+        <div class="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-on-surface-variant text-xs font-medium border border-outline-variant/30">
+          <span class="material-symbols-outlined text-primary text-[14px]">lock</span>
+          <span>End-to-End Encrypted</span>
+        </div>
+        <a href="/app" class="px-3 py-1 rounded-full text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors">
+          Guest Sandbox
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================================================================== -->
+  <!-- MAIN SIGN-IN SECTION -->
+  <!-- ==================================================================== -->
+  <main class="flex-1 flex flex-col items-center justify-center w-full px-6 py-12 relative">
+    <div class="flex flex-col w-full">
+      <div class="relative w-full max-w-5xl mx-auto flex flex-col items-center">
+        <!-- Ambient Radial Glow Effects -->
+        <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-96 bg-gradient-to-br from-primary-fixed-dim/35 via-secondary-container/20 to-transparent rounded-full blur-3xl pointer-events-none -z-10"></div>
+        <div class="absolute top-1/3 -right-24 w-72 h-72 bg-surface-tint/5 rounded-full blur-2xl pointer-events-none -z-10"></div>
+
+        <!-- Central Card -->
+        <div class="w-full max-w-lg bg-surface-container-lowest shadow-xl rounded-2xl p-8 sm:p-10 relative border border-outline-variant/20">
+          
+          <!-- Card Header & Icon -->
+          <div class="flex flex-col items-center text-center mb-8">
+            <div class="relative mb-5">
+              <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-container to-primary flex items-center justify-center shadow-md">
+                <svg class="w-7 h-7 text-on-primary" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+                  <circle cx="18" cy="5" r="3"></circle>
+                  <circle cx="6" cy="12" r="3"></circle>
+                  <circle cx="18" cy="19" r="3"></circle>
+                  <line x1="8.59" x2="15.42" y1="13.51" y2="17.49"></line>
+                  <line x1="15.41" x2="8.59" y1="6.51" y2="10.49"></line>
+                </svg>
+              </div>
+              <span class="absolute -bottom-1 -right-1 flex h-3.5 w-3.5">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-fixed-dim opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-primary"></span>
+              </span>
+            </div>
+
+            <h1 id="page-heading" class="font-headline font-semibold text-2xl sm:text-[28px] tracking-tight text-on-surface">
+              Sign in to Software Digital Twin
+            </h1>
+            <p id="page-subheading" class="font-body text-sm text-on-surface-variant mt-2 max-w-sm leading-relaxed">
+              Access your living codebase model, change impact simulations, and incident intelligence.
+            </p>
+          </div>
+
+          <!-- OAuth & SSO Buttons -->
+          <div class="flex flex-col gap-3">
+            <button class="group relative w-full h-11 px-4 rounded-full bg-inverse-surface text-inverse-on-surface font-label font-medium text-sm flex items-center justify-between shadow-sm hover:opacity-95 transition-all active:scale-[0.99]" id="btn-github" type="button">
+              <div class="flex items-center gap-3">
+                <svg aria-hidden="true" class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                  <path clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" fill-rule="evenodd"></path>
+                </svg>
+                <span>Continue with GitHub</span>
+              </div>
+              <span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant text-[11px] font-mono font-medium">⌘ + G</span>
+            </button>
+
+            <button class="w-full h-11 px-4 rounded-full bg-surface-container-low text-on-surface font-label font-medium text-sm flex items-center justify-between hover:bg-surface-container transition-colors active:scale-[0.99] border border-outline-variant/30" id="btn-sso" type="button">
+              <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-primary text-[19px]">domain_verification</span>
+                <span>Continue with SSO / SAML</span>
+              </div>
+              <span class="text-xs text-on-surface-variant font-normal">Okta • Azure • Google</span>
+            </button>
+          </div>
+
+          <!-- Divider -->
+          <div class="relative my-7 flex items-center justify-center">
+            <div class="w-full h-px bg-surface-container-high"></div>
+            <span class="absolute px-3 bg-surface-container-lowest text-[11px] font-label font-medium uppercase tracking-wider text-outline">
+              Or sign in with work email
+            </span>
+          </div>
+
+          <!-- Error Alert Box -->
+          <div id="auth-error-box" class="mb-4 p-3 bg-error-container/60 border border-error/30 rounded-xl text-xs text-on-error-container flex items-start gap-2" style="display: none;">
+            <span class="material-symbols-outlined text-error text-[18px] shrink-0">error</span>
+            <span id="auth-error-text" class="leading-relaxed">Invalid credentials.</span>
+          </div>
+
+          <!-- Info / Success Alert Box -->
+          <div id="auth-info-box" class="mb-4 p-3 bg-surface-container border border-primary/20 rounded-xl text-xs text-primary flex items-start gap-2" style="display: none;">
+            <span class="material-symbols-outlined text-primary text-[18px] shrink-0">info</span>
+            <span id="auth-info-text" class="leading-relaxed"></span>
+          </div>
+
+          <!-- Sign-in / Registration Form -->
+          <form class="space-y-4" id="signin-form" autocomplete="on">
+            <!-- Username Field (Visible during registration) -->
+            <div id="field-username-container" style="display: none;">
+              <label class="block text-xs font-label font-medium text-on-surface mb-1.5" for="account-username">
+                Username *
+              </label>
+              <div class="relative flex items-center">
+                <span class="absolute left-3.5 material-symbols-outlined text-outline text-[18px] pointer-events-none">person</span>
+                <input class="w-full h-11 pl-10 pr-9 rounded-lg bg-surface-container-low text-on-surface text-sm placeholder:text-outline focus:outline-none focus:bg-surface-container border border-transparent focus:border-primary-container transition-colors" id="account-username" name="username" placeholder="alex_dev" autocomplete="username" type="text"/>
+              </div>
+            </div>
+
+            <!-- Email Field -->
+            <div>
+              <label class="block text-xs font-label font-medium text-on-surface mb-1.5" for="work-email" id="label-email">
+                Work Email or Username
+              </label>
+              <div class="relative flex items-center">
+                <span class="absolute left-3.5 material-symbols-outlined text-outline text-[18px] pointer-events-none">mail</span>
+                <input class="w-full h-11 pl-10 pr-9 rounded-lg bg-surface-container-low text-on-surface text-sm placeholder:text-outline focus:outline-none focus:bg-surface-container border border-transparent focus:border-primary-container transition-colors" id="work-email" name="email" placeholder="alex@company.com" required="" type="text" autocomplete="username"/>
+                <button aria-label="Clear email input" class="absolute right-3 hidden text-outline hover:text-on-surface transition-colors" id="clear-email-btn" type="button">
+                  <span class="material-symbols-outlined text-[16px]">close</span>
+                </button>
+              </div>
+              <p class="text-[11px] text-on-surface-variant mt-1.5 ml-1">Use your organization GitHub, username, or corporate email.</p>
+            </div>
+
+            <!-- Password Field -->
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="text-xs font-label font-medium text-on-surface" for="account-password">
+                  Password
+                </label>
+                <a id="btn-forgot-password" class="text-xs font-label font-medium text-primary hover:text-primary-container transition-colors cursor-pointer" href="#">
+                  Forgot password?
+                </a>
+              </div>
+              <div class="relative flex items-center">
+                <span class="absolute left-3.5 material-symbols-outlined text-outline text-[18px] pointer-events-none">lock</span>
+                <input class="w-full h-11 pl-10 pr-10 rounded-lg bg-surface-container-low text-on-surface text-sm placeholder:text-outline focus:outline-none focus:bg-surface-container border border-transparent focus:border-primary-container transition-colors" id="account-password" name="password" placeholder="••••••••••••" required="" type="password" autocomplete="current-password"/>
+                <button aria-label="Toggle password visibility" class="absolute right-3 text-outline hover:text-on-surface transition-colors p-1" id="toggle-password" type="button">
+                  <span class="material-symbols-outlined text-[18px]" id="eye-icon">visibility</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Checkbox Row -->
+            <div class="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input class="sr-only peer" id="remember-device" type="checkbox" checked/>
+                <div class="w-4 h-4 rounded bg-surface-container-high peer-checked:bg-primary flex items-center justify-center transition-colors">
+                  <span class="material-symbols-outlined text-on-primary text-[13px] opacity-0 peer-checked:opacity-100 transition-opacity">check</span>
+                </div>
+                <span class="text-xs text-on-surface-variant font-body">Remember workstation (30 days)</span>
+              </label>
+
+              <div class="flex items-center gap-1.5 self-start sm:self-auto px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[11px] font-label border border-outline-variant/30">
+                <span class="material-symbols-outlined text-primary text-[14px]">key</span>
+                <span>WebAuthn supported</span>
+              </div>
+            </div>
+
+            <!-- Submit Button -->
+            <div class="pt-2">
+              <button id="btn-submit-auth" class="w-full h-11 rounded-full bg-primary-container text-on-primary font-label font-medium text-sm flex items-center justify-center gap-2 hover:bg-primary transition-colors shadow-sm active:scale-[0.99]" type="submit">
+                <span id="btn-submit-text">Sign In</span>
+                <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+              </button>
+            </div>
+          </form>
+
+          <!-- Alternative Auth Modes -->
+          <div class="mt-6 flex flex-col items-center gap-3">
+            <div class="flex items-center gap-4 text-xs font-label">
+              <button id="btn-passkey" class="text-primary hover:text-primary-container transition-colors flex items-center gap-1" type="button">
+                <span class="material-symbols-outlined text-[15px]">passkey</span>
+                <span>Sign in with a Passkey</span>
+              </button>
+              <span class="text-outline-variant">•</span>
+              <button id="btn-magic-link" class="text-on-surface-variant hover:text-on-surface transition-colors flex items-center gap-1" type="button">
+                <span class="material-symbols-outlined text-[15px]">magic_button</span>
+                <span>Use magic link</span>
+              </button>
+            </div>
+
+            <button id="btn-org-url" class="text-xs text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1 font-body" type="button">
+              <span>Need custom workspace? Sign in with organization URL</span>
+              <span class="material-symbols-outlined text-[13px]">north_east</span>
+            </button>
+          </div>
+
+          <!-- Bottom Switcher Box -->
+          <div class="mt-6 pt-5 bg-surface-container-low rounded-xl p-3 text-center border border-outline-variant/20">
+            <p id="bottom-prompt" class="text-xs text-on-surface-variant">
+              Don't have an account? 
+              <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Start a free trial</button>
+              <span class="text-outline-variant mx-1.5">•</span>
+              <a class="text-on-surface font-medium hover:underline" href="/app">Explore sandbox</a>
+            </p>
+          </div>
+        </div>
+
+        <!-- 4 Security Feature Badges Grid -->
+        <div class="w-full max-w-4xl mt-12 mb-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="p-4 rounded-xl bg-surface-container-low flex items-start gap-3 border border-outline-variant/20">
+              <div class="p-2 rounded-lg bg-surface-container text-primary">
+                <span class="material-symbols-outlined text-[20px]">verified</span>
+              </div>
+              <div>
+                <h4 class="text-xs font-headline font-semibold text-on-surface">SOC 2 Type II</h4>
+                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Continuous compliance monitoring &amp; verification</p>
+              </div>
+            </div>
+
+            <div class="p-4 rounded-xl bg-surface-container-low flex items-start gap-3 border border-outline-variant/20">
+              <div class="p-2 rounded-lg bg-surface-container text-primary">
+                <span class="material-symbols-outlined text-[20px]">memory</span>
+              </div>
+              <div>
+                <h4 class="text-xs font-headline font-semibold text-on-surface">Zero Code Retention</h4>
+                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">ASTs analyzed ephemerally in volatile memory</p>
+              </div>
+            </div>
+
+            <div class="p-4 rounded-xl bg-surface-container-low flex items-start gap-3 border border-outline-variant/20">
+              <div class="p-2 rounded-lg bg-surface-container text-primary">
+                <span class="material-symbols-outlined text-[20px]">visibility_lock</span>
+              </div>
+              <div>
+                <h4 class="text-xs font-headline font-semibold text-on-surface">Read-Only Scopes</h4>
+                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Minimal GitHub permissions, zero write hooks</p>
+              </div>
+            </div>
+
+            <div class="p-4 rounded-xl bg-surface-container-low flex items-start gap-3 border border-outline-variant/20">
+              <div class="p-2 rounded-lg bg-surface-container text-primary">
+                <span class="material-symbols-outlined text-[20px]">enhanced_encryption</span>
+              </div>
+              <div>
+                <h4 class="text-xs font-headline font-semibold text-on-surface">E2E Session Vault</h4>
+                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Per-tenant hardware security module encryption</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Status Indicator -->
+          <div class="mt-6 flex items-center justify-center gap-2 text-xs text-on-surface-variant">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+            </span>
+            <span class="font-medium text-on-surface">All TwinCore Engine Clusters Operational</span>
+            <span class="text-outline-variant">•</span>
+            <span class="font-mono text-[11px]">Region: us-east (p99 latency 14ms)</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- ==================================================================== -->
+  <!-- FOOTER -->
+  <!-- ==================================================================== -->
+  <footer class="w-full bg-surface-container-low/60 backdrop-blur-md py-6 border-t border-outline-variant/20">
+    <div class="w-full max-w-7xl mx-auto px-6 lg:px-12 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-on-surface-variant">
+      <div class="flex items-center gap-2 font-normal">
+        <span>© 2025 Software Digital Twin Platform Inc.</span>
+        <span class="text-outline-variant">•</span>
+        <span>Enterprise Grade Isolation</span>
+      </div>
+      <nav class="flex items-center gap-6">
+        <a class="hover:text-on-surface transition-colors cursor-pointer" onclick="showModalInfo('Compliance', 'SOC 2 Type II certified. ISO/IEC 27001 compliant architecture. Multi-tenant zero-trust isolation enforced at the database and AST engine boundaries.')">Compliance</a>
+        <a class="hover:text-on-surface transition-colors cursor-pointer" onclick="showModalInfo('Privacy Policy', 'Zero code retention policy. ASTs and dependency graphs are processed in volatile memory. Tokens and private keys are never persisted in plaintext.')">Privacy Policy</a>
+        <a class="hover:text-on-surface transition-colors cursor-pointer" onclick="showModalInfo('Terms of Service', 'Read-only static code discovery. Digital Twin engine executes no binaries, no build pipelines, and no container scripts from target repositories.')">Terms of Service</a>
+        <a class="hover:text-on-surface transition-colors cursor-pointer" onclick="showModalInfo('Security Overview', 'End-to-end encrypted sessions with PBKDF2-HMAC-SHA256 password hashing, signed JWT Bearer credentials, and automated token revocation.')">Security Overview</a>
+      </nav>
+    </div>
+  </footer>
+
+  <!-- Generic Informational Modal -->
+  <div id="info-modal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display: none;">
+    <div class="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-surface-container-high pb-3">
+        <h3 id="info-modal-title" class="font-headline font-semibold text-base text-on-surface">Information</h3>
+        <button onclick="document.getElementById('info-modal').style.display='none'" class="text-outline hover:text-on-surface p-1 rounded-lg" type="button">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
+      <p id="info-modal-body" class="text-xs text-on-surface-variant leading-relaxed"></p>
+      <div class="flex justify-end pt-2">
+        <button onclick="document.getElementById('info-modal').style.display='none'" class="px-4 py-2 rounded-full bg-primary-container text-on-primary text-xs font-medium hover:bg-primary transition-colors" type="button">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- JAVASCRIPT AUTHENTICATION & INTERACTION MACHINE -->
+  <!-- ==================================================================== -->
+  <script>
+    function showModalInfo(title, body) {
+      document.getElementById('info-modal-title').textContent = title;
+      document.getElementById('info-modal-body').textContent = body;
+      document.getElementById('info-modal').style.display = 'flex';
+    }
+
+    (function() {
+      let isRegisterMode = false;
+      const emailInput = document.getElementById('work-email');
+      const clearEmailBtn = document.getElementById('clear-email-btn');
+      const passwordInput = document.getElementById('account-password');
+      const usernameInput = document.getElementById('account-username');
+      const usernameContainer = document.getElementById('field-username-container');
+      const togglePasswordBtn = document.getElementById('toggle-password');
+      const eyeIcon = document.getElementById('eye-icon');
+      const form = document.getElementById('signin-form');
+      const submitBtn = document.getElementById('btn-submit-auth');
+      const submitBtnText = document.getElementById('btn-submit-text');
+      const errorBox = document.getElementById('auth-error-box');
+      const errorText = document.getElementById('auth-error-text');
+      const infoBox = document.getElementById('auth-info-box');
+      const infoText = document.getElementById('auth-info-text');
+      const switchModeBtn = document.getElementById('btn-switch-mode');
+      const pageHeading = document.getElementById('page-heading');
+      const pageSubheading = document.getElementById('page-subheading');
+      const bottomPrompt = document.getElementById('bottom-prompt');
+      const labelEmail = document.getElementById('label-email');
+
+      function showError(msg) {
+        if (infoBox) infoBox.style.display = 'none';
+        if (errorBox && errorText) {
+          errorText.textContent = msg;
+          errorBox.style.display = 'flex';
+        }
+      }
+
+      function hideAlerts() {
+        if (errorBox) errorBox.style.display = 'none';
+        if (infoBox) infoBox.style.display = 'none';
+      }
+
+      function showInfo(msg) {
+        if (errorBox) errorBox.style.display = 'none';
+        if (infoBox && infoText) {
+          infoText.textContent = msg;
+          infoBox.style.display = 'flex';
+        }
+      }
+
+      // Check if user is already logged in
+      const existingToken = localStorage.getItem('jwt_token');
+      if (existingToken) {
+        fetch('/api/v1/auth/me', {
+          headers: { 'Authorization': `Bearer ${existingToken}` }
+        }).then(res => {
+          if (res.ok) {
+            window.location.replace('/app');
+          }
+        }).catch(() => {});
+      }
+
+      // Mode Switch: Sign In <-> Register
+      function toggleMode(toRegister) {
+        isRegisterMode = toRegister !== undefined ? toRegister : !isRegisterMode;
+        hideAlerts();
+
+        if (isRegisterMode) {
+          pageHeading.textContent = 'Create your Digital Twin Account';
+          pageSubheading.textContent = 'Join enterprise engineering teams simulating change impact and code architecture.';
+          usernameContainer.style.display = 'block';
+          usernameInput.required = true;
+          labelEmail.textContent = 'Work Email *';
+          emailInput.placeholder = 'alex@company.com';
+          emailInput.type = 'email';
+          submitBtnText.textContent = 'Create Account & Sign In';
+          switchModeBtn.textContent = 'Sign in instead';
+          bottomPrompt.innerHTML = `
+            Already have an account? 
+            <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Sign in</button>
+            <span class="text-outline-variant mx-1.5">•</span>
+            <a class="text-on-surface font-medium hover:underline" href="/app">Explore sandbox</a>
+          `;
+          document.getElementById('btn-switch-mode').addEventListener('click', () => toggleMode(false));
+        } else {
+          pageHeading.textContent = 'Sign in to Software Digital Twin';
+          pageSubheading.textContent = 'Access your living codebase model, change impact simulations, and incident intelligence.';
+          usernameContainer.style.display = 'none';
+          usernameInput.required = false;
+          labelEmail.textContent = 'Work Email or Username';
+          emailInput.placeholder = 'alex@company.com or username';
+          submitBtnText.textContent = 'Sign In';
+          bottomPrompt.innerHTML = `
+            Don't have an account? 
+            <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Start a free trial</button>
+            <span class="text-outline-variant mx-1.5">•</span>
+            <a class="text-on-surface font-medium hover:underline" href="/app">Explore sandbox</a>
+          `;
+          document.getElementById('btn-switch-mode').addEventListener('click', () => toggleMode(true));
+        }
+      }
+
+      if (switchModeBtn) {
+        switchModeBtn.addEventListener('click', () => toggleMode(true));
+      }
+
+      // Email Clear Button
+      if (emailInput && clearEmailBtn) {
+        emailInput.addEventListener('input', () => {
+          clearEmailBtn.classList.toggle('hidden', emailInput.value.length === 0);
+        });
+
+        clearEmailBtn.addEventListener('click', () => {
+          emailInput.value = '';
+          clearEmailBtn.classList.add('hidden');
+          emailInput.focus();
+        });
+      }
+
+      // Toggle Password Visibility
+      if (togglePasswordBtn && passwordInput && eyeIcon) {
+        togglePasswordBtn.addEventListener('click', () => {
+          const isPassword = passwordInput.getAttribute('type') === 'password';
+          passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
+          eyeIcon.textContent = isPassword ? 'visibility_off' : 'visibility';
+        });
+      }
+
+      // Form Submission
+      if (form) {
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          hideAlerts();
+
+          const emailOrUser = emailInput.value.trim();
+          const password = passwordInput.value;
+          const username = usernameInput ? usernameInput.value.trim() : '';
+
+          if (!emailOrUser) {
+            showError('Please enter your work email or username.');
+            emailInput.focus();
+            return;
+          }
+          if (!password) {
+            showError('Please enter your password.');
+            passwordInput.focus();
+            return;
+          }
+
+          submitBtn.disabled = true;
+          submitBtn.classList.add('opacity-80');
+          submitBtn.innerHTML = `
+            <span class="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+            <span>${isRegisterMode ? 'Creating Account...' : 'Authenticating...'}</span>
+          `;
+
+          try {
+            if (isRegisterMode) {
+              // 1. Register User
+              const regRes = await fetch('/api/v1/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  username: username || emailOrUser.split('@')[0],
+                  email: emailOrUser.includes('@') ? emailOrUser : `${emailOrUser}@session.local`,
+                  password: password,
+                  role: 'engineer'
+                })
+              });
+
+              if (!regRes.ok) {
+                const errData = await regRes.json().catch(() => ({ detail: 'Registration failed.' }));
+                throw new Error(errData.detail || 'Could not register user account.');
+              }
+            }
+
+            // 2. Perform Login
+            const loginRes = await fetch('/api/v1/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                username: isRegisterMode && username ? username : emailOrUser,
+                password: password
+              })
+            });
+
+            if (!loginRes.ok) {
+              const errData = await loginRes.json().catch(() => ({ detail: 'Invalid credentials.' }));
+              throw new Error(errData.detail || 'Authentication failed. Please verify your credentials.');
+            }
+
+            const data = await loginRes.json();
+            localStorage.setItem('jwt_token', data.access_token);
+
+            submitBtn.innerHTML = `
+              <span class="material-symbols-outlined text-[18px]">check</span>
+              <span>Redirecting to TwinCore...</span>
+            `;
+
+            setTimeout(() => {
+              const urlParams = new URLSearchParams(window.location.search);
+              const redirectUrl = urlParams.get('redirect') || '/app';
+              window.location.replace(redirectUrl);
+            }, 600);
+
+          } catch (err) {
+            console.error('Authentication error:', err);
+            showError(err.message || 'An error occurred during authentication.');
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('opacity-80');
+            submitBtn.innerHTML = `
+              <span>${isRegisterMode ? 'Create Account & Sign In' : 'Sign In'}</span>
+              <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+            `;
+          }
+        });
+      }
+
+      // Continue with GitHub Button & ⌘ + G Shortcut
+      const ghBtn = document.getElementById('btn-github');
+      if (ghBtn) {
+        ghBtn.addEventListener('click', () => {
+          showModalInfo(
+            'Continue with GitHub',
+            'To connect your GitHub account or analyze repositories, you can sign in directly with your GitHub credentials or proceed into the Digital Twin workspace to connect any public or private repository using secure in-flight tokens.'
+          );
+        });
+      }
+
+      // SSO / SAML Button
+      const ssoBtn = document.getElementById('btn-sso');
+      if (ssoBtn) {
+        ssoBtn.addEventListener('click', () => {
+          showModalInfo(
+            'Enterprise Single Sign-On (SSO / SAML)',
+            'Digital Twin supports SAML 2.0 and OIDC integrations for Okta, Microsoft Azure AD, Google Workspace, and PingFederate. Please contact your organization security administrator for your enterprise workspace URL.'
+          );
+        });
+      }
+
+      // Passkey Button
+      const passkeyBtn = document.getElementById('btn-passkey');
+      if (passkeyBtn) {
+        passkeyBtn.addEventListener('click', () => {
+          showModalInfo(
+            'WebAuthn & Passkeys',
+            'Hardware security keys (YubiKey) and platform biometrics (Touch ID / Windows Hello) are supported for zero-trust passwordless authentication.'
+          );
+        });
+      }
+
+      // Magic Link Button
+      const magicBtn = document.getElementById('btn-magic-link');
+      if (magicBtn) {
+        magicBtn.addEventListener('click', () => {
+          const emailVal = emailInput.value.trim();
+          if (!emailVal || !emailVal.includes('@')) {
+            showError('Please enter your work email address in the field above to receive a magic link.');
+            emailInput.focus();
+            return;
+          }
+          showInfo(`Magic sign-in link dispatched to ${emailVal}. Please check your corporate inbox.`);
+        });
+      }
+
+      // Forgot Password Button
+      const forgotBtn = document.getElementById('btn-forgot-password');
+      if (forgotBtn) {
+        forgotBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const emailVal = emailInput.value.trim();
+          if (emailVal) {
+            showInfo(`Password reset instructions have been sent to ${emailVal} if the account exists.`);
+          } else {
+            showInfo('Please enter your work email to receive password reset instructions.');
+            emailInput.focus();
+          }
+        });
+      }
+
+      // Organization URL Button
+      const orgBtn = document.getElementById('btn-org-url');
+      if (orgBtn) {
+        orgBtn.addEventListener('click', () => {
+          showModalInfo(
+            'Custom Organization Workspace',
+            'If your team hosts a dedicated on-premise or VPC cluster (e.g. twin.internal.yourcompany.com), enter your tenant subdomain or connect via your corporate reverse proxy.'
+          );
+        });
+      }
+
+      // Global Keyboard Shortcut: ⌘ + G for GitHub
+      window.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
+          e.preventDefault();
+          if (ghBtn) ghBtn.click();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

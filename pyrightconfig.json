@@ -1,0 +1,14 @@
+{
+  "include": [
+    "backend",
+    "scripts",
+    "cli",
+    "tests"
+  ],
+  "extraPaths": [
+    "./backend",
+    "."
+  ],
+  "pythonVersion": "3.12",
+  "reportMissingImports": "warning"
+}

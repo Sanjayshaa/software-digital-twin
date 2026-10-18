@@ -1,0 +1,61 @@
+{
+  "case_id": "BENCH_LAB_RECORD_SYSTEM_V1",
+  "evaluation_mode": "INDEPENDENT_LABELS",
+  "ground_truth_independent_of_twin": true,
+  "annotation_date": "2026-10-05T00:00:00Z",
+  "reviewer": "Independent Software Architecture Reviewer",
+  "methodology": "Manual static code inspection, git diff analysis, and test suite verification independent of Digital Twin propagation algorithms",
+  "items": [
+    {
+      "entity": "src.components.CodeEditor",
+      "label": "AFFECTED",
+      "reason": "Direct component dependency invoking languageDetector service during buffer changes.",
+      "reviewer": "Senior Software Architect (Independent)",
+      "evidence": [
+        "src/components/CodeEditor.tsx:4",
+        "git diff 815c0749..22432b8d"
+      ],
+      "confidence": 1.0,
+      "ground_truth_source": "MANUAL",
+      "ground_truth_method": "independent_architect_review",
+      "ground_truth_evidence": [
+        "src/components/CodeEditor.tsx imports and calls detectLanguage"
+      ],
+      "ground_truth_independent_of_twin": true
+    },
+    {
+      "entity": "POST /api/run",
+      "label": "AFFECTED",
+      "reason": "API endpoint handler binding execution request payload to language execution dispatcher.",
+      "reviewer": "Senior Software Architect (Independent)",
+      "evidence": [
+        "server/routes.ts:18",
+        "git diff 815c0749..22432b8d"
+      ],
+      "confidence": 1.0,
+      "ground_truth_source": "MANUAL",
+      "ground_truth_method": "independent_architect_review",
+      "ground_truth_evidence": [
+        "server/routes.ts registers endpoint consuming execution pipeline"
+      ],
+      "ground_truth_independent_of_twin": true
+    },
+    {
+      "entity": "tests.languageDetector",
+      "label": "AFFECTED",
+      "reason": "Unit test suite asserting contract and edge cases of modified languageDetector service.",
+      "reviewer": "Senior Software Architect (Independent)",
+      "evidence": [
+        "tests/languageDetector.test.ts:1",
+        "git diff 815c0749..22432b8d"
+      ],
+      "confidence": 1.0,
+      "ground_truth_source": "TEST",
+      "ground_truth_method": "test_suite_assertion_inspection",
+      "ground_truth_evidence": [
+        "tests/languageDetector.test.ts directly exercises detectLanguage"
+      ],
+      "ground_truth_independent_of_twin": true
+    }
+  ]
+}

@@ -218,11 +218,22 @@ class TwinGraphProjection:
                     current_layer = next_layer
                 active_node_ids = ego_nodes
             else:
-                active_node_ids = set()
+                # If focus is not an exact node ID, search by package name, location prefix, or qualified name prefix
+                fl = focus.lower()
+                pkg_matches = {
+                    nid for nid, art in artifact_by_id.items()
+                    if (art.name and art.name.lower() == fl)
+                    or (art.location and (art.location.lower().startswith(fl + "/") or art.location.lower().startswith(fl)))
+                    or (art.qualified_name and (art.qualified_name.lower().startswith(fl + ".") or art.qualified_name.lower().startswith(fl)))
+                }
+                if pkg_matches:
+                    active_node_ids = pkg_matches
+                else:
+                    active_node_ids = set()
 
         # 7. Apply Level Filtering (Progressive Hierarchical Disclosure)
         # Level 1: Packages / Modules only
-        # Level 2: Modules, Classes, Services, APIs, Tests, Databases, Tables (standard components)
+        # Level 2: Modules, Classes, Services, Components, APIs, Tests, Databases, Tables (standard components)
         # Level 3: Level 2 + Functions & Methods
         # Level 4: All (including raw statements, external dependencies, variables)
         filtered_node_ids: Set[str] = set()
@@ -261,10 +272,10 @@ class TwinGraphProjection:
                     if is_hub or is_entry:
                         filtered_node_ids.add(nid)
             elif level == 2:
-                if atype in ("PACKAGE", "MODULE", "CLASS", "INTERFACE", "SERVICE", "API_ENDPOINT", "DATABASE_TABLE", "SQL_TABLE", "TEST_CASE", "TEST_SUITE", "DOCKER_STAGE") or (include_external_dependencies and atype == "EXTERNAL_DEPENDENCY"):
+                if atype in ("PACKAGE", "MODULE", "CLASS", "INTERFACE", "SERVICE", "COMPONENT", "API_ENDPOINT", "DATABASE_TABLE", "SQL_TABLE", "TEST_CASE", "TEST_SUITE", "DOCKER_STAGE") or (include_external_dependencies and atype == "EXTERNAL_DEPENDENCY"):
                     filtered_node_ids.add(nid)
             elif level == 3:
-                if atype in ("PACKAGE", "MODULE", "CLASS", "INTERFACE", "SERVICE", "API_ENDPOINT", "DATABASE_TABLE", "SQL_TABLE", "TEST_CASE", "TEST_SUITE", "DOCKER_STAGE", "METHOD", "FUNCTION", "CONSTRUCTOR") or (include_external_dependencies and atype == "EXTERNAL_DEPENDENCY"):
+                if atype in ("PACKAGE", "MODULE", "CLASS", "INTERFACE", "SERVICE", "COMPONENT", "API_ENDPOINT", "DATABASE_TABLE", "SQL_TABLE", "TEST_CASE", "TEST_SUITE", "DOCKER_STAGE", "METHOD", "FUNCTION", "CONSTRUCTOR") or (include_external_dependencies and atype == "EXTERNAL_DEPENDENCY"):
                     filtered_node_ids.add(nid)
             else:  # Level 4: All
                 filtered_node_ids.add(nid)
@@ -273,7 +284,7 @@ class TwinGraphProjection:
         if level == 1 and not filtered_node_ids:
             for nid in active_node_ids:
                 art = artifact_by_id.get(nid)
-                if art and str(art.artifact_type).upper() in ("PACKAGE", "MODULE", "DIRECTORY", "SERVICE"):
+                if art and str(art.artifact_type).upper() in ("PACKAGE", "MODULE", "DIRECTORY", "SERVICE", "COMPONENT"):
                     filtered_node_ids.add(nid)
 
         # Build placeholder resolution map for internal aliases (e.g. @/services/languageDetector -> src.services.languageDetector)
@@ -340,13 +351,39 @@ class TwinGraphProjection:
                 rendered_nodes.append(r_node)
                 node_id_set.add(r_node["id"])
 
-        # 9. Transform to JSON-ready Edges
+        # 9. Transform to JSON-ready Edges with intelligent architectural rollup
+        rollup_map: Dict[str, str] = {}
+        file_to_macro_node: Dict[str, str] = {}
+        for nid in node_id_set:
+            art = artifact_by_id.get(nid)
+            if art and art.location:
+                f_path = art.location.split(":")[0]
+                if f_path and f_path not in file_to_macro_node:
+                    file_to_macro_node[f_path] = nid
+
+        for art in artifacts:
+            if art.id in node_id_set:
+                rollup_map[art.id] = art.id
+            else:
+                loc_file = art.location.split(":")[0] if art.location else ""
+                if loc_file in file_to_macro_node:
+                    rollup_map[art.id] = file_to_macro_node[loc_file]
+                elif art.qualified_name:
+                    prefix_parts = art.qualified_name.split(".")
+                    for plen in range(len(prefix_parts) - 1, 0, -1):
+                        prefix = ".".join(prefix_parts[:plen])
+                        if prefix in concrete_by_qual and concrete_by_qual[prefix].id in node_id_set:
+                            rollup_map[art.id] = concrete_by_qual[prefix].id
+                            break
+
         rendered_edges: List[Dict[str, Any]] = []
         seen_edges: Set[Tuple[str, str, str]] = set()
         for u, v, k, data in full_graph.edges(keys=True, data=True):
             # Resolve placeholders/aliases if target is mapped to internal artifact
-            u_eff = ph_map.get(u, u)
-            v_eff = ph_map.get(v, v)
+            u_base = ph_map.get(u, u)
+            v_base = ph_map.get(v, v)
+            u_eff = rollup_map.get(u_base, u_base)
+            v_eff = rollup_map.get(v_base, v_base)
             if u_eff not in node_id_set or v_eff not in node_id_set or u_eff == v_eff:
                 continue
 
@@ -744,9 +781,11 @@ class TwinGraphProjection:
 
         # Build reverse dependency graph (target -> source, because if B calls A, when A changes B is impacted!)
         rev_graph = nx.DiGraph()
+        for a in artifacts:
+            rev_graph.add_node(a.id)
         for r in relationships:
-            # When target changes, source is affected!
-            rev_graph.add_edge(r.target_artifact_id, r.source_artifact_id, rel_type=r.relationship_type)
+            if r.target_artifact_id and r.source_artifact_id:
+                rev_graph.add_edge(r.target_artifact_id, r.source_artifact_id, rel_type=r.relationship_type)
 
         affected_node_ids: Set[str] = {root_id}
         details: Dict[str, Any] = {
@@ -763,6 +802,9 @@ class TwinGraphProjection:
         while queue:
             curr, d = queue.pop(0)
             if d > 4:
+                continue
+
+            if not rev_graph.has_node(curr):
                 continue
 
             for pred in rev_graph.successors(curr):

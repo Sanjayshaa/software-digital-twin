@@ -221,10 +221,14 @@ def is_safe_clone_url(
     if check_dns and not is_ip_literal:
         resolver = dns_resolver or socket.getaddrinfo
         try:
-            addr_info = resolver(hostname, 443, proto=socket.IPPROTO_TCP)
+            addr_info = resolver(hostname, 443, type=socket.SOCK_STREAM)
             resolved_ips = {item[4][0] for item in addr_info if item[4]}
-        except Exception as exc:
-            return False, f"DNS resolution failed for hostname '{hostname}': {str(exc)}"
+        except Exception:
+            try:
+                addr_info = resolver(hostname, None)
+                resolved_ips = {item[4][0] for item in addr_info if item[4]}
+            except Exception as exc:
+                return False, f"DNS resolution failed for hostname '{hostname}': {str(exc)}"
 
         for ip_str in resolved_ips:
             try:
@@ -234,9 +238,21 @@ def is_safe_clone_url(
             except ValueError:
                 return False, f"Invalid resolved IP '{ip_str}'."
 
-    # Validate path structure: must include at least owner/repo
+    # Validate path structure: must be repository root (owner/repo or owner/repo.git)
+    # Reject: /blob/, /tree/, /issues/, /pull/, /commit/, /actions/
+    forbidden_subpaths = ["/blob/", "/tree/", "/issues/", "/pull/", "/commit/", "/actions/"]
+    for fsub in forbidden_subpaths:
+        if fsub in parsed.path:
+            return False, "This is not a repository URL. Provide the root repository URL or import the project as a local folder/ZIP."
+
     path = parsed.path.strip("/")
-    if not path or "/" not in path:
-        return False, "GitHub repository URL must include owner and repository name (e.g. https://github.com/owner/repo)."
+    path_parts = [p for p in path.split("/") if p]
+    if len(path_parts) != 2:
+        return False, "This is not a repository URL. Provide the root repository URL or import the project as a local folder/ZIP."
+
+    owner, repo_name = path_parts[0], path_parts[1]
+    repo_clean = repo_name[:-4] if repo_name.endswith(".git") else repo_name
+    if not re.match(r"^[a-zA-Z0-9_.\-]+$", owner) or not re.match(r"^[a-zA-Z0-9_.\-]+$", repo_clean):
+        return False, "Invalid repository name characters in repository URL."
 
     return True, ""

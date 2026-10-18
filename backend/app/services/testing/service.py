@@ -39,25 +39,39 @@ class TestImpactService:
         repo = db.query(Repository).filter_by(id=repository_id).first()
         if not repo:
             raise ValueError(f"Repository '{repository_id}' not found.")
+        from sqlalchemy import or_
 
-        base_snap = db.query(RepositorySnapshot).filter_by(id=base_snapshot_id).first()
+        base_snap = db.query(RepositorySnapshot).filter(
+            RepositorySnapshot.repository_id == repository_id,
+            or_(
+                RepositorySnapshot.id == base_snapshot_id,
+                RepositorySnapshot.commit_hash == base_snapshot_id,
+                RepositorySnapshot.commit_hash.startswith(base_snapshot_id),
+            ),
+        ).first()
         if not base_snap:
-            raise ValueError(f"Base snapshot '{base_snapshot_id}' not found.")
-        if base_snap.repository_id != repository_id:
-            raise ValueError(f"Base snapshot '{base_snapshot_id}' does not belong to repository '{repository_id}'.")
+            raise ValueError(f"Base snapshot or commit '{base_snapshot_id}' not found.")
 
-        target_snap = db.query(RepositorySnapshot).filter_by(id=target_snapshot_id).first()
+        target_snap = db.query(RepositorySnapshot).filter(
+            RepositorySnapshot.repository_id == repository_id,
+            or_(
+                RepositorySnapshot.id == target_snapshot_id,
+                RepositorySnapshot.commit_hash == target_snapshot_id,
+                RepositorySnapshot.commit_hash.startswith(target_snapshot_id),
+            ),
+        ).first()
         if not target_snap:
-            raise ValueError(f"Target snapshot '{target_snapshot_id}' not found.")
-        if target_snap.repository_id != repository_id:
-            raise ValueError(f"Target snapshot '{target_snapshot_id}' does not belong to repository '{repository_id}'.")
+            raise ValueError(f"Target snapshot or commit '{target_snapshot_id}' not found.")
+
+        canonical_base_id = base_snap.id
+        canonical_target_id = target_snap.id
 
         # Execute deterministic test impact engine
         result = self.engine.compute_test_impact(
             db=db,
             repository_id=repository_id,
-            base_snapshot_id=base_snapshot_id,
-            target_snapshot_id=target_snapshot_id,
+            base_snapshot_id=canonical_base_id,
+            target_snapshot_id=canonical_target_id,
             config=config,
         )
 

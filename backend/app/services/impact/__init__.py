@@ -4,8 +4,11 @@ Phase 4 — Change Impact & Blast Radius Package.
 
 from app.services.impact.models import (
     ChangeType,
+    ChangeKind,
     PropagationDirection,
+    ImpactClassification,
     RelationshipImpactRule,
+    ImpactPropagationRule,
     ChangeItem,
     ChangeSet,
     ImpactFinding,
@@ -23,8 +26,11 @@ from app.services.impact.service import ChangeImpactService, change_impact_servi
 
 __all__ = [
     "ChangeType",
+    "ChangeKind",
     "PropagationDirection",
+    "ImpactClassification",
     "RelationshipImpactRule",
+    "ImpactPropagationRule",
     "ChangeItem",
     "ChangeSet",
     "ImpactFinding",

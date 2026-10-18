@@ -98,6 +98,7 @@ class RiskIntelligenceService:
             overall_score=result.overall_score,
             factor_breakdown=factor_summary,
             severity_level=result.overall_category.value,
+            risk_level=result.overall_category.value,
             confidence=result.confidence_score,
             created_at=result.created_at,
         )

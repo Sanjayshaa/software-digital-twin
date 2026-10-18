@@ -1,0 +1,15 @@
+{
+  "case_id": "BENCH_LAB_RECORD_SYSTEM_V1",
+  "repository_name": "LAB-RECORD-SYSTEM",
+  "remote_url": "https://github.com/Sanjayshaa/LAB-RECORD-SYSTEM",
+  "base_commit": "815c0749b9d120c72ab84223c3684613f91e76c7",
+  "target_commit": "22432b8da6b4b07d93fbb06936bfd7fb00e36231",
+  "base_snapshot_id": "snap_2dcb5aee2bc8f941",
+  "target_snapshot_id": "snap_9135acb3565f0037",
+  "language": "TypeScript / JavaScript",
+  "project_type": "Fullstack SPA (Vite + React + Express)",
+  "directly_modified_entities_count": 120,
+  "twin_predicted_affected_count": 29,
+  "independent_annotation_scope": "Independent architectural review of core feature introduction commit diff and test suites.",
+  "ground_truth_status": "PARTIAL_INDEPENDENT_AUDIT"
+}

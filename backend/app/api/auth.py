@@ -115,7 +115,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
             headers={"Retry-After": str(remaining_seconds)},
         )
 
-    user = db.query(User).filter(User.username == username_clean).first()
+    user = db.query(User).filter((User.username == username_clean) | (User.email == username_clean.lower())).first()
     if not user or not verify_password(req.password, user.hashed_password):
         login_rate_limiter.record_failure(username_clean)
         raise HTTPException(
@@ -156,6 +156,8 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=Dict[str, Any])
+@router.get("/session", response_model=Dict[str, Any])
+@router.get("/profile", response_model=Dict[str, Any])
 def get_me(principal: AuthenticatedPrincipal = Depends(require_authenticated_user)):
     """Returns the current verified caller identity."""
     return {
@@ -164,6 +166,7 @@ def get_me(principal: AuthenticatedPrincipal = Depends(require_authenticated_use
         "email": principal.email,
         "role": principal.role,
         "is_admin": principal.is_admin,
+        "is_authenticated": True,
     }
 
 

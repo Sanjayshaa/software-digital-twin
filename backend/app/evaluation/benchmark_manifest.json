@@ -1,0 +1,91 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-10-05T00:00:00Z",
+  "cases": [
+    {
+      "case_id": "BENCH_LAB_RECORD_SYSTEM_V1",
+      "repository_name": "LAB-RECORD-SYSTEM",
+      "remote_url": "https://github.com/Sanjayshaa/LAB-RECORD-SYSTEM",
+      "base_commit": "815c0749b9d120c72ab84223c3684613f91e76c7",
+      "target_commit": "22432b8da6b4b07d93fbb06936bfd7fb00e36231",
+      "base_snapshot_id": "snap_2dcb5aee2bc8f941",
+      "target_snapshot_id": "snap_9135acb3565f0037",
+      "language": "TypeScript / JavaScript",
+      "project_type": "Fullstack SPA (Vite + React + Express)",
+      "directly_modified_entities_count": 120,
+      "expected_label_source": "GROUND_TRUTH_MANUAL",
+      "ground_truth_path": "benchmark_cases/lab_record_system/manual_labels.json",
+      "ground_truth_independent_of_twin": true,
+      "twin_predicted_metrics": {
+        "changes": 120,
+        "added": 27,
+        "deleted": 1,
+        "modified": 92,
+        "unique_affected_predicted": 29,
+        "multi_hop_predicted": 7,
+        "evidence_paths": 57,
+        "note": "Twin predictions must NOT be equated with ground truth."
+      },
+      "notes": "Feature introduction adding languageDetector.ts, CodeEditor.tsx, and test suites. Independent ground truth provided in manual_labels.json.",
+      "extraction_capability": "Tree-sitter TS/JS + path alias resolution (@/services/ -> src.services.)",
+      "limitations": "Does not model CSS module style injection or dynamic Web Worker messages."
+    },
+    {
+      "case_id": "BENCH_FASTAPI_ROUTING_REFACTOR",
+      "repository_name": "fastapi",
+      "remote_url": "https://github.com/fastapi/fastapi",
+      "base_commit": "0.100.0",
+      "target_commit": "0.101.0",
+      "base_snapshot_id": null,
+      "target_snapshot_id": null,
+      "language": "Python",
+      "project_type": "ASGI Web Framework",
+      "change_count": 45,
+      "expected_label_source": "GROUND_TRUTH_TEST",
+      "expected_reproducibility": {
+        "status": "CANDIDATE_DOCUMENTED"
+      },
+      "notes": "Candidate benchmark case for Python AST, dependency injection, and Pydantic v2 migration impact.",
+      "extraction_capability": "Python ast + type annotation inspection",
+      "limitations": "Dynamic Pydantic root validators resolved as INFERRED."
+    },
+    {
+      "case_id": "BENCH_EXPRESS_MIDDLEWARE_DISPATCH",
+      "repository_name": "express",
+      "remote_url": "https://github.com/expressjs/express",
+      "base_commit": "4.18.1",
+      "target_commit": "4.18.2",
+      "base_snapshot_id": null,
+      "target_snapshot_id": null,
+      "language": "JavaScript",
+      "project_type": "HTTP Server Framework",
+      "change_count": 18,
+      "expected_label_source": "GROUND_TRUTH_PATCH",
+      "expected_reproducibility": {
+        "status": "CANDIDATE_DOCUMENTED"
+      },
+      "notes": "Candidate benchmark case for CommonJS module exports and prototype router methods.",
+      "extraction_capability": "Babel/Tree-sitter JS CommonJS parser",
+      "limitations": "Dynamic middleware array registration requires static call resolution."
+    },
+    {
+      "case_id": "BENCH_FLASK_BLUEPRINT_REGISTRATION",
+      "repository_name": "flask",
+      "remote_url": "https://github.com/pallets/flask",
+      "base_commit": "2.3.0",
+      "target_commit": "2.3.1",
+      "base_snapshot_id": null,
+      "target_snapshot_id": null,
+      "language": "Python",
+      "project_type": "WSGI Web Microframework",
+      "change_count": 24,
+      "expected_label_source": "GROUND_TRUTH_PATCH",
+      "expected_reproducibility": {
+        "status": "CANDIDATE_DOCUMENTED"
+      },
+      "notes": "Candidate benchmark case for Werkzeug routing rules and Blueprint URL prefixes.",
+      "extraction_capability": "Python ast + decorator detection",
+      "limitations": "Context locals (request, current_app) resolved with INFERRED provenance."
+    }
+  ]
+}

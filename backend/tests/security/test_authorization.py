@@ -81,12 +81,14 @@ def cross_user_fixtures(db_session):
         owner_id=user_a.id,
         name=f"repo_a_{suffix}",
         local_path=f"/tmp/repo_a_{suffix}",
+        environment="USER",
     )
     repo_b = Repository(
         project_id=proj_b.id,
         owner_id=user_b.id,
         name=f"repo_b_{suffix}",
         local_path=f"/tmp/repo_b_{suffix}",
+        environment="USER",
     )
     db_session.add_all([repo_a, repo_b])
     db_session.flush()
@@ -394,4 +396,138 @@ def test_phase_876_test8_guest_denied_all_repository_endpoints(cross_user_fixtur
         if method == "GET":
             r = client.get(path)
         assert r.status_code == 404, f"Guest accessing {path} got {r.status_code}, expected 404"
+
+
+# ============================================================
+# PHASE 8.7.7 — ZERO-TRUST WORKSPACE ISOLATION TEST SUITE
+# ============================================================
+
+def test_phase_877_matrix_m_test_env_isolation(cross_user_fixtures, db_session):
+    """
+    MATRIX M: Test environment isolation.
+    Repositories with environment="TEST" or "FIXTURE" must NEVER appear in user list.
+    """
+    f = cross_user_fixtures
+    suffix = uuid.uuid4().hex[:6]
+
+    # Create a test environment repository owned by User A
+    test_repo = Repository(
+        project_id=f["repo_a"].project_id,
+        owner_id=f["user_a"].id,
+        name=f"test_repo_{suffix}",
+        local_path=f"/tmp/test_repo_{suffix}",
+        environment="TEST",
+    )
+    # Create a fixture repository
+    fixture_repo = Repository(
+        project_id=f["repo_a"].project_id,
+        owner_id=f["user_a"].id,
+        name=f"fixture_repo_{suffix}",
+        local_path=f"/tmp/fixture_repo_{suffix}",
+        environment="FIXTURE",
+    )
+    db_session.add_all([test_repo, fixture_repo])
+    db_session.flush()
+
+    headers_a = {"Authorization": f"Bearer {f['token_a']}"}
+    resp = client.get("/repositories", headers=headers_a)
+    assert resp.status_code == 200
+    repos = resp.json()
+    repo_ids = [r["id"] for r in repos]
+    assert test_repo.id not in repo_ids, "TEST environment repo leaked into default production user listing!"
+    assert fixture_repo.id not in repo_ids, "FIXTURE environment repo leaked into default production user listing!"
+
+
+def test_phase_877_matrix_i_simulation_idor(cross_user_fixtures):
+    """
+    MATRIX I: Simulation IDOR isolation.
+    User B attempting to read or simulate against User A's scenarios is rejected with 404.
+    """
+    f = cross_user_fixtures
+    headers_b = {"Authorization": f"Bearer {f['token_b']}"}
+
+    # User B requests User A's scenarios
+    resp = client.get(f"/repositories/{f['repo_a'].id}/scenarios", headers=headers_b)
+    assert resp.status_code == 404
+
+    # User B attempts to run simulation on User A's repository
+    resp_sim = client.post(
+        f"/repositories/{f['repo_a'].id}/simulate",
+        headers=headers_b,
+        json={
+            "scenario_name": "malicious_cross_sim",
+            "base_snapshot_id": f["snap_a"].id,
+            "proposed_changes": [],
+        },
+    )
+    assert resp_sim.status_code == 404
+
+
+def test_phase_877_matrix_runtime_events_and_guardrails_idor(cross_user_fixtures):
+    """
+    User B attempting to access User A's runtime events or architecture guardrails receives 404.
+    """
+    f = cross_user_fixtures
+    headers_b = {"Authorization": f"Bearer {f['token_b']}"}
+
+    # Runtime events
+    resp = client.get(f"/repositories/{f['repo_a'].id}/runtime-events", headers=headers_b)
+    assert resp.status_code == 404
+
+    # Architecture guardrails
+    resp_guard = client.get(f"/repositories/{f['repo_a'].id}/architecture/guardrails", headers=headers_b)
+    assert resp_guard.status_code == 404
+
+
+def test_phase_877_matrix_n_guest_ingestion_creates_isolated_tenant(db_session, monkeypatch):
+    """
+    MATRIX N: Repository creation ownership.
+    When a guest onboards a repo (or connects GitHub), a private guest identity is provisioned,
+    a JWT session token is returned, and another unauthenticated guest sees 0 repos.
+    """
+    # Mock structural twin engine to avoid disk operations in unit test
+    class MockResult:
+        files_scanned = 5
+        artifacts = ["a1", "a2"]
+        relationships = ["r1"]
+        evidence_items = []
+        analyzer_names = ["mock_analyzer"]
+
+    from app.services.analysis.engine import structural_twin_engine
+    monkeypatch.setattr(
+        structural_twin_engine,
+        "build_structural_twin",
+        lambda db, repository_id, commit_hash, branch_name: ("snap_mock_1", MockResult())
+    )
+
+    # Ingest as guest
+    resp = client.post(
+        "/repositories/onboard",
+        json={"local_path": "/Users/sanjay/DIGITAL TWIN /backend/app"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "session_token" in data, "Guest onboarding must return isolated session_token!"
+    guest_token = data["session_token"]
+    new_repo_id = data["repository_id"]
+
+    # Verify repo is owned by the new guest user, NOT null
+    repo = db_session.query(Repository).filter_by(id=new_repo_id).first()
+    assert repo is not None
+    assert repo.owner_id is not None, "Newly onboarded repo must have an owner_id!"
+    assert repo.owner_id.startswith("usr_guest_")
+
+    # A fresh guest calling GET /repositories still sees ZERO repositories!
+    fresh_guest_resp = client.get("/repositories")
+    assert fresh_guest_resp.status_code == 200
+    assert len(fresh_guest_resp.json()) == 0, "Fresh guest must see 0 repositories!"
+
+    # The guest with the token sees ONLY their new repository
+    guest_headers = {"Authorization": f"Bearer {guest_token}"}
+    guest_authed_resp = client.get("/repositories", headers=guest_headers)
+    assert guest_authed_resp.status_code == 200
+    guest_repos = guest_authed_resp.json()
+    assert len(guest_repos) == 1
+    assert guest_repos[0]["id"] == new_repo_id
+
 

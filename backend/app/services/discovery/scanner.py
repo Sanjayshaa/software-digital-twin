@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import List, Dict, Set, Optional
 from pydantic import BaseModel, Field
+from app.core.filesystem import compute_file_sha256
 
 DEFAULT_IGNORE_DIRS: Set[str] = {
     ".git",
@@ -51,6 +52,7 @@ class ScannedFile(BaseModel):
     size_bytes: int
     line_count: int = 0
     is_binary: bool = False
+    sha256_hash: str
 
 
 class FileInventory(BaseModel):
@@ -184,8 +186,14 @@ class RepositoryScanner:
                 _, ext = os.path.splitext(fname)
                 ext = ext.lower()
 
-                # Check if binary
+                # Canonical File Content Hash: compute deterministic SHA-256 immediately from bytes
+                try:
+                    file_sha256 = compute_file_sha256(full_path)
+                except Exception:
+                    # Skip file if unreadable due to filesystem permissions or concurrent deletion
+                    continue
 
+                # Check if binary
                 is_binary = False
                 line_count = 0
                 if size <= MAX_INSPECTION_FILE_SIZE:
@@ -208,7 +216,9 @@ class RepositoryScanner:
                     size_bytes=size,
                     line_count=line_count,
                     is_binary=is_binary,
+                    sha256_hash=file_sha256,
                 )
+
 
                 inventory.files.append(scanned_file)
                 inventory.total_files += 1

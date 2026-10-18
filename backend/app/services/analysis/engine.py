@@ -23,20 +23,25 @@ class StructuralTwinEngine:
         repository_id: str,
         commit_hash: str = "HEAD",
         branch_name: str = "main",
+        source_path: Optional[str] = None,
     ) -> Tuple[str, AnalysisRunResult]:
         repo = db.query(Repository).filter_by(id=repository_id).first()
         if not repo:
             raise ValueError(f"Repository with ID '{repository_id}' does not exist.")
 
-        # 1. Resolve real Git metadata from the repository path.
-        #    If the path is a real Git repo, this returns the actual 40-char commit SHA
-        #    and branch name. If not a git repo, returns "no-git" (never fabricates).
+        scan_path = source_path or repo.local_path
         git_info = resolve_git_info(repo.local_path)
-        if git_info.is_git_repo:
+
+        # 1. Resolve real Git metadata.
+        # If an explicit commit SHA was specified, respect it.
+        # Otherwise, if local_path is a git repo, resolve to its HEAD.
+        if commit_hash and commit_hash != "HEAD" and len(commit_hash) >= 7:
+            resolved_commit = commit_hash
+            resolved_branch = branch_name or (git_info.branch_name if git_info.is_git_repo else "main")
+        elif git_info.is_git_repo:
             resolved_commit = git_info.commit_sha
             resolved_branch = git_info.branch_name
         else:
-            # Non-git directory: use the provided values as-is (or "no-git")
             resolved_commit = commit_hash if commit_hash and commit_hash != "HEAD" else "no-git"
             resolved_branch = branch_name if branch_name else "no-git"
 
@@ -45,12 +50,12 @@ class StructuralTwinEngine:
             repo.vcs_type = "git"
             if git_info.remote_url and not repo.remote_url:
                 repo.remote_url = git_info.remote_url
-            if git_info.branch_name != "no-git":
+            if git_info.branch_name != "no-git" and (not repo.default_branch or repo.default_branch == "main"):
                 repo.default_branch = git_info.branch_name
             db.commit()
 
-        # 2. Execute Phase 2 Discovery Brain
-        profile, plan = discovery_engine.discover(repo.local_path)
+        # 2. Execute Phase 2 Discovery Brain on scan_path
+        profile, plan = discovery_engine.discover(scan_path)
 
         # 3. Derive Snapshot ID deterministically from real commit SHA + repo
         snap_raw = f"{repo.id}::{resolved_commit}::{resolved_branch}"
@@ -59,15 +64,15 @@ class StructuralTwinEngine:
         # 4. Build Analysis Context
         context = AnalysisContext(
             repository_id=repo.id,
-            repository_path=repo.local_path,
+            repository_path=scan_path,
             snapshot_id=snapshot_id,
             commit_hash=resolved_commit,
             branch_name=resolved_branch,
             project_id=repo.project_id,
         )
 
-        # 5. Scan Repository Inventory
-        inventory = self._scanner.scan(repo.local_path)
+        # 5. Scan Repository Inventory from scan_path
+        inventory = self._scanner.scan(scan_path)
 
         # 6. Execute Analyzer Runtime
         result = analyzer_runner.run(context, plan, inventory)

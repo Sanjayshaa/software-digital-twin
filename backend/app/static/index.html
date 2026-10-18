@@ -89,6 +89,21 @@
     </div>
   </div>
 
+  <script>
+    // Independent failsafe boot watchdog (guarantees boot-screen is dismissed within 1.5s)
+    setTimeout(function() {
+      if (document.body && document.body.classList.contains('booting')) {
+        document.body.classList.remove('booting');
+        var bs = document.getElementById('boot-screen');
+        if (bs) {
+          bs.style.display = 'none';
+          bs.style.opacity = '0';
+          bs.style.visibility = 'hidden';
+        }
+      }
+    }, 1500);
+  </script>
+
   <!-- APPLICATION SHELL WRAPPER (Hidden during boot) -->
   <div id="app-shell" class="flex h-screen w-full overflow-hidden">
 
@@ -335,14 +350,39 @@
         </button>
 
         <!-- User Profile & Authentication Controls -->
-        <div id="header-auth-section" class="flex items-center gap-2 shrink-0">
-          <button id="top-btn-login" class="px-3.5 h-9 rounded-lg border border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] text-[#0F172A] text-xs font-semibold shadow-2xs flex items-center justify-center gap-1.5 transition-all whitespace-nowrap min-w-[88px]" type="button">
+        <div id="header-auth-section" class="flex items-center gap-2 shrink-0 relative">
+          <a href="/login" id="top-btn-login" class="px-3.5 h-9 rounded-lg border border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] text-[#0F172A] text-xs font-semibold shadow-2xs flex items-center justify-center gap-1.5 transition-all whitespace-nowrap min-w-[88px]">
             <span class="material-symbols-outlined text-[16px] text-[#0071e3]">lock</span>
             <span class="whitespace-nowrap">Sign In</span>
-          </button>
-          <div id="header-user-profile" class="flex items-center gap-2 shrink-0" style="display:none;">
-            <div id="header-user-avatar" class="w-8 h-8 rounded-full bg-[#0071e3] flex items-center justify-center text-white text-xs font-bold shadow-xs">US</div>
-            <span id="header-user-name" class="text-xs font-semibold text-[#0F172A] hidden sm:inline whitespace-nowrap">User</span>
+          </a>
+          <div id="header-user-profile" class="flex items-center gap-2 shrink-0 relative" style="display:none;">
+            <button id="user-menu-btn" class="flex items-center gap-2 px-2.5 py-1 rounded-full border border-[#E2E8F0] hover:bg-[#F1F5F9] transition-colors focus:outline-none" type="button" aria-haspopup="true">
+              <div id="header-user-avatar" class="w-6 h-6 rounded-full bg-[#0071e3] flex items-center justify-center text-white text-[11px] font-bold shadow-xs">US</div>
+              <span id="header-user-name" class="text-xs font-semibold text-[#0F172A] hidden sm:inline whitespace-nowrap">User</span>
+              <span class="material-symbols-outlined text-[16px] text-[#64748B]">expand_more</span>
+            </button>
+            <!-- User Dropdown Menu -->
+            <div id="user-dropdown-menu" class="absolute right-0 top-11 w-60 bg-white border border-[#CBD5E1] rounded-xl shadow-lg p-2 z-50 space-y-1" style="display:none;">
+              <div class="px-3 py-2 border-b border-[#F1F5F9]">
+                <div id="dropdown-username" class="text-xs font-bold text-[#0F172A]">User</div>
+                <div id="dropdown-email" class="text-[11px] text-[#64748B] truncate">user@digitaltwin.local</div>
+                <div id="dropdown-role" class="mt-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-[#F1F5F9] text-[#475569]">engineer</div>
+              </div>
+              <button id="menu-btn-profile" class="w-full text-left px-3 py-2 text-xs text-[#0F172A] hover:bg-[#F8FAFC] rounded-lg flex items-center gap-2 transition-colors" type="button">
+                <span class="material-symbols-outlined text-[16px] text-[#64748B]">badge</span>
+                <span>Profile Details</span>
+              </button>
+              <button id="menu-btn-settings" class="w-full text-left px-3 py-2 text-xs text-[#0F172A] hover:bg-[#F8FAFC] rounded-lg flex items-center gap-2 transition-colors" type="button">
+                <span class="material-symbols-outlined text-[16px] text-[#64748B]">settings</span>
+                <span>Account &amp; Workspace</span>
+              </button>
+              <div class="border-t border-[#F1F5F9] pt-1">
+                <button id="menu-btn-logout" class="w-full text-left px-3 py-2 text-xs text-[#DC2626] hover:bg-[#FEF2F2] rounded-lg flex items-center gap-2 transition-colors font-semibold" type="button">
+                  <span class="material-symbols-outlined text-[16px] text-[#DC2626]">logout</span>
+                  <span>Sign Out</span>
+                </button>
+              </div>
+            </div>
             <button id="top-btn-logout" class="text-[#64748B] hover:text-[#BA1A1A] p-1.5 rounded-lg hover:bg-[#F1F5F9] transition-colors shrink-0" title="Sign Out" type="button" aria-label="Sign out">
               <span class="material-symbols-outlined text-[18px]">logout</span>
             </button>
@@ -457,10 +497,10 @@
 
             <!-- Action Buttons -->
             <div class="flex items-center flex-wrap gap-2.5">
-              <button id="ov-btn-investigate" class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white hover:bg-[#FFF1F2] text-[#BE123C] border border-[#FECDD3] shadow-xs hover:shadow-sm transition-all text-xs font-semibold" type="button">
-                <span class="material-symbols-outlined text-[16px] text-[#E11D48]">warning</span>
-                <span>Investigate Incidents</span>
-                <span id="ov-incidents-badge" class="ml-1 px-1.5 py-0.5 rounded-full bg-[#FFE4E6] text-[#BE123C] text-[10px] font-bold">0</span>
+              <button id="ov-btn-investigate" class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white hover:bg-[#F8FAFC] text-[#64748B] border border-[#CBD5E1] shadow-xs hover:shadow-sm transition-all text-xs font-semibold" type="button">
+                <span id="ov-btn-investigate-icon" class="material-symbols-outlined text-[16px] text-[#94A3B8]">info</span>
+                <span id="ov-btn-investigate-label">View Incidents</span>
+                <span id="ov-incidents-badge" class="ml-1 px-1.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#64748B] text-[10px] font-bold">0 Active</span>
               </button>
 
               <button id="ov-btn-explore" class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white hover:bg-[#F8FAFC] text-[#0F172A] border border-[#E2E8F0] shadow-xs hover:shadow-sm transition-all text-xs font-medium" type="button">
@@ -488,7 +528,7 @@
               </div>
               <div class="flex items-baseline gap-1.5">
                 <span id="ov-components-count" class="stat-num text-3xl font-bold">-</span>
-                <span class="text-xs font-semibold opacity-90">Components</span>
+                <span id="ov-components-label" class="text-xs font-semibold opacity-90">Components</span>
               </div>
               <p id="ov-components-sub" class="stat-sub text-[11px] mt-1 truncate">Monitored services &amp; libraries</p>
             </div>
@@ -641,6 +681,22 @@
                 </div>
               </div>
 
+              <!-- Snapshot History & Version Ledger -->
+              <div class="twin-card p-6 space-y-4">
+                <div class="flex items-center justify-between">
+                  <div class="space-y-0.5">
+                    <div class="flex items-center gap-2">
+                      <h3 class="text-base font-bold text-[#0F172A] tracking-tight">Snapshot History &amp; Version Ledger</h3>
+                      <span id="ov-snap-history-count" class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">0 Snapshots</span>
+                    </div>
+                    <p class="text-xs text-[#64748B]">Explore repository history, select active snapshot models, or pick explicit baselines for pairwise change impact.</p>
+                  </div>
+                </div>
+                <div id="ov-snapshot-history-list" class="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
+                  <!-- Injected dynamically by twin.js -->
+                </div>
+              </div>
+
             </div>
 
             <!-- RIGHT COLUMN: Compact Twin Controls (4 cols) -->
@@ -660,18 +716,18 @@
 
                 <!-- Simulation Trigger Box -->
                 <div class="sim-inner-box space-y-2 bg-white/80 border border-[#C7D2FE]/60 p-3 rounded-xl shadow-2xs">
-                  <label class="text-[11px] text-[#4338CA] font-semibold block">Compare active snapshot against baseline</label>
+                  <label class="text-[11px] text-[#4338CA] font-semibold block">Change Impact Pairwise Analysis</label>
                   <div class="flex items-center justify-between bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-2 rounded-lg text-xs font-semibold text-[#0F172A]">
                     <div class="flex items-center gap-1.5 truncate">
                       <span class="material-symbols-outlined text-[16px] text-[#4F46E5]">alt_route</span>
-                      <span class="truncate">Latest Snapshot Mirror</span>
+                      <span id="ov-sim-target-label" class="truncate">Select snapshot pair</span>
                     </div>
                   </div>
                 </div>
 
-                <button class="w-full py-2.5 px-4 rounded-full bg-[#4F46E5] hover:bg-[#4338CA] text-white transition-all text-xs font-semibold shadow-xs hover:shadow-sm flex items-center justify-center gap-1.5" onclick="window.TwinApp.switchPrimaryView('impact');" type="button">
+                <button id="ov-btn-run-blast-radius" class="w-full py-2.5 px-4 rounded-full bg-[#4F46E5] hover:bg-[#4338CA] text-white transition-all text-xs font-semibold shadow-xs hover:shadow-sm flex items-center justify-center gap-1.5" type="button">
                   <span class="material-symbols-outlined text-[18px]">play_arrow</span>
-                  <span>Run Blast-Radius Analysis</span>
+                  <span id="ov-btn-run-blast-radius-text">Run Blast-Radius Analysis</span>
                 </button>
               </div>
 
@@ -690,23 +746,23 @@
                     <span class="text-[#64748B]">Graph Status</span>
                     <span class="font-semibold text-[#0F172A] flex items-center gap-1.5">
                       <span class="material-symbols-outlined text-[16px] text-[#4F46E5]">sync</span>
-                      Live Synced (AST Mirror)
+                      <span id="ov-graph-status">Source model synchronized</span>
                     </span>
                   </div>
                   <div class="flex items-center justify-between py-2">
-                    <span class="text-[#64748B]">Causal Coverage</span>
-                    <span id="ov-causal-coverage" class="font-semibold text-[#059669] bg-[#ECFDF5] px-2 py-0.5 rounded-full border border-[#A7F3D0]/60">Verified</span>
+                    <span class="text-[#64748B]">Relations Indexed</span>
+                    <span id="ov-causal-coverage" class="font-semibold text-[#059669] bg-[#ECFDF5] px-2 py-0.5 rounded-full border border-[#A7F3D0]/60">0 Indexed</span>
                   </div>
                   <div class="flex items-center justify-between py-2">
                     <span class="text-[#64748B]">Contract Drift</span>
-                    <span id="ov-contract-drift" class="font-semibold text-[#059669] flex items-center gap-1">
-                      <span class="material-symbols-outlined text-[16px]">check_circle</span>
-                      <span id="ov-drift-count">0 breaking changes</span>
+                    <span id="ov-contract-drift" class="font-semibold text-[#64748B] flex items-center gap-1">
+                      <span id="ov-drift-icon" class="material-symbols-outlined text-[16px] text-[#94A3B8]">remove_circle_outline</span>
+                      <span id="ov-drift-count">Not evaluated</span>
                     </span>
                   </div>
                   <div class="flex items-center justify-between py-2">
                     <span class="text-[#64748B]">Active Snapshot</span>
-                    <span id="ov-snapshot" class="font-mono text-[#64748B] bg-[#F8FAFC] px-1.5 py-0.5 rounded border border-[#E2E8F0]">snap_latest</span>
+                    <span id="ov-snapshot" class="font-mono text-[#64748B] bg-[#F8FAFC] px-1.5 py-0.5 rounded border border-[#E2E8F0]">—</span>
                   </div>
                 </div>
 
@@ -795,7 +851,7 @@
         <!-- ============================================================== -->
         <!-- VIEW 3: ARCHITECTURE (STITCH TOPOLOGY & CANVAS) -->
         <!-- ============================================================== -->
-        <section id="view-architecture" class="content-view-panel space-y-6" style="display:none;">
+        <section id="view-architecture" class="content-view-panel space-y-6 pb-16" style="display:none;">
 
           <!-- Top Architecture Header & Controls -->
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -813,48 +869,199 @@
               <button class="level-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0071e3] text-white transition-all active" data-level="1">L1 Macro</button>
               <button class="level-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] transition-all" data-level="2">L2 Components</button>
               <button class="level-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] transition-all" data-level="3">L3 Micro</button>
-            </div>
-          </div>
 
-          <!-- Canvas Toolbar -->
-          <div class="flex items-center justify-between gap-3 bg-white border border-[#E2E8F0] rounded-xl p-3 shadow-xs">
-            <div class="flex items-center gap-2">
-              <input id="graph-search-input" type="text" placeholder="Search node in graph..." class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-1 text-xs text-[#0F172A] focus:outline-none w-56">
-              <button id="toggle-isolated-btn" class="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-xs text-[#0F172A]">
-                <span class="material-symbols-outlined text-[14px]">visibility</span>
-                <span id="isolated-count">Isolated (0)</span>
-              </button>
-            </div>
-
-            <div class="flex items-center gap-1.5">
-              <button id="btn-fit-view" class="w-7 h-7 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] flex items-center justify-center text-[#0F172A]" title="Fit to View">
-                <span class="material-symbols-outlined text-[16px]">crop_free</span>
-              </button>
-              <button id="zoom-in-btn" class="w-7 h-7 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] flex items-center justify-center text-[#0F172A] font-bold" title="Zoom In">+</button>
-              <button id="zoom-out-btn" class="w-7 h-7 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] flex items-center justify-center text-[#0F172A] font-bold" title="Zoom Out">-</button>
-            </div>
-          </div>
-
-          <!-- Canvas & Inspector Split View -->
-          <div class="relative w-full h-[650px] bg-white border border-[#E2E8F0] rounded-2xl overflow-hidden shadow-xs">
-            <canvas id="twin-canvas" class="w-full h-full cursor-grab active:cursor-grabbing block"></canvas>
-
-            <!-- Sliding Node Details Inspector Drawer -->
-            <div id="node-detail-panel" class="absolute right-0 top-0 bottom-0 w-80 bg-white/95 backdrop-blur-md border-l border-[#E2E8F0] p-5 overflow-y-auto transform translate-x-full transition-transform duration-200 z-20 shadow-lg">
-              <div class="flex items-center justify-between pb-3 border-b border-[#E2E8F0] mb-4">
-                <h4 class="font-bold text-sm text-[#0F172A]">Node Inspector</h4>
-                <button id="close-inspector-btn" class="text-[#64748B] hover:text-[#0F172A]">
-                  <span class="material-symbols-outlined text-[18px]">close</span>
+              <!-- Dimensional Toggle: 2D Topological Plane vs Three.js 3D Spatial Twin -->
+              <div class="inline-flex rounded-lg border border-[#CBD5E1] bg-[#F1F5F9] p-0.5 ml-2 shadow-2xs" id="canvas-dimension-toggle">
+                <button id="view-mode-2d" class="px-2.5 py-1 text-xs font-semibold rounded-md bg-white text-[#0F172A] shadow-xs transition-all flex items-center gap-1.5" type="button" title="2D Topological Plane">
+                  <span class="material-symbols-outlined text-[15px]">grid_on</span>
+                  <span>2D Graph</span>
+                </button>
+                <button id="view-mode-3d" class="px-2.5 py-1 text-xs font-medium rounded-md text-[#64748B] hover:text-[#0F172A] transition-all flex items-center gap-1.5" type="button" title="Three.js 3D Spatial Architecture Twin">
+                  <span class="material-symbols-outlined text-[15px]">view_in_ar</span>
+                  <span>3D Space</span>
                 </button>
               </div>
-              <div id="inspector-content" class="space-y-4 text-xs font-mono">
-                <p class="text-[#64748B]">Select a node in the graph to inspect structural properties.</p>
+            </div>
+          </div>
+
+          <!-- Spatial Graph Workspace (Supports 2D Canvas & Three.js 3D WebGL Canvas) -->
+          <div id="graph-workspace-container" class="relative w-full h-[600px] lg:h-[720px] bg-white border border-[#E2E8F0] rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all">
+
+            <!-- Floating Top Toolbar inside Canvas -->
+            <div class="absolute top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+              
+              <!-- Left: Search & Filter Controls -->
+              <div class="flex items-center gap-2 pointer-events-auto">
+                <div class="relative flex items-center bg-white/95 backdrop-blur-md border border-[#CBD5E1] rounded-xl px-3 py-1.5 shadow-xs w-64 hover:border-[#0071E3] transition-colors">
+                  <span class="material-symbols-outlined text-[#64748B] text-[16px] mr-2 shrink-0">search</span>
+                  <input id="graph-search-input" type="text" placeholder="Search architecture node..." class="bg-transparent text-xs text-[#0F172A] placeholder-[#94A3B8] focus:outline-none w-full font-sans">
+                  <span id="graph-nodes-badge" class="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#F1F5F9] text-[#0071E3] border border-[#CBD5E1]">0</span>
+                </div>
+
+                <button id="toggle-isolated-btn" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/95 backdrop-blur-md border border-[#CBD5E1] hover:bg-[#F8FAFC] text-xs text-[#475569] hover:text-[#0F172A] shadow-xs transition-all" type="button" title="Toggle Isolated Nodes">
+                  <span class="material-symbols-outlined text-[15px]">visibility</span>
+                  <span>Isolated (<span id="isolated-count">0</span>)</span>
+                </button>
+
+                <button id="toggle-edge-labels-btn" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/95 backdrop-blur-md border border-[#CBD5E1] hover:bg-[#F8FAFC] text-xs text-[#475569] hover:text-[#0F172A] shadow-xs transition-all" type="button" title="Toggle Edge Labels">
+                  <span class="material-symbols-outlined text-[15px]">label</span>
+                  <span id="edge-labels-label">Edge Labels</span>
+                </button>
+
+                <button id="impact-mode-btn" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/95 backdrop-blur-md border border-[#FDE68A] hover:bg-[#FEF3C7] text-xs text-[#D97706] shadow-xs transition-all" type="button" title="Trace Forward Change Impact">
+                  <span class="material-symbols-outlined text-[15px]">bolt</span>
+                  <span>Impact Mode</span>
+                </button>
+              </div>
+
+              <!-- Right: Graph Controls (Refresh, Center/Fit, Fullscreen, Zoom) -->
+              <div class="flex items-center gap-1.5 pointer-events-auto">
+                <button id="btn-refresh-graph" class="h-8 px-2.5 rounded-xl bg-white/95 backdrop-blur-md border border-[#CBD5E1] hover:bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] shadow-xs transition-all flex items-center gap-1 text-xs" title="Refresh Graph State">
+                  <span class="material-symbols-outlined text-[16px]">sync</span>
+                  <span class="hidden sm:inline">Refresh</span>
+                </button>
+                <button id="btn-fit-view" class="w-8 h-8 rounded-xl bg-white/95 backdrop-blur-md border border-[#CBD5E1] hover:bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] shadow-xs transition-all flex items-center justify-center" title="Center & Fit View">
+                  <span class="material-symbols-outlined text-[16px]">center_focus_strong</span>
+                </button>
+                <button id="btn-fullscreen-graph" class="w-8 h-8 rounded-xl bg-white/95 backdrop-blur-md border border-[#CBD5E1] hover:bg-[#F8FAFC] text-[#475569] hover:text-[#0071E3] shadow-xs transition-all flex items-center justify-center" title="Toggle Fullscreen">
+                  <span id="fullscreen-icon" class="material-symbols-outlined text-[16px]">fullscreen</span>
+                </button>
+                <button id="zoom-in-btn" class="w-8 h-8 rounded-xl bg-white/95 backdrop-blur-md border border-[#CBD5E1] hover:bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] font-bold shadow-xs transition-all flex items-center justify-center text-sm" title="Zoom In">+</button>
+                <button id="zoom-out-btn" class="w-8 h-8 rounded-xl bg-white/95 backdrop-blur-md border border-[#CBD5E1] hover:bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A] font-bold shadow-xs transition-all flex items-center justify-center text-sm" title="Zoom Out">-</button>
+              </div>
+
+            </div>
+
+            <!-- Main Interactive 2D Canvas -->
+            <canvas id="twin-canvas" class="w-full h-full cursor-grab active:cursor-grabbing block"></canvas>
+
+            <!-- Three.js 3D WebGL Canvas Viewport -->
+            <div id="twin-3d-container" class="w-full h-full absolute inset-0 hidden overflow-hidden select-none bg-[#090D16]">
+              <!-- Three.js renders its WebGL canvas here -->
+            </div>
+
+            <!-- 3D Interactive HUD Controls (Visible when 3D is active) -->
+            <div id="twin-3d-hud" class="absolute top-16 right-3 z-20 flex flex-col gap-1.5 pointer-events-auto hidden">
+              <button id="btn-3d-reset-cam" class="px-2.5 py-1.5 rounded-xl bg-[#0F172A]/90 hover:bg-[#1E293B] text-slate-200 border border-slate-700 backdrop-blur-md text-[11px] font-medium shadow-lg flex items-center gap-1.5 transition-all" title="Reset Camera View to Default">
+                <span class="material-symbols-outlined text-[15px] text-[#38BDF8]">videocam</span>
+                <span>Reset View</span>
+              </button>
+              <button id="btn-3d-fit-graph" class="px-2.5 py-1.5 rounded-xl bg-[#0F172A]/90 hover:bg-[#1E293B] text-slate-200 border border-slate-700 backdrop-blur-md text-[11px] font-medium shadow-lg flex items-center gap-1.5 transition-all" title="Fit Entire Graph to 3D Frustum">
+                <span class="material-symbols-outlined text-[15px] text-[#38BDF8]">filter_center_focus</span>
+                <span>Fit Graph</span>
+              </button>
+              <button id="btn-3d-toggle-tiers" class="px-2.5 py-1.5 rounded-xl bg-[#0F172A]/90 hover:bg-[#1E293B] text-slate-200 border border-slate-700 backdrop-blur-md text-[11px] font-medium shadow-lg flex items-center gap-1.5 transition-all" title="Toggle Architecture Tier Planes">
+                <span class="material-symbols-outlined text-[15px] text-[#38BDF8]">layers</span>
+                <span>Tier Grids</span>
+              </button>
+            </div>
+
+            <!-- Floating 3D Simulation & Change Impact Playback Controller -->
+            <div id="sim-3d-playback-bar" class="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-20 bg-[#0F172A]/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl px-4 py-2.5 shadow-2xl items-center gap-3 pointer-events-auto hidden">
+              <div class="flex items-center gap-2 border-r border-slate-700/70 pr-3">
+                <span class="w-2.5 h-2.5 rounded-full bg-[#EC4899] animate-pulse"></span>
+                <div class="flex flex-col">
+                  <span id="sim-3d-mode-label" class="text-[10px] font-bold uppercase tracking-wider text-[#F472B6]">What-If Simulation</span>
+                  <span id="sim-3d-status-text" class="text-[11px] font-mono text-slate-300">Phase: Baseline</span>
+                </div>
+              </div>
+
+              <!-- Playback Transport Buttons -->
+              <div class="flex items-center gap-1.5">
+                <button id="sim-3d-play-pause-btn" class="w-8 h-8 rounded-lg bg-[#0071E3] hover:bg-[#0059B5] text-white flex items-center justify-center transition-all shadow-xs" title="Play / Pause Animation">
+                  <span id="sim-3d-play-icon" class="material-symbols-outlined text-[18px]">play_arrow</span>
+                </button>
+                <button id="sim-3d-step-btn" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center transition-all" title="Step Forward One Hop">
+                  <span class="material-symbols-outlined text-[18px]">skip_next</span>
+                </button>
+                <button id="sim-3d-reset-btn" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center transition-all" title="Reset Propagation to Baseline">
+                  <span class="material-symbols-outlined text-[18px]">replay</span>
+                </button>
+                <button id="sim-3d-focus-btn" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center transition-all" title="Focus on Affected Target Entity">
+                  <span class="material-symbols-outlined text-[18px]">center_focus_strong</span>
+                </button>
+              </div>
+
+              <!-- Speed Controls -->
+              <div class="flex items-center gap-1.5 border-l border-slate-700/70 pl-3">
+                <span class="text-[10px] uppercase font-bold text-slate-400">Speed:</span>
+                <select id="sim-3d-speed-select" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1 focus:outline-none">
+                  <option value="0.5">0.5x</option>
+                  <option value="1.0" selected>1.0x</option>
+                  <option value="2.0">2.0x</option>
+                </select>
+              </div>
+
+              <!-- Reduced Motion Toggle -->
+              <label class="flex items-center gap-1.5 text-[11px] text-slate-300 border-l border-slate-700/70 pl-3 cursor-pointer">
+                <input id="sim-3d-reduced-motion" type="checkbox" class="rounded bg-slate-800 border-slate-700 text-[#0071E3]">
+                <span>Reduced Motion</span>
+              </label>
+
+              <!-- Return to Baseline -->
+              <button id="sim-3d-baseline-btn" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs border border-slate-700 transition-colors">
+                Close
+              </button>
+            </div>
+
+            <!-- Floating 3D Hover Tooltip -->
+            <div id="twin-3d-tooltip" class="absolute z-30 pointer-events-none hidden bg-[#0F172A]/95 text-white border border-slate-700 px-3 py-2 rounded-xl shadow-2xl backdrop-blur-md max-w-xs transition-opacity duration-150">
+              <div class="flex items-center gap-1.5 mb-0.5">
+                <span id="twin-3d-tooltip-badge" class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-[#0284C7]/20 text-[#38BDF8] border border-[#0284C7]/40">CLASS</span>
+                <span id="twin-3d-tooltip-provenance" class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">OBSERVED</span>
+              </div>
+              <div id="twin-3d-tooltip-title" class="text-xs font-bold font-mono text-slate-100 truncate">Component</div>
+              <div id="twin-3d-tooltip-path" class="text-[10px] text-slate-400 truncate">src/module.py</div>
+            </div>
+
+            <!-- Floating Bottom-Left: MiroFish Entity Types & Provenance Legend -->
+            <div id="graph-legend-card" class="absolute bottom-3 left-3 z-20 bg-white/95 backdrop-blur-md border border-[#E2E8F0] rounded-xl p-3 shadow-lg pointer-events-auto hidden sm:block max-w-[300px]">
+              <div class="text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-2 flex items-center justify-between">
+                <span id="legend-title-text">ENTITY TYPES &amp; SEMANTICS</span>
+                <span id="legend-space-badge" class="text-[9px] text-[#94A3B8]">MiroFish 2D</span>
+              </div>
+              <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] text-[#334155]">
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#059669] shadow-[0_0_6px_#059669]"></span><span>Module / Pkg</span></div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#0284C7] shadow-[0_0_6px_#0284C7]"></span><span>Class / Service</span></div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#E11D48] shadow-[0_0_6px_#E11D48]"></span><span>API / Route</span></div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#D97706] shadow-[0_0_6px_#D97706]"></span><span>Database / SQL</span></div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#DB2777] shadow-[0_0_6px_#DB2777]"></span><span>Function / Unit</span></div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#8B5CF6] shadow-[0_0_6px_#8B5CF6]"></span><span>Test Cases</span></div>
+              </div>
+              <div class="pt-2 mt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[10px] text-[#64748B]">
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>Observed</span>
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-500"></span>Derived</span>
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span>Inferred</span>
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-pink-500"></span>Simulated</span>
               </div>
             </div>
+
+            <!-- Floating Bottom-Center: Real-Time Sync Status Pill -->
+            <div id="graph-status-pill" class="absolute bottom-3 left-1/2 transform -translate-x-1/2 z-20 bg-white/95 backdrop-blur-md border border-[#E2E8F0] px-3.5 py-1.5 rounded-full shadow-md flex items-center gap-2 text-[11px] text-[#475569] pointer-events-none">
+              <span class="w-2 h-2 rounded-full bg-[#059669] animate-pulse"></span>
+              <span id="graph-status-text">Living System Synchronized</span>
+            </div>
+
+            <!-- Floating Top-Right: MiroFish-Style Node Details Inspector Drawer -->
+            <div id="node-detail-panel" class="absolute right-3 top-14 bottom-3 w-88 bg-white/98 backdrop-blur-xl border border-[#CBD5E1] rounded-2xl p-5 overflow-y-auto transform translate-x-[120%] transition-transform duration-200 z-30 shadow-2xl space-y-4 custom-scrollbar text-xs text-[#0F172A]">
+              <div class="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+                <div class="flex items-center gap-2">
+                  <h4 class="font-bold text-sm text-[#0F172A]">Node Details</h4>
+                  <span id="inspector-type-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#E0F2FE] text-[#0284C7] border border-[#BAE6FD]">COMPONENT</span>
+                </div>
+                <button id="close-inspector-btn" class="w-6 h-6 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#64748B] hover:text-[#0F172A] flex items-center justify-center transition-colors" type="button" title="Close Details">
+                  <span class="material-symbols-outlined text-[16px]">close</span>
+                </button>
+              </div>
+              <div id="inspector-content" class="space-y-4">
+                <p class="text-[#64748B]">Select an architecture node in the graph space to inspect contracts, dependencies, and blast radius.</p>
+              </div>
+            </div>
+
           </div>
 
           <!-- Discovered Architectural Boundaries & Package Clusters -->
-          <div class="space-y-4 pt-4">
+          <div class="space-y-4 pt-4 pb-12">
             <div class="flex items-center justify-between">
               <div>
                 <h3 class="text-sm font-bold text-[#0F172A] uppercase tracking-wider">Discovered Architecture Packages &amp; Boundaries</h3>
@@ -967,8 +1174,29 @@
               <h2 class="text-xl font-bold text-[#0F172A]">Change Impact</h2>
               <p class="text-xs text-[#64748B]">Trace which components, APIs and tests may be affected by the selected changes before you merge.</p>
             </div>
-            <button id="btn-run-impact-action" class="px-4 py-2 rounded-lg bg-[#0071e3] text-white text-xs font-bold shadow-xs">
-              ⚡ Execute Impact Propagation
+            <div class="flex items-center gap-2">
+              <select id="impact-base-select" class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-2.5 py-1.5 text-xs"></select>
+              <span class="text-xs text-[#94A3B8]">→</span>
+              <select id="impact-target-select" class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-2.5 py-1.5 text-xs"></select>
+              <button id="btn-run-impact-action" class="px-4 py-2 rounded-lg bg-[#0071e3] text-white text-xs font-bold shadow-xs flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[15px]">bolt</span>
+                <span>Execute Impact</span>
+              </button>
+              <button id="btn-impact-visualize-3d" class="px-3.5 py-2 rounded-lg bg-[#0F172A] text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all opacity-50 cursor-not-allowed" type="button" disabled title="Execute Change Impact first to enable 3D propagation animation">
+                <span class="material-symbols-outlined text-[15px] text-[#38BDF8]">view_in_ar</span>
+                <span>Animate in 3D</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Single Snapshot / Notice Banner -->
+          <div id="impact-notice-banner" class="p-4 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3" style="display:none;">
+            <div class="flex items-center gap-2.5 text-[#64748B]">
+              <span class="material-symbols-outlined text-[18px] text-[#F59E0B]">info</span>
+              <span id="impact-notice-message">Select a Baseline and Target snapshot to compute differential change impact across commits.</span>
+            </div>
+            <button id="btn-impact-try-simulation" class="px-3 py-1.5 rounded-lg bg-[#0F172A] text-white text-[11px] font-semibold hover:bg-[#1E293B] transition-colors whitespace-nowrap" type="button">
+              Simulate In-Memory Mutation →
             </button>
           </div>
 
@@ -979,11 +1207,11 @@
               <div id="metric-impact-changed" class="text-xl font-bold text-[#F59E0B] mt-0.5">0</div>
             </div>
             <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
-              <span class="text-[10px] text-[#64748B] uppercase font-bold">Direct</span>
+              <span class="text-[10px] text-[#64748B] uppercase font-bold">Unique Affected</span>
               <div id="metric-impact-direct" class="text-xl font-bold text-[#EF4444] mt-0.5">0</div>
             </div>
             <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
-              <span class="text-[10px] text-[#64748B] uppercase font-bold">Indirect</span>
+              <span class="text-[10px] text-[#64748B] uppercase font-bold">Multi-Hop</span>
               <div id="metric-impact-indirect" class="text-xl font-bold text-[#EC4899] mt-0.5">0</div>
             </div>
             <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
@@ -1368,15 +1596,15 @@
           <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined text-[24px] text-[#0071e3]">science</span>
+                <span class="material-symbols-outlined text-[24px] text-[#0071e3]">psychology</span>
                 <h2 class="text-xl font-bold text-[#0F172A]">What-If / Scenario Simulation Workspace</h2>
-                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">Isolated Virtual Twin</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">Multi-Agent Predictive Twin</span>
               </div>
-              <p class="text-xs text-[#64748B] mt-1">Explore hypothetical changes before writing code or committing. Virtual twin isolation guarantees zero modifications to real repositories or snapshots.</p>
+              <p class="text-xs text-[#64748B] mt-1">Explore hypothetical changes, identify affected components, evaluate potential failures, and inspect evidence-backed recommendations before writing code. Virtual twin isolation guarantees zero mutations to real repositories or snapshots.</p>
             </div>
             <div class="flex items-center gap-2">
               <span class="text-[11px] font-mono text-[#64748B] bg-[#F1F5F9] px-2.5 py-1 rounded-lg border border-[#E2E8F0]" id="sim-active-base-snap">Base: Loading...</span>
-              <button id="btn-new-simulation-reset" class="px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-xs font-semibold text-[#0F172A] transition-colors flex items-center gap-1.5">
+              <button id="btn-new-simulation-reset" class="px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-xs font-semibold text-[#0F172A] transition-colors flex items-center gap-1.5" type="button">
                 <span class="material-symbols-outlined text-[16px]">restart_alt</span>
                 <span>Reset Form</span>
               </button>
@@ -1386,81 +1614,123 @@
           <!-- Two-Column Simulation Grid -->
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-            <!-- LEFT COLUMN: PROPOSED CHANGE DESIGNER (5 cols) -->
+            <!-- LEFT COLUMN: NATURAL-LANGUAGE SCENARIO DESIGNER (5 cols) -->
             <div class="lg:col-span-5 space-y-4">
               <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-4">
                 <div class="flex items-center justify-between border-b border-[#F1F5F9] pb-3">
                   <h3 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[16px] text-[#0071e3]">tune</span>
-                    <span>1. Design Proposed Change</span>
+                    <span class="material-symbols-outlined text-[16px] text-[#0071e3]">chat</span>
+                    <span>1. Natural-Language Scenario</span>
                   </h3>
-                  <span class="text-[10px] text-[#64748B] font-medium">Virtual Mutation</span>
+                  <span class="text-[10px] text-[#0284C7] bg-[#E0F2FE] px-2 py-0.5 rounded font-semibold border border-[#BAE6FD]">Graph-Grounded</span>
                 </div>
 
-                <!-- Mutation Type Selector -->
-                <div>
-                  <label class="block text-[11px] font-semibold text-[#475569] uppercase tracking-wider mb-2">Change Type</label>
-                  <div class="grid grid-cols-2 gap-1.5" id="sim-type-button-group">
-                    <button type="button" class="sim-type-btn active px-2.5 py-2 text-left rounded-lg border text-xs font-medium transition-all border-[#0071e3] bg-[#EFF6FF] text-[#0071e3]" data-type="MODIFY_SYMBOL">
-                      <div class="font-bold flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">code</span> Modify Symbol</div>
-                      <div class="text-[10px] text-[#64748B] mt-0.5 truncate">Function, Method, Class</div>
+                <!-- Primary Natural-Language Question Input -->
+                <div class="space-y-1.5">
+                  <label class="block text-xs font-bold text-[#0F172A]">What would happen if ...?</label>
+                  <textarea id="input-sim-nl-query" rows="3" placeholder="e.g. What would happen if we remove studentGamificationService.ts?&#10;e.g. What if we change /api/v1/auth/login route contract?&#10;e.g. What if submissions traffic increases 10x?" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3.5 py-2.5 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3] focus:ring-1 focus:ring-[#0071e3] transition-all resize-none font-medium leading-relaxed"></textarea>
+                </div>
+
+                <!-- Quick Prompt Chips -->
+                <div class="space-y-1">
+                  <span class="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">Example Scenario Queries:</span>
+                  <div class="flex flex-wrap gap-1.5 pt-1" id="sim-prompt-chips-container">
+                    <button type="button" class="sim-chip-btn px-2 py-1 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[11px] font-mono text-[#334155] border border-[#CBD5E1] transition-all text-left" data-prompt="What would happen if we remove studentGamificationService.ts?">
+                      ✂️ Remove studentGamificationService.ts
                     </button>
-                    <button type="button" class="sim-type-btn px-2.5 py-2 text-left rounded-lg border text-xs font-medium transition-all border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] hover:bg-[#F1F5F9]" data-type="ADD_DEPENDENCY">
-                      <div class="font-bold flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">add_link</span> Add Dependency</div>
-                      <div class="text-[10px] text-[#64748B] mt-0.5 truncate">Service A → Service B</div>
+                    <button type="button" class="sim-chip-btn px-2 py-1 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[11px] font-mono text-[#334155] border border-[#CBD5E1] transition-all text-left" data-prompt="What if we modify /AuthContext API contract?">
+                      🔌 Modify /AuthContext API
                     </button>
-                    <button type="button" class="sim-type-btn px-2.5 py-2 text-left rounded-lg border text-xs font-medium transition-all border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] hover:bg-[#F1F5F9]" data-type="REMOVE_DEPENDENCY">
-                      <div class="font-bold flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">link_off</span> Remove Dependency</div>
-                      <div class="text-[10px] text-[#64748B] mt-0.5 truncate">Decouple dependency</div>
+                    <button type="button" class="sim-chip-btn px-2 py-1 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[11px] font-mono text-[#334155] border border-[#CBD5E1] transition-all text-left" data-prompt="What happens if gamificationTasksClient.ts fails?">
+                      💥 Failure in gamificationTasksClient
                     </button>
-                    <button type="button" class="sim-type-btn px-2.5 py-2 text-left rounded-lg border text-xs font-medium transition-all border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] hover:bg-[#F1F5F9]" data-type="MODIFY_API">
-                      <div class="font-bold flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">api</span> Modify API</div>
-                      <div class="text-[10px] text-[#64748B] mt-0.5 truncate">Contract / Route change</div>
+                    <button type="button" class="sim-chip-btn px-2 py-1 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[11px] font-mono text-[#334155] border border-[#CBD5E1] transition-all text-left" data-prompt="What if submissions traffic increases 10x?">
+                      📈 10x submissions workload
                     </button>
                   </div>
                 </div>
 
-                <!-- Scenario Name Input -->
-                <div>
-                  <label class="block text-[11px] font-semibold text-[#475569] mb-1">Scenario Name</label>
-                  <input id="input-sim-name" type="text" placeholder="e.g. Decouple Payment Gateway from Checkout" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
+                <!-- Target Entity Disambiguation Alert (Shown when multiple candidates match) -->
+                <div id="sim-ambiguity-card" class="p-3 bg-[#FEF3C7] border border-[#FDE68A] rounded-xl space-y-2" style="display:none;">
+                  <div class="flex items-center gap-1.5 text-xs font-bold text-[#92400E]">
+                    <span class="material-symbols-outlined text-[16px]">help_outline</span>
+                    <span>Ambiguous Target: Select Recognized Graph Entity</span>
+                  </div>
+                  <p class="text-[11px] text-[#78350F]">Multiple artifacts matched your query. Click one to resolve explicitly:</p>
+                  <div id="sim-ambiguity-candidates-list" class="space-y-1 max-h-36 overflow-y-auto"></div>
                 </div>
 
-                <!-- Source Entity (Conditional) -->
-                <div id="sim-source-container" style="display:none;">
-                  <label class="block text-[11px] font-semibold text-[#475569] mb-1">Source Entity (Origin)</label>
-                  <input id="input-sim-source" type="text" placeholder="e.g. CheckoutService" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
+                <!-- Resolved Target Details Badge -->
+                <div id="sim-resolved-target-badge" class="p-2.5 bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl space-y-1" style="display:none;">
+                  <div class="flex items-center justify-between text-[11px]">
+                    <span class="font-bold text-[#166534] flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[14px]">check_circle</span> Resolved Graph Target:
+                    </span>
+                    <span id="sim-resolved-target-type" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white text-[#15803D] border border-[#86EFAC]">MODULE</span>
+                  </div>
+                  <div id="sim-resolved-target-name" class="font-mono text-xs text-[#0F172A] font-semibold truncate"></div>
+                  <div id="sim-resolved-target-loc" class="text-[10px] text-[#64748B] font-mono truncate"></div>
                 </div>
 
-                <!-- Target Entity (Always visible) -->
-                <div>
-                  <label id="sim-target-label" class="block text-[11px] font-semibold text-[#475569] mb-1">Target Symbol / Entity</label>
-                  <input id="input-sim-target" type="text" placeholder="e.g. PaymentService.calculate_tax" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
+                <!-- Collapsible Advanced Structural Controls -->
+                <div class="border border-[#E2E8F0] rounded-xl p-3 bg-[#F8FAFC]">
+                  <button id="btn-toggle-advanced-sim" type="button" class="w-full flex items-center justify-between text-xs font-bold text-[#475569] hover:text-[#0F172A]">
+                    <span class="flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-[16px]">tune</span>
+                      <span>Advanced Mutation Parameters</span>
+                    </span>
+                    <span id="advanced-sim-chevron" class="material-symbols-outlined text-[16px] transition-transform">expand_more</span>
+                  </button>
+
+                  <div id="sim-advanced-controls" class="space-y-3 pt-3 mt-2 border-t border-[#E2E8F0]" style="display:none;">
+                    <div>
+                      <label class="block text-[11px] font-semibold text-[#475569] mb-1">Mutation Type</label>
+                      <select id="select-sim-mutation-type" class="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
+                        <option value="MODIFY_SYMBOL">MODIFY_SYMBOL (Function, Class, Method)</option>
+                        <option value="REMOVE_DEPENDENCY">REMOVE_DEPENDENCY (Decouple relationship)</option>
+                        <option value="ADD_DEPENDENCY">ADD_DEPENDENCY (Add relationship)</option>
+                        <option value="MODIFY_API">MODIFY_API (Route / Endpoint contract)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label class="block text-[11px] font-semibold text-[#475569] mb-1">Target Symbol / Entity</label>
+                      <input id="input-sim-target" type="text" placeholder="e.g. studentGamificationService.ts" class="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
+                    </div>
+
+                    <div id="sim-source-container" style="display:none;">
+                      <label class="block text-[11px] font-semibold text-[#475569] mb-1">Source Entity (Origin)</label>
+                      <input id="input-sim-source" type="text" placeholder="e.g. gamificationClient.ts" class="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
+                    </div>
+
+                    <div id="sim-reltype-container" style="display:none;">
+                      <label class="block text-[11px] font-semibold text-[#475569] mb-1">Relationship Type</label>
+                      <select id="select-sim-reltype" class="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
+                        <option value="DEPENDS_ON">DEPENDS_ON</option>
+                        <option value="CALLS">CALLS</option>
+                        <option value="IMPORTS">IMPORTS</option>
+                        <option value="PERSISTS_TO">PERSISTS_TO</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label class="block text-[11px] font-semibold text-[#475569] mb-1">Scenario Name</label>
+                      <input id="input-sim-name" type="text" placeholder="e.g. Decouple Gamification Service" class="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
+                    </div>
+                  </div>
                 </div>
 
-                <!-- Relationship Type (Conditional) -->
-                <div id="sim-reltype-container" style="display:none;">
-                  <label class="block text-[11px] font-semibold text-[#475569] mb-1">Relationship Type</label>
-                  <select id="select-sim-reltype" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
-                    <option value="DEPENDS_ON">DEPENDS_ON</option>
-                    <option value="CALLS">CALLS</option>
-                    <option value="IMPORTS">IMPORTS</option>
-                    <option value="PERSISTS_TO">PERSISTS_TO</option>
-                    <option value="TESTS">TESTS</option>
-                  </select>
+                <!-- Simulation Action Buttons -->
+                <div class="space-y-2 pt-1">
+                  <button id="btn-run-simulation" class="w-full py-2.5 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all" type="button">
+                    <span class="material-symbols-outlined text-[18px]">bolt</span>
+                    <span id="btn-run-simulation-text">Run Evidence-Backed Simulation</span>
+                  </button>
+                  <button id="btn-plan-simulation" class="w-full py-1.5 rounded-lg border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-xs font-semibold text-[#475569] flex items-center justify-center gap-1.5 transition-all" type="button">
+                    <span class="material-symbols-outlined text-[15px]">schema</span>
+                    <span>Parse &amp; Inspect Multi-Agent Plan</span>
+                  </button>
                 </div>
-
-                <!-- Description / Rationale -->
-                <div>
-                  <label class="block text-[11px] font-semibold text-[#475569] mb-1">Hypothesis / Rationale</label>
-                  <textarea id="input-sim-desc" rows="2" placeholder="e.g. Verify whether removing this dependency prevents blast radius from reaching order workflows." class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3] resize-none"></textarea>
-                </div>
-
-                <!-- Run Simulation Button -->
-                <button id="btn-run-simulation" class="w-full py-2.5 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all">
-                  <span class="material-symbols-outlined text-[18px]">bolt</span>
-                  <span id="btn-run-simulation-text">Run Deterministic Simulation</span>
-                </button>
                 <div id="sim-error-box" class="p-3 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] text-[#BE123C] text-xs font-medium" style="display:none;"></div>
               </div>
 
@@ -1469,7 +1739,7 @@
                 <div class="flex items-center justify-between border-b border-[#F1F5F9] pb-2">
                   <h3 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider flex items-center gap-1.5">
                     <span class="material-symbols-outlined text-[16px] text-[#64748B]">history</span>
-                    <span>Scenario History</span>
+                    <span>Saved Scenario History</span>
                   </h3>
                   <span id="sim-history-count" class="text-[10px] text-[#64748B] font-mono">0 saved</span>
                 </div>
@@ -1479,19 +1749,19 @@
               </div>
             </div>
 
-            <!-- RIGHT COLUMN: SIMULATION RESULTS & VIRTUAL TWIN (7 cols) -->
+            <!-- RIGHT COLUMN: RESPONSIVE SIMULATION RESULTS (7 cols) -->
             <div class="lg:col-span-7 space-y-4">
 
-              <!-- Initial Placeholder -->
+              <!-- Initial Placeholder Card -->
               <div id="sim-placeholder-card" class="bg-white border border-[#E2E8F0] rounded-xl p-10 shadow-xs text-center space-y-4">
                 <div class="w-16 h-16 rounded-2xl bg-[#EFF6FF] text-[#0071e3] mx-auto flex items-center justify-center shadow-xs">
-                  <span class="material-symbols-outlined text-[32px]">biotech</span>
+                  <span class="material-symbols-outlined text-[32px]">science</span>
                 </div>
                 <div class="max-w-md mx-auto space-y-1">
                   <h3 class="text-base font-bold text-[#0F172A]">Simulate Before You Commit</h3>
                   <p class="text-xs text-[#64748B] leading-relaxed">
-                    Define a hypothetical change on the left and run simulation.
-                    The engine clones your Digital Twin into an isolated virtual projection, analyzes propagation, verifies guardrails, and synthesizes risk without touching source files.
+                    Type a natural-language hypothetical question on the left or select an example query.
+                    TwinCore’s 8-role orchestration pipeline analyzes architectural boundaries, evaluates propagation blast radius, verifies guardrails, and produces a complete technical engineering report without touching your source files.
                   </p>
                 </div>
                 <div class="grid grid-cols-3 gap-3 max-w-sm mx-auto pt-2 text-left">
@@ -1504,30 +1774,51 @@
                     <div class="text-[10px] text-[#64748B]">Zero hallucination</div>
                   </div>
                   <div class="p-2.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
-                    <div class="text-[11px] font-bold text-[#0F172A]">Explainable</div>
+                    <div class="text-[11px] font-bold text-[#0F172A]">Audited Findings</div>
                     <div class="text-[10px] text-[#64748B]">Full provenance</div>
                   </div>
                 </div>
               </div>
 
-              <!-- Results Content View (Hidden Initially) -->
+              <!-- Results Content View (Clean Vertical Flow, No Overlap) -->
               <div id="sim-results-card" class="space-y-4" style="display:none;">
 
                 <!-- Status & Title Banner -->
-                <div class="bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-xs flex items-center justify-between">
-                  <div class="space-y-0.5">
-                    <div class="flex items-center gap-2">
-                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DCFCE7] text-[#15803D] border border-[#BBF7D0]">
-                        ● Simulation Complete
-                      </span>
-                      <h3 id="sim-res-name" class="text-sm font-bold text-[#0F172A]">Scenario Name</h3>
+                <div class="bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-xs space-y-2">
+                  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div class="space-y-1">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DCFCE7] text-[#15803D] border border-[#BBF7D0]">
+                          ● Simulation Complete
+                        </span>
+                        <h3 id="sim-res-name" class="text-sm font-bold text-[#0F172A]">Scenario Name</h3>
+                      </div>
+                      <p id="sim-res-sub" class="text-[11px] text-[#64748B]">1 mutation touching 2 virtual entities</p>
                     </div>
-                    <p id="sim-res-sub" class="text-[11px] text-[#64748B]">1 mutation touching 2 virtual entities</p>
+                    <div class="flex items-center gap-2 self-start sm:self-center flex-wrap">
+                      <span id="sim-res-time" class="text-[11px] font-mono text-[#64748B] bg-[#F1F5F9] px-2 py-1 rounded">2.4ms</span>
+                      <button id="btn-sim-visualize-3d" class="px-3 py-1.5 rounded-lg bg-[#0071E3] hover:bg-[#0059B5] text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all" type="button" title="View &amp; Animate Scenario in 3D Architecture Twin">
+                        <span class="material-symbols-outlined text-[15px]">view_in_ar</span>
+                        <span>Animate in 3D</span>
+                      </button>
+                      <button id="btn-sim-download-report" class="px-3 py-1.5 rounded-lg border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-xs font-semibold text-[#0F172A] shadow-xs flex items-center gap-1.5 transition-all" type="button" title="Download Full 13-Section Engineering Report">
+                        <span class="material-symbols-outlined text-[15px]">download</span>
+                        <span>Report (MD)</span>
+                      </button>
+                    </div>
                   </div>
-                  <span id="sim-res-time" class="text-[11px] font-mono text-[#64748B] bg-[#F1F5F9] px-2 py-1 rounded">2.4ms</span>
+
+                  <!-- Original Question Callout -->
+                  <div class="p-2.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-[#334155] flex items-start gap-2">
+                    <span class="material-symbols-outlined text-[16px] text-[#0071E3] shrink-0 mt-0.5">help_outline</span>
+                    <div>
+                      <span class="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">User Scenario Query:</span>
+                      <div id="sim-res-question" class="italic font-medium text-[#0F172A] mt-0.5"></div>
+                    </div>
+                  </div>
                 </div>
 
-                <!-- 4 Bento Cards -->
+                <!-- 4 Bento Cards (Clean Grid) -->
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] shadow-2xs">
                     <span class="text-[10px] text-[#64748B] uppercase font-bold">Simulated Impact</span>
@@ -1551,6 +1842,18 @@
                   </div>
                 </div>
 
+                <!-- Multi-Agent Engine Routing Banner -->
+                <div id="sim-engine-routing-banner" class="bg-white border border-[#E2E8F0] rounded-xl p-3 shadow-2xs space-y-1.5">
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="font-bold text-[#0F172A] flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-[16px] text-[#8B5CF6]">alt_route</span>
+                      <span>Multi-Agent Engine Routing</span>
+                    </span>
+                    <span class="text-[10px] font-semibold text-[#64748B]">8 Logical Roles Coordinated</span>
+                  </div>
+                  <div id="sim-engine-routing-list" class="flex flex-wrap gap-1.5 pt-1"></div>
+                </div>
+
                 <!-- Explainable Why Callout -->
                 <div class="bg-gradient-to-r from-[#EFF6FF] to-white border border-[#BFDBFE] rounded-xl p-4 shadow-2xs space-y-1">
                   <div class="text-[11px] font-bold text-[#1E40AF] uppercase tracking-wider flex items-center gap-1.5">
@@ -1560,6 +1863,20 @@
                   <p id="sim-res-explanation" class="text-xs text-[#1E3A8A] leading-relaxed font-medium">
                     Scenario explanation will appear here.
                   </p>
+                </div>
+
+                <!-- Evidence-Backed Findings & Recommendations Panel -->
+                <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-3">
+                  <div class="flex items-center justify-between border-b border-[#F1F5F9] pb-2">
+                    <h4 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider flex items-center gap-2">
+                      <span class="material-symbols-outlined text-[16px] text-[#0071e3]">task_alt</span>
+                      <span>Audited Findings &amp; Actionable Recommendations</span>
+                    </h4>
+                    <span id="sim-findings-count-badge" class="text-[10px] font-bold text-[#0284C7] bg-[#E0F2FE] px-2 py-0.5 rounded border border-[#BAE6FD]">0 findings</span>
+                  </div>
+                  <div id="sim-findings-list" class="space-y-2.5">
+                    <!-- Dynamic findings injected here -->
+                  </div>
                 </div>
 
                 <!-- Comparison: Current State vs Scenario State -->
@@ -1591,7 +1908,7 @@
                       <span class="material-symbols-outlined text-[16px] text-[#0071e3]">fact_check</span>
                       <span>Separated Simulation Evidence</span>
                     </h4>
-                    <span class="text-[10px] text-[#64748B]">Simulated vs Observed</span>
+                    <span class="text-[10px] text-[#64748B]">Simulated vs Observed vs Unknown</span>
                   </div>
                   <div id="sim-evidence-ledger" class="space-y-2 text-xs">
                     <!-- Injected dynamically -->
@@ -1682,7 +1999,7 @@
         </div>
         <div>
           <input id="input-local-path" type="text" placeholder="/path/to/repository" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2.5 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
-          <p class="text-[10px] text-[#64748B] mt-1">Path must reside within an approved workspace root. System paths like /etc or /var are rejected.</p>
+          <p class="text-[10px] text-[#64748B] mt-1">Your browser grants access only to the folder you explicitly select. Canonical containment is enforced, traversal and symlink escapes are rejected, and repository scripts are never executed.</p>
         </div>
         <div>
           <label class="block text-xs font-semibold text-[#0F172A] mb-1">Repository Name (Optional)</label>
@@ -1701,6 +2018,17 @@
           <label class="block text-xs font-semibold text-[#0F172A] mb-1">Project Name (Optional)</label>
           <input id="input-archive-name" type="text" placeholder="e.g. microservice-bundle" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
         </div>
+      </div>
+
+      <!-- Supported Capabilities & Language Support Notice -->
+      <div class="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl text-[11px] text-[#475569] space-y-1.5">
+        <div class="font-semibold text-[#0F172A] flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-[14px] text-[#0071e3]">info</span>
+          <span>Supported Capabilities &amp; Read-Only Discovery</span>
+        </div>
+        <p><strong class="text-[#0F172A]">Deep semantic analysis:</strong> Python, Java, TypeScript, JavaScript.</p>
+        <p><strong class="text-[#0F172A]">Structural analysis:</strong> C, C++, C#, PHP, Ruby, Go, Rust, Kotlin, Swift, SQL, Shell, YAML, JSON, Dockerfile, Terraform.</p>
+        <p class="text-[10px] text-[#64748B]">Repositories are treated as untrusted data. Discovery is strictly read-only AST parsing; build scripts, package managers, and binaries are never executed.</p>
       </div>
 
       <!-- Progress Box -->
@@ -1726,18 +2054,53 @@
   </div>
 
   <!-- ==================================================================== -->
-  <!-- MODAL 2: INGEST RUNTIME TELEMETRY -->
+  <!-- MODAL 2: INGEST & SYNCHRONIZE DIGITAL TWIN -->
   <!-- ==================================================================== -->
   <div id="modal-ingest-runtime" class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display:none;">
     <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5">
       <div class="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
-        <h3 class="font-bold text-base text-[#0F172A]">Ingest Runtime Telemetry</h3>
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-[20px] text-[#0071e3]">upload_file</span>
+          <h3 class="font-bold text-base text-[#0F172A]">Ingest &amp; Synchronize Twin</h3>
+        </div>
         <button id="modal-ingest-close-btn" class="text-[#64748B] hover:text-[#0F172A]" type="button">
           <span class="material-symbols-outlined text-[20px]">close</span>
         </button>
       </div>
 
-      <div class="space-y-4">
+      <!-- Ingest Source Tabs -->
+      <div class="flex rounded-xl bg-[#F1F5F9] p-1 gap-1">
+        <button id="tab-ingest-codebase" class="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-white text-[#0F172A] shadow-xs" type="button">1. Codebase Re-index</button>
+        <button id="tab-ingest-telemetry" class="flex-1 py-1.5 rounded-lg text-xs font-medium text-[#64748B] hover:text-[#0F172A]" type="button">2. Runtime Telemetry</button>
+      </div>
+
+      <!-- Tab 1: Codebase Re-index Panel -->
+      <div id="panel-ingest-codebase" class="space-y-4">
+        <p class="text-xs text-[#64748B]">
+          Trigger real structural analysis (<code class="font-mono text-[#0F172A] bg-[#F1F5F9] px-1 rounded">POST /repositories/{id}/analyze</code>). The backend parses source files, extracts AST components, maps dependencies, and registers a new snapshot ledger entry.
+        </p>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-[#0F172A] mb-1">Branch Name</label>
+            <input id="input-ingest-branch" type="text" value="main" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-mono">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-[#0F172A] mb-1">Commit Hash</label>
+            <input id="input-ingest-commit" type="text" value="HEAD" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-mono">
+          </div>
+        </div>
+
+        <!-- Progress Steps -->
+        <div id="ingest-progress-box" class="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl space-y-1.5 text-xs font-mono text-[#64748B]" style="display:none;">
+          <div id="ingest-step-queued" class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">hourglass_empty</span> Queued for analysis...</div>
+          <div id="ingest-step-analyzing" class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">psychology</span> Analyzing AST &amp; Dependencies...</div>
+          <div id="ingest-step-persisting" class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">database</span> Persisting Structural Twin Snapshot...</div>
+          <div id="ingest-step-ready" class="flex items-center gap-1.5 text-[#059669] font-bold" style="display:none;"><span class="material-symbols-outlined text-[14px]">check_circle</span> Ready! Snapshot created.</div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Runtime Telemetry Panel -->
+      <div id="panel-ingest-telemetry" class="space-y-4" style="display:none;">
         <div>
           <label class="block text-xs font-semibold text-[#0F172A] mb-1">Target Environment</label>
           <select id="input-ingest-env" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2 text-xs text-[#0F172A]">
@@ -1748,13 +2111,69 @@
         </div>
         <div>
           <label class="block text-xs font-semibold text-[#0F172A] mb-1">Paste JSON / JSONL Events</label>
-          <textarea id="input-ingest-json" rows="6" placeholder='[{"event_type": "error", "component_name": "PaymentService", "latency_ms": 1420}]' class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-3 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]"></textarea>
+          <textarea id="input-ingest-json" rows="4" placeholder='[{"event_type": "error", "component_name": "PaymentService", "latency_ms": 1420}]' class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-3 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]"></textarea>
         </div>
       </div>
 
-      <div class="flex items-center justify-end gap-2 pt-2">
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
         <button id="modal-ingest-cancel-btn" class="px-4 py-2 rounded-xl bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-xs font-medium" type="button">Cancel</button>
-        <button id="modal-ingest-submit-btn" class="px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs" type="button">Ingest &amp; Correlate</button>
+        <button id="modal-ingest-codebase-btn" class="px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs" type="button">Analyze &amp; Ingest Codebase</button>
+        <button id="modal-ingest-submit-btn" class="px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs" style="display:none;" type="button">Ingest Telemetry</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- MODAL 4: USER ACCOUNT & WORKSPACE PROFILE -->
+  <!-- ==================================================================== -->
+  <div id="modal-user-profile" class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display:none;">
+    <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-[20px] text-[#0071e3]">badge</span>
+          <h3 class="font-bold text-base text-[#0F172A]">Account &amp; Session Profile</h3>
+        </div>
+        <button id="modal-profile-close-btn" class="text-[#64748B] hover:text-[#0F172A]" type="button">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div class="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl flex items-center gap-3">
+          <div id="profile-modal-avatar" class="w-12 h-12 rounded-full bg-[#0071e3] flex items-center justify-center text-white text-sm font-bold shadow-xs">US</div>
+          <div>
+            <div id="profile-modal-username" class="font-bold text-sm text-[#0F172A]">Guest User</div>
+            <div id="profile-modal-email" class="text-[#64748B] text-xs">guest@digitaltwin.local</div>
+            <div id="profile-modal-role" class="mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-[#E0F2FE] text-[#0369A1]">engineer</div>
+          </div>
+        </div>
+
+        <div class="space-y-2 divide-y divide-[#F1F5F9]">
+          <div class="flex items-center justify-between py-1.5">
+            <span class="text-[#64748B]">Session Authentication</span>
+            <span id="profile-modal-auth-status" class="font-mono text-[#059669] font-semibold">Active JWT Session</span>
+          </div>
+          <div class="flex items-center justify-between py-1.5">
+            <span class="text-[#64748B]">User ID</span>
+            <span id="profile-modal-user-id" class="font-mono text-[#64748B] text-[11px] truncate max-w-[200px]">—</span>
+          </div>
+          <div class="flex items-center justify-between py-1.5">
+            <span class="text-[#64748B]">Platform Role</span>
+            <span id="profile-modal-role-text" class="font-medium text-[#0F172A]">Engineer (Full Twin Access)</span>
+          </div>
+          <div class="flex items-center justify-between py-1.5">
+            <span class="text-[#64748B]">Deployment Lifecycle</span>
+            <span class="font-medium text-[#64748B]">Not available (Read-only twin)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-3 border-t border-[#E2E8F0]">
+        <button id="modal-profile-logout-btn" class="px-3.5 py-1.5 rounded-lg bg-[#FEF2F2] hover:bg-[#FEE2E2] text-[#DC2626] text-xs font-semibold transition-colors flex items-center gap-1.5" type="button">
+          <span class="material-symbols-outlined text-[16px]">logout</span>
+          <span>Sign Out</span>
+        </button>
+        <button id="modal-profile-done-btn" class="px-4 py-1.5 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-xs font-medium" type="button">Close</button>
       </div>
     </div>
   </div>
@@ -1827,35 +2246,58 @@
   <!-- MODAL 5: AUTHENTICATION (SIGN IN / REGISTER) -->
   <!-- ==================================================================== -->
   <div id="modal-auth" class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display:none;">
-    <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5">
+    <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
       <div class="flex items-center justify-between border-b border-[#F1F5F9] pb-3">
-        <div class="flex items-center gap-2">
-          <span class="material-symbols-outlined text-[#0071e3] text-[22px]">lock</span>
-          <h3 id="auth-modal-title" class="text-base font-bold text-[#0F172A]">Sign In to Digital Twin</h3>
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-[#0071e3] to-[#0059b5] flex items-center justify-center text-white shadow-xs">
+            <span class="material-symbols-outlined text-[18px]">hub</span>
+          </div>
+          <div>
+            <h3 id="auth-modal-title" class="text-sm font-bold text-[#0F172A]">Sign In to Digital Twin</h3>
+            <p class="text-[11px] text-[#64748B]">Enterprise codebase intelligence &amp; simulation</p>
+          </div>
         </div>
         <button id="modal-auth-close-btn" class="text-[#64748B] hover:text-[#0F172A] p-1 rounded-lg transition-colors" type="button">
           <span class="material-symbols-outlined text-[20px]">close</span>
         </button>
       </div>
 
+      <!-- Quick OAuth Actions -->
+      <div class="flex flex-col gap-2">
+        <a href="/login" class="w-full h-9 px-3 rounded-full bg-[#1E293B] text-white text-xs font-medium flex items-center justify-between shadow-2xs hover:bg-[#0F172A] transition-colors">
+          <div class="flex items-center gap-2">
+            <svg aria-hidden="true" class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" fill-rule="evenodd"></path></svg>
+            <span>Continue with GitHub</span>
+          </div>
+          <span class="text-[10px] text-[#94A3B8] font-mono">⌘ + G</span>
+        </a>
+      </div>
+
+      <div class="relative my-2 flex items-center justify-center">
+        <div class="w-full h-px bg-[#E2E8F0]"></div>
+        <span class="absolute px-2.5 bg-white text-[10px] font-medium uppercase tracking-wider text-[#94A3B8]">
+          Or with credentials
+        </span>
+      </div>
+
       <!-- Auth Mode Switcher -->
       <div class="flex border border-[#E2E8F0] rounded-xl p-1 bg-[#F8FAFC]">
-        <button id="auth-tab-login" class="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-white text-[#0F172A] shadow-2xs transition-all" type="button">Sign In</button>
-        <button id="auth-tab-register" class="flex-1 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] transition-all" type="button">Register</button>
+        <button id="auth-tab-login" class="flex-1 py-1 rounded-lg text-xs font-semibold bg-white text-[#0F172A] shadow-2xs transition-all" type="button">Sign In</button>
+        <button id="auth-tab-register" class="flex-1 py-1 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] transition-all" type="button">Register</button>
       </div>
 
       <!-- Error Announcement -->
-      <div id="auth-error-msg" class="p-3 bg-[#FEF2F2] border border-[#FCA5A5] rounded-xl text-xs text-[#B91C1C]" style="display:none;"></div>
+      <div id="auth-error-msg" class="p-2.5 bg-[#FEF2F2] border border-[#FCA5A5] rounded-xl text-xs text-[#B91C1C]" style="display:none;"></div>
 
-      <div class="space-y-3">
+      <div class="space-y-2.5">
         <div>
-          <label class="block text-xs font-semibold text-[#475569] mb-1">Username</label>
-          <input id="auth-input-username" type="text" placeholder="e.g. dev_engineer" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]" autocomplete="username">
+          <label class="block text-xs font-semibold text-[#475569] mb-1">Username or Work Email</label>
+          <input id="auth-input-username" type="text" placeholder="e.g. dev_engineer or alex@company.com" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]" autocomplete="username">
         </div>
 
         <div id="auth-email-field" style="display:none;">
-          <label class="block text-xs font-semibold text-[#475569] mb-1">Email</label>
-          <input id="auth-input-email" type="email" placeholder="engineer@domain.local" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]" autocomplete="email">
+          <label class="block text-xs font-semibold text-[#475569] mb-1">Work Email</label>
+          <input id="auth-input-email" type="email" placeholder="alex@company.com" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]" autocomplete="email">
         </div>
 
         <div>
@@ -1864,13 +2306,32 @@
         </div>
       </div>
 
-      <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#F1F5F9]">
-        <button id="modal-auth-cancel-btn" class="px-4 py-2 rounded-xl bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-xs font-medium" type="button">Cancel</button>
-        <button id="auth-submit-btn" class="px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs" type="button">Sign In</button>
+      <div class="flex items-center justify-between pt-1">
+        <a href="/login" class="text-xs text-[#0071e3] hover:underline flex items-center gap-1 font-medium">
+          <span>Open Full Sign-In Page</span>
+          <span class="material-symbols-outlined text-[13px]">north_east</span>
+        </a>
+        <div class="flex items-center gap-2">
+          <button id="modal-auth-cancel-btn" class="px-3 py-1.5 rounded-xl bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-xs font-medium" type="button">Cancel</button>
+          <button id="auth-submit-btn" class="px-4 py-1.5 rounded-full bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs" type="button">Sign In</button>
+        </div>
       </div>
     </div>
   </div>
 
+  <!-- Three.js 3D WebGL Visualization Engine & Spatial Controls -->
+  <script src="/static/vendor/three.min.js"></script>
+  <script>
+    if (typeof THREE === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
+    }
+  </script>
+  <script src="/static/vendor/OrbitControls.js"></script>
+  <script>
+    if (typeof THREE !== 'undefined' && typeof THREE.OrbitControls === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"><\/script>');
+    }
+  </script>
   <script src="/static/twin.js"></script>
 </body>
 </html>

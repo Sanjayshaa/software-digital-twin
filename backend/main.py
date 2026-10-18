@@ -3,6 +3,7 @@ import sys
 
 # Ensure backend root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+# Auto-reload trigger for 3D verification audit
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +22,8 @@ from app.api.testing import router as testing_router
 from app.api.risk import router as risk_router
 from app.api.simulation import router as simulation_router
 from app.api.auth import router as auth_router
+from app.api.twin_knowledge import router as twin_knowledge_router
+from app.api.evaluation import router as evaluation_router
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -88,6 +91,16 @@ async def security_and_governance_middleware(request: Request, call_next):
 
     return response
 
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception("Global uncaught exception during %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"},
+    )
+
+
 static_dir = os.path.join(os.path.dirname(__file__), "app", "static")
 if not os.path.exists(static_dir):
     os.makedirs(static_dir, exist_ok=True)
@@ -101,6 +114,14 @@ def serve_ui():
     if os.path.exists(index_file):
         return FileResponse(index_file)
     return {"message": "Digital Twin Visual UI is being initialized."}
+
+@app.get("/login", response_class=FileResponse, tags=["Web UI"])
+@app.get("/signin", response_class=FileResponse, tags=["Web UI"])
+def serve_login():
+    login_file = os.path.join(static_dir, "login.html")
+    if os.path.exists(login_file):
+        return FileResponse(login_file)
+    return RedirectResponse(url="/app")
 
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
@@ -135,9 +156,79 @@ app.include_router(process_router)
 app.include_router(incident_router)
 app.include_router(testing_router)
 app.include_router(risk_router)
+app.include_router(simulation_router, prefix="/api/v1")
 app.include_router(simulation_router)
+app.include_router(twin_knowledge_router, prefix="/api/v1")
+app.include_router(twin_knowledge_router)
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(auth_router)
+app.include_router(evaluation_router, prefix="/api/v1")
+app.include_router(evaluation_router)
+
+
+@app.on_event("startup")
+def ensure_vendor_assets():
+    """
+    Downloads and caches Three.js and OrbitControls locally in static/vendor
+    so that 3D Spatial Architecture visualization functions 100% reliably
+    even when CDN connections are throttled, offline, or restricted.
+    """
+    import urllib.request
+    import logging
+    log = logging.getLogger(__name__)
+    vendor_dir = os.path.join(static_dir, "vendor")
+    os.makedirs(vendor_dir, exist_ok=True)
+    
+    three_path = os.path.join(vendor_dir, "three.min.js")
+    orbit_path = os.path.join(vendor_dir, "OrbitControls.js")
+
+    if not os.path.exists(three_path) or os.path.getsize(three_path) < 1000:
+        try:
+            url = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+            req = urllib.request.Request(url, headers={"User-Agent": "TwinCore/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                content = resp.read()
+                with open(three_path, "wb") as f:
+                    f.write(content)
+            log.info("Successfully cached three.min.js locally (%d bytes)", len(content))
+        except Exception as e:
+            log.warning("Could not download three.min.js: %s", e)
+
+    if not os.path.exists(orbit_path) or os.path.getsize(orbit_path) < 1000:
+        try:
+            url = "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"
+            req = urllib.request.Request(url, headers={"User-Agent": "TwinCore/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                content = resp.read()
+                with open(orbit_path, "wb") as f:
+                    f.write(content)
+            log.info("Successfully cached OrbitControls.js locally (%d bytes)", len(content))
+        except Exception as e:
+            log.warning("Could not download OrbitControls.js: %s", e)
+
+
+@app.on_event("startup")
+def migrate_legacy_unowned_repositories():
+    """
+    Phase 8.7.7 Zero-Trust Isolation Migration:
+    Ensures that any legacy repository lacking an explicit owner_id is classified as 'FIXTURE'
+    so it can never leak into production user repository listings.
+    """
+    try:
+        from app.core.database import SessionLocal
+        from app.models.entities import Repository
+        db = SessionLocal()
+        try:
+            unowned = db.query(Repository).filter(Repository.owner_id.is_(None), Repository.environment == "USER").all()
+            if unowned:
+                for repo in unowned:
+                    repo.environment = "FIXTURE"
+                db.commit()
+        finally:
+            db.close()
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Legacy repository migration check skipped: %s", exc)
 
 
 if __name__ == "__main__":

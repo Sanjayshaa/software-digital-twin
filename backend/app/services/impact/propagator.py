@@ -16,6 +16,7 @@ from app.services.impact.models import (
     ImpactFinding,
     ImpactConfig,
     PropagationDirection,
+    ImpactClassification,
 )
 from app.services.impact.rules import RelationshipRuleRegistry, relationship_rule_registry
 
@@ -233,8 +234,8 @@ class ImpactPropagator:
                     if affected_id in path_ids:
                         continue
 
-                    # 2. Check depth pruning: if we have reached affected_id earlier at shallower depth from same root
-                    if affected_id in min_depth_seen and min_depth_seen[affected_id] < depth:
+                    # 2. Check depth pruning: if we have reached affected_id earlier at shallower or equal depth from same root
+                    if affected_id in min_depth_seen and min_depth_seen[affected_id] <= depth:
                         continue
                     min_depth_seen[affected_id] = depth
 
@@ -257,6 +258,11 @@ class ImpactPropagator:
                     # Record Finding
                     key = (root_qual, affected_qual, rel_type)
                     if key not in findings_map or findings_map[key].impact_level > depth:
+                        canonical_rule = self.rule_registry.get_canonical_rule(rel_type)
+                        rule_id = canonical_rule.rule_id if canonical_rule else f"RULE_{rel_type}"
+                        classification = ImpactClassification.DIRECT if depth == 1 else ImpactClassification.PROVEN_TRANSITIVE
+                        ev_id = f"ev_prop_{depth}_{curr_id[:6]}_{affected_id[:6]}"
+
                         findings_map[key] = ImpactFinding(
                             source_node_id=root_id,
                             source_qual_name=root_qual,
@@ -269,6 +275,12 @@ class ImpactPropagator:
                             evidence=next_ev_chain,
                             confidence=next_conf,
                             detection_method=det_method,
+                            rule_id=rule_id,
+                            impact_classification=classification,
+                            evidence_ids=[ev_id],
+                            snapshot_id=change_set.target_snapshot_id,
+                            provenance="DERIVED",
+                            traversal_depth=depth,
                         )
 
                     # Enqueue next hop

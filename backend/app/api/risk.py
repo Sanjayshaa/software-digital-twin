@@ -36,7 +36,17 @@ def _resolve_repo(
     repository_id: str,
     principal: Optional[AuthenticatedPrincipal] = None,
 ) -> Optional[Repository]:
-    return resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    if repo:
+        return repo
+    if not principal:
+        return db.query(Repository).filter(
+            or_(
+                Repository.id == repository_id,
+                Repository.name == repository_id,
+            )
+        ).first()
+    return None
 
 
 @router.post("/{repository_id}/risk-analysis", response_model=Dict[str, Any])

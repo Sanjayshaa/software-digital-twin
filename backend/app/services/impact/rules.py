@@ -5,15 +5,23 @@ for every typed relationship in the Digital Twin.
 """
 
 from typing import Dict, Optional, List
-from app.services.impact.models import RelationshipImpactRule, PropagationDirection
+from app.services.impact.models import (
+    RelationshipImpactRule,
+    ImpactPropagationRule,
+    PropagationDirection,
+    ImpactClassification,
+    ChangeKind,
+)
 
 
 class RelationshipRuleRegistry:
     """
     Centralized registry of relationship propagation rules.
     Determines whether and how a relationship type propagates change impact.
+    Formalized in Phase 8.9 for reproducible and inspectable research evaluation.
     """
 
+    # Backward-compatible relationship rules
     DEFAULT_RULES: Dict[str, RelationshipImpactRule] = {
         # 1. Calls: When B calls A, if A changes then B is directly impacted!
         "CALLS": RelationshipImpactRule(
@@ -133,10 +141,154 @@ class RelationshipRuleRegistry:
         ),
     }
 
-    def __init__(self, custom_rules: Optional[Dict[str, RelationshipImpactRule]] = None):
+    # Canonical Phase 8.9 Formally Specified Propagation Rules
+    CANONICAL_PROPAGATION_RULES: Dict[str, ImpactPropagationRule] = {
+        "CALLS": ImpactPropagationRule(
+            rule_id="RULE_CALLS_CALLER_IMPACT",
+            relationship_type="CALLS",
+            change_kind="ANY",
+            direction=PropagationDirection.REVERSE,
+            impact_classification=ImpactClassification.DIRECT,
+            evidence_requirements=["AST_CALL_EXPRESSION", "QUALIFIED_SYMBOL_MATCH"],
+            confidence_factor=1.0,
+            max_depth_applicability=5,
+            rationale="Caller invoking modified callee may break due to signature, return value, or behavioral changes.",
+            category="COMPONENT",
+        ),
+        "IMPORTS": ImpactPropagationRule(
+            rule_id="RULE_IMPORTS_IMPORTER_IMPACT",
+            relationship_type="IMPORTS",
+            change_kind="ANY",
+            direction=PropagationDirection.REVERSE,
+            impact_classification=ImpactClassification.DIRECT,
+            evidence_requirements=["IMPORT_STATEMENT", "MODULE_RESOLUTION"],
+            confidence_factor=0.95,
+            max_depth_applicability=5,
+            rationale="Importing module depends on module namespace or exported interface of the imported target.",
+            category="COMPONENT",
+        ),
+        "DEPENDS_ON": ImpactPropagationRule(
+            rule_id="RULE_DEPENDS_ON_DEPENDENT_IMPACT",
+            relationship_type="DEPENDS_ON",
+            change_kind="ANY",
+            direction=PropagationDirection.REVERSE,
+            impact_classification=ImpactClassification.DIRECT,
+            evidence_requirements=["PACKAGE_SPECIFICATION", "CONFIGURATION_REFERENCE"],
+            confidence_factor=0.95,
+            max_depth_applicability=5,
+            rationale="Dependent component relies on service contract and runtime availability of target.",
+            category="COMPONENT",
+        ),
+        "CONSUMES": ImpactPropagationRule(
+            rule_id="RULE_CONSUMES_CLIENT_IMPACT",
+            relationship_type="CONSUMES",
+            change_kind="ANY",
+            direction=PropagationDirection.REVERSE,
+            impact_classification=ImpactClassification.DIRECT,
+            evidence_requirements=["HTTP_CLIENT_CALL", "RPC_INVOCATION"],
+            confidence_factor=0.90,
+            max_depth_applicability=5,
+            rationale="Consumer client contract may fail if provider API schema or payload semantics change.",
+            category="COMPONENT",
+        ),
+        "EXTENDS": ImpactPropagationRule(
+            rule_id="RULE_EXTENDS_SUBCLASS_IMPACT",
+            relationship_type="EXTENDS",
+            change_kind="ANY",
+            direction=PropagationDirection.REVERSE,
+            impact_classification=ImpactClassification.DIRECT,
+            evidence_requirements=["CLASS_DECLARATION", "INHERITANCE_SPECIFICATION"],
+            confidence_factor=1.0,
+            max_depth_applicability=5,
+            rationale="Derived subclass inherits methods, fields, and constructors from the modified base class.",
+            category="COMPONENT",
+        ),
+        "IMPLEMENTS": ImpactPropagationRule(
+            rule_id="RULE_IMPLEMENTS_IMPL_IMPACT",
+            relationship_type="IMPLEMENTS",
+            change_kind="ANY",
+            direction=PropagationDirection.REVERSE,
+            impact_classification=ImpactClassification.DIRECT,
+            evidence_requirements=["INTERFACE_IMPLEMENTATION", "TYPE_DECLARATION"],
+            confidence_factor=1.0,
+            max_depth_applicability=5,
+            rationale="Implementing class must satisfy the modified interface contract and abstract methods.",
+            category="COMPONENT",
+        ),
+        "PERSISTS_TO": ImpactPropagationRule(
+            rule_id="RULE_PERSISTS_TO_DATA_IMPACT",
+            relationship_type="PERSISTS_TO",
+            change_kind="ANY",
+            direction=PropagationDirection.REVERSE,
+            impact_classification=ImpactClassification.DIRECT,
+            evidence_requirements=["ORM_MAPPING", "SQL_STATEMENT"],
+            confidence_factor=0.90,
+            max_depth_applicability=5,
+            rationale="Data access entities and ORM mappings are affected by alterations to table schema.",
+            category="DATABASE",
+        ),
+        "EXPOSES": ImpactPropagationRule(
+            rule_id="RULE_EXPOSES_API_IMPACT",
+            relationship_type="EXPOSES",
+            change_kind="ANY",
+            direction=PropagationDirection.FORWARD,
+            impact_classification=ImpactClassification.DIRECT,
+            evidence_requirements=["ROUTE_DECORATOR", "ENDPOINT_REGISTRATION"],
+            confidence_factor=0.95,
+            max_depth_applicability=5,
+            rationale="Handler or controller implementation changes directly affect the behavior of the exposed HTTP route.",
+            category="API",
+        ),
+        "TESTS": ImpactPropagationRule(
+            rule_id="RULE_TESTS_TEST_IMPACT",
+            relationship_type="TESTS",
+            change_kind="ANY",
+            direction=PropagationDirection.REVERSE,
+            impact_classification=ImpactClassification.DIRECT,
+            evidence_requirements=["TEST_RUNNER_TARGET", "ASSERTION_SURFACE"],
+            confidence_factor=1.0,
+            max_depth_applicability=5,
+            rationale="Test assertion surface targets changed component; test must be executed to verify regression.",
+            category="TEST",
+        ),
+        "PARTICIPATES_IN": ImpactPropagationRule(
+            rule_id="RULE_PARTICIPATES_PROCESS_IMPACT",
+            relationship_type="PARTICIPATES_IN",
+            change_kind="ANY",
+            direction=PropagationDirection.FORWARD,
+            impact_classification=ImpactClassification.DIRECT,
+            evidence_requirements=["WORKFLOW_STEP_MAPPING"],
+            confidence_factor=0.85,
+            max_depth_applicability=5,
+            rationale="Workflow or business process execution step involves the modified component logic.",
+            category="PROCESS",
+        ),
+        "TRANSITIONS_TO": ImpactPropagationRule(
+            rule_id="RULE_TRANSITIONS_STATE_IMPACT",
+            relationship_type="TRANSITIONS_TO",
+            change_kind="ANY",
+            direction=PropagationDirection.FORWARD,
+            impact_classification=ImpactClassification.PROVEN_TRANSITIVE,
+            evidence_requirements=["STATE_TRANSITION_EDGE"],
+            confidence_factor=0.85,
+            max_depth_applicability=5,
+            rationale="Downstream workflow state may be influenced by logic in prior transition steps.",
+            category="PROCESS",
+        ),
+    }
+
+    def __init__(
+        self,
+        custom_rules: Optional[Dict[str, RelationshipImpactRule]] = None,
+        custom_canonical_rules: Optional[Dict[str, ImpactPropagationRule]] = None,
+    ):
         self._rules = dict(self.DEFAULT_RULES)
         if custom_rules:
             self._rules.update(custom_rules)
+
+        self._canonical_rules = dict(self.CANONICAL_PROPAGATION_RULES)
+        if custom_canonical_rules:
+            self._canonical_rules.update(custom_canonical_rules)
 
     def get_rule(self, relationship_type: str) -> Optional[RelationshipImpactRule]:
         """Returns the propagation rule for a relationship type if enabled."""
@@ -146,13 +298,27 @@ class RelationshipRuleRegistry:
             return rule
         return None
 
+    def get_canonical_rule(self, relationship_type: str, change_kind: str = "ANY") -> Optional[ImpactPropagationRule]:
+        """
+        Returns the formal ImpactPropagationRule for the given relationship type and change kind.
+        """
+        norm_type = (relationship_type or "").upper()
+        rule = self._canonical_rules.get(norm_type)
+        if rule and rule.enabled:
+            return rule
+        return None
+
     def is_propagating(self, relationship_type: str) -> bool:
         """Checks if a relationship type propagates change impact."""
         return self.get_rule(relationship_type) is not None
 
     def all_rules(self) -> List[RelationshipImpactRule]:
-        """Returns all configured rules."""
+        """Returns all configured legacy rules."""
         return list(self._rules.values())
+
+    def all_canonical_rules(self) -> List[ImpactPropagationRule]:
+        """Returns all formally specified canonical propagation rules."""
+        return list(self._canonical_rules.values())
 
 
 # Global default rule registry instance

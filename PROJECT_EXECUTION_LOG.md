@@ -973,6 +973,158 @@ Close SEC-06 (overly permissive CORS with credentials), implement API request si
    - Validated real `LAB-RECORD-SYSTEM` twin metrics: 120 Changed Artifacts, 29 Affected Entities, 7 Multi-hop Affected Entities, 57 Evidence Paths, 2 affected tests, 3 unaffected tests, 114 unknown coverage, 5 catalog tests.
    - Zero Phase 9 (LLM/RAG/Agents) code introduced.
 
+---
+
+## Phase 8.7.7 — Zero-Trust Workspace Isolation & Real Browser Proof
+
+**Execution Date**: October 4, 2026  
+**Objective**: Mathematical and empirical verification of multi-tenant isolation, eliminating all historical database leaks, boot-time layout flashes, and cross-user resource enumeration.
+
+### 1. Root Cause Remediation
+- Completed comprehensive forensic audit in `docs/PHASE_8_7_7_FORENSIC_AUDIT.md`.
+- Identified historical unowned repository records (`owner_id IS NULL`) in PostgreSQL that were previously returned due to default unfiltered `environment` query parameter.
+- Added startup migration hook in `backend/main.py` converting all unowned repositories to `environment = 'FIXTURE'`.
+- Enforced strict zero-trust default query `Repository.environment == 'USER'` in `list_repositories`.
+
+### 2. Object-Level Multi-Tenant Authorization
+- Hardened `resolve_authorized_repo` in `backend/app/core/auth.py`: unowned `TEST`/`FIXTURE` repositories are accessible ONLY within the test runner (`os.environ.get("PYTEST_CURRENT_TEST")`). HTTP requests from unauthenticated guests receive strictly `None` (yielding 404).
+- Scoped repository ingestion and retrieval in `connect-github`, `onboard`, and `upload-archive` strictly by `(remote_url/local_path, owner_id)`.
+- Implemented `provision_guest_user(db)`: Anonymous guest acquisitions auto-provision an isolated session identity and return signed JWT `session_token`.
+- Wired `principal` and `resolve_authorized_repo` into architecture drift detection and snapshot comparison in `backend/app/api/architecture.py`.
+
+### 3. Frontend Zero-Flash & Lifecycle Hardening
+- Enhanced `#boot-screen` overlay and `visibility: hidden !important;` barrier in `backend/app/static/twin.css`.
+- Fixed client-side validation to strictly match repository by `r.id === targetRepo`.
+- Removed legacy `snapshots[0]` fallbacks in test impact analysis and simulation in `backend/app/static/twin.js`.
+- Added transparent capability disclosure and local directory sandbox notices in `backend/app/static/index.html`.
+
+### 4. Acceptance & Verification
+- Extended security suite `backend/tests/security/test_authorization.py` with Phase 8.7.7 Matrix M, Matrix I, Runtime/Guardrails IDOR, and Matrix N.
+- Built comprehensive Chrome CDP acceptance suite `scripts/cdp_phase_8_7_7_acceptance.py` covering:
+  - Fresh Guest profile (verified `GET /repositories` returns `[]`, no sidebar, no header controls, zero-flash on `Cmd+Shift+R`).
+  - User A profile (authenticated empty workspace, repository selection, graph view, impact view).
+  - User B profile (complete absence of User A repository, 404 non-disclosure on all IDOR probes).
+  - Guest GitHub onboarding flow (public repo cloned, isolated guest session token created, active twin opened).
+- Published complete verification report in `docs/PHASE_8_7_7_ZERO_TRUST_WORKSPACE.md`.
+
+---
+
+## Phase 8.8 — Evidence-Backed Twin Knowledge & Product Reality
+
+**Execution Date**: October 4, 2026  
+**Objective**: Complete elimination of vibe-coding and silent data fallbacks. Establish an end-to-end evidence-backed traceability pipeline (Source → Snapshot → Twin → Analysis → API → UI), enforce deterministic Twin Knowledge queries without LLM hallucinations, guarantee runtime privacy scrubbing, and validate product truth against real `LAB-RECORD-SYSTEM` data.
+
+### 1. Forensic Audit & Fallback Elimination
+- Completed forensic audit in `docs/PHASE_8_8_FORENSIC_AUDIT.md`.
+- Identified and removed all silent fallbacks: `snap_latest`, fake `HEAD`, `snapshots[0]`, and client-side keyword matching.
+- Enforced strict pairwise snapshot comparison contracts: single snapshot pairwise requests and identical snapshot comparisons return `status="NOT_READY"` with clear explanatory messages, never zero-valued successful completed states.
+- Corrected the additive metric fallacy: in `LAB-RECORD-SYSTEM`, 29 unique entities are affected; all 29 have depth-1 paths, and 7 of them ALSO have depth >= 2 paths. The UI and API now truthfully report `Unique Affected: 29`, `Multi-Hop: 7`, `Total Evidence Paths: 57` (never 36).
+
+### 2. GitHub URL Hardening
+- Hardened `is_safe_clone_url` in `backend/app/services/acquisition/__init__.py`.
+- Non-root GitHub URLs (`/blob/`, `/tree/`, `/issues/`, `/pull/`, `/commit/`, `/actions/`) are strictly rejected with 400 and user-facing guidance: *"This is not a repository URL. Provide the root repository URL or import the project as a local folder/ZIP."*
+
+### 3. Runtime Privacy Boundary
+- Enhanced recursive sanitizer in `backend/app/services/runtime/sanitizer.py`.
+- Scrubs customer PII (emails, international and domestic phone numbers, credit card PAN/CVV, SSNs) and infrastructure secrets (JWTs, OpenAI/GitHub/Stripe/AWS API keys, cookies, Authorization headers).
+- Created and verified adversarial security test suite in `backend/tests/security/test_runtime_privacy_boundary.py` (8/8 pass).
+- Documented privacy architecture and guarantees in `docs/RUNTIME_PRIVACY_BOUNDARY.md`.
+
+### 4. Deterministic Twin Knowledge Service & Frontend Wiring
+- Implemented canonical evidence models in `backend/app/services/twin_knowledge/models.py`: `Provenance` (`OBSERVED`, `DERIVED`, `INFERRED`, `SIMULATED`, `UNKNOWN`), `CanonicalEvidence`, `ImpactPathFinding`, `TwinKnowledgeOverview`, `TwinKnowledgeQueryResult`.
+- Built `TwinKnowledgeService` in `backend/app/services/twin_knowledge/service.py` with multi-tenant ownership enforcement and deterministic query resolution against PostgreSQL data.
+- Built REST API endpoints under `/repositories/{id}/twin-knowledge` in `backend/app/api/twin_knowledge.py`.
+- Replaced client-side keyword routing in `backend/app/static/twin.js:runSoftwareQuery` with `apiFetch` to `/twin-knowledge/query`, rendering provenance badges, grounded entities, and evidence IDs.
+- Published architectural contracts in `docs/TWIN_KNOWLEDGE.md`, `docs/EVIDENCE_PROVENANCE.md`, and `docs/FRONTEND_EVIDENCE_MAP.md`.
+
+### 5. Automated Validation & Acceptance
+- **Golden End-to-End Fixture Test**: `backend/tests/test_evidence_provenance.py` validates the complete 4-tier chain (Controller -> Service -> Repository, Test -> Service) with controlled AST changes and cross-verifies all findings against PostgreSQL rows.
+- **Failure Injection Test Suite**: `backend/tests/security/test_failure_injection.py` validates rejection of non-root URLs, clone failures, identical snapshot `NOT_READY`, foreign snapshot IDOR, and malformed runtime payloads.
+- **Chrome CDP Acceptance Suite**: `scripts/cdp_phase_8_8_acceptance.py` runs a 15-step browser verification journey covering boot, auth, snapshot selection, architecture, changes diff, blast radius, test impact, guardrails, simulation, runtime, incidents, deterministic ask twin, and refresh.
+- **Real-Data Corroboration**: Validated against real `LAB-RECORD-SYSTEM` commits `815c0749` and `22432b8d`.
+- **Product Truth**: Zero Phase 9 code, zero LLMs/agents, zero probabilistic generation, 100% database evidence backing.
+
+---
+
+## Phase 8.9 — Twin Impact Formalization, Historical Evaluation & Baseline Benchmarking
+
+**Execution Date**: October 5, 2026  
+**Objective**: Transform Change Impact Analysis into a formally specified, reproducibly benchmarked research component. Establish canonical propagation rules, enforce explicit traversal directionality, prove determinism, evaluate against comparative baseline algorithms, and formalize prediction/outcome separation without LLMs, RAG, or fake metrics.
+
+### 1. Canonical Impact Propagation Rule Registry
+- Formalized `ImpactPropagationRule` and `RelationshipRuleRegistry` in `backend/app/services/impact/rules.py` and `backend/app/services/impact/models.py`.
+- Formally encoded rules covering: `CALLS`, `IMPORTS`, `DEPENDS_ON`, `CONSUMES`, `TESTS`, `EXTENDS`, `IMPLEMENTS`, `PERSISTS_TO`, `EXPOSES`, `PARTICIPATES_IN`, `TRANSITIONS_TO`.
+- Enforced strict directionality:
+  - Functional dependency edges (`CALLS`, `IMPORTS`, `DEPENDS_ON`, `CONSUMES`, `EXTENDS`, `IMPLEMENTS`, `TESTS`, `PERSISTS_TO`) are traversed in **`REVERSE`** (when callee changes, caller is impacted; when caller changes, callee is NOT impacted).
+  - Exposure and workflow steps (`EXPOSES`, `PARTICIPATES_IN`, `TRANSITIONS_TO`) are traversed in **`FORWARD`** (when handler changes, exposed API route is impacted).
+- Published formal specification in `docs/IMPACT_PROPAGATION_RULES.md` and `docs/adr/ADR_003_IMPACT_DIRECTIONALITY_UNCERTAINTY.md`.
+
+### 2. Impact Classification & Evidence Provenance
+- Formalized `ImpactClassification`: `DIRECT` (distance 1), `PROVEN_TRANSITIVE` (distance $\ge 2$), `MULTI_HOP`, `LIKELY` (alias heuristic), `POSSIBLE` (dynamic dispatch boundary), `UNKNOWN` (unresolved boundary).
+- Kept `IMPACT`, `RISK`, and `CONFIDENCE` strictly separated as independent dimensions.
+- Enriched `ImpactFinding` with `rule_id`, `impact_classification`, `evidence_ids`, `snapshot_id`, `provenance`, and `traversal_depth`. Every step in the causal path is backed by an explicit evidence token.
+
+### 3. Evaluation Package & Baseline Benchmarking Harness
+- Implemented `backend/app/evaluation/`:
+  - `models.py`: `GroundTruthType` (`GROUND_TRUTH_PATCH`, `GROUND_TRUTH_TEST`, `GROUND_TRUTH_RUNTIME`, `GROUND_TRUTH_MANUAL`), `BenchmarkCase`, `EvaluationRun`, `PredictionRecord`, `OutcomeRecord`, `EvaluationMetrics`.
+  - `metrics.py`: `compute_metrics` with zero-denominator safety guards (undefined reported as 0.0 with explicit explanatory notes).
+  - `baselines.py`: Implemented 3 comparative baselines:
+    - Baseline 1: `ChangedFilesBaseline` (predicts direct commit changes only).
+    - Baseline 2: `ImportClosureBaseline` (predicts changed entities + 1-hop reverse IMPORTS/DEPENDS_ON).
+    - Baseline 3: `CallClosureBaseline` (predicts changed symbols + 1-hop reverse CALLS).
+    - Full Twin: `FullTwinEvaluator` (multi-hop typed propagation with cycle protection and alias resolution).
+  - `harness.py`: `EvaluationHarness` executing all 4 algorithms on identical change sets and validating causal paths against PostgreSQL relational rows.
+  - `test_evaluator.py`: `TestImpactEvaluator` enforcing safe test selection policy (`RUN = AFFECTED + UNKNOWN`, `SKIP = UNAFFECTED`).
+  - `benchmark_manifest.json`: Machine-readable manifest for `LAB-RECORD-SYSTEM` and candidate open-source repositories (`fastapi`, `express`, `flask`).
+
+### 4. Golden Test Suites & Validation
+- **Golden Impact Matrix**: `backend/tests/test_impact_formalization.py` verifies Scenarios A through Q (direct caller, 2-hop, 3-hop, diamond, cycle, deleted symbol, unrelated component, alias resolution, inheritance, interfaces, API consumer, API handler, tests, dynamic dispatch, incomplete evidence) and proves directionality.
+- **Repeatability & Determinism**: `backend/tests/test_impact_determinism.py` runs analysis $N=5$ times and asserts identical ordering, IDs, classifications, paths, and confidence scores.
+- **Historical Evaluation**: `backend/tests/test_historical_evaluation.py` validates benchmark replay, comparative baseline execution, path verification against database edges, zero-denominator metric safety, and prediction/outcome separation.
+
+### 5. Architectural Decision Records & Research Documentation
+- Published:
+  - `docs/IMPACT_PROPAGATION_RULES.md`: Formal rule semantics and directionality.
+  - `docs/EVALUATION_METHODOLOGY.md`: Research questions, hypotheses, ground truth definitions, metrics.
+  - `docs/BASELINE_COMPARISON.md`: Algorithmic analysis of baselines vs Full Twin.
+  - `docs/IMPACT_EVALUATION.md`: Execution guide and metric interpretation.
+  - `docs/adr/ADR_001_SNAPSHOT_IDENTITY.md`: Four-tuple snapshot identity specification.
+  - `docs/adr/ADR_002_EXTRACTION_CACHE_CAS.md`: Content-addressed storage (CAS) and incremental extraction cache design note.
+  - `docs/adr/ADR_003_IMPACT_DIRECTIONALITY_UNCERTAINTY.md`: Reverse reachability and 5-state test impact formalism.
+
+---
+
+### Log Entry #26: Phase 8.9.1 — Evaluation Integrity Audit & Anti-Circularity Enforcement
+
+- **Objective**: Conduct forensic audit of Phase 8.9 historical evaluation implementation for circular ground-truth leakage. Explicitly invalidate the circular $1.00 / 1.00 / 1.00$ accuracy claim, establish immutable ground-truth provenance schemas, enforce three formal evaluation modes (`PATCH_ONLY`, `INDEPENDENT_LABELS`, `NO_GROUND_TRUTH`), prevent metric calculation if ground truth is Twin-derived (`status = INVALID_GROUND_TRUTH`), and establish an independent manual benchmark annotation for `LAB-RECORD-SYSTEM`.
+- **Root Cause Analysis of Prior Result**:
+  - In Phase 8.9, `backend/tests/test_historical_evaluation.py` initialized ground truth using the Twin's own predicted qualified names (`{"src.components.CodeEditor", "POST /api/run", "tests.languageDetector"}`).
+  - Evaluating the Twin against its own predictions created self-referential target leakage ($P=1.00, R=1.00, F1=1.00$), while penalizing baselines that emitted file paths or 1-hop closures.
+- **Architectural Enhancements**:
+  1. **Strict Provenance Schema** (`backend/app/evaluation/models.py`):
+     - `GroundTruthSource`: `PATCH`, `TEST`, `RUNTIME`, `MANUAL`, `EXTERNAL`, `UNKNOWN`.
+     - `EvaluationMode`: `PATCH_ONLY` (Mode A), `INDEPENDENT_LABELS` (Mode B), `NO_GROUND_TRUTH` (Mode C).
+     - `MetricStatus`: `VALID`, `INVALID_GROUND_TRUTH`, `PARTIAL_PATCH_ONLY`, `NO_GROUND_TRUTH`, `GROUND_TRUTH_INSUFFICIENT`.
+     - `GroundTruthItem` & `GroundTruthSet`: Immutable (frozen Pydantic models) with explicit provenance metadata (`source`, `method`, `evidence`, `reviewer`, `confidence`, `ground_truth_independent_of_twin`). Programmatically detects forbidden Twin keywords (`ImpactPropagator`, `ImpactFinding`, `Twin Knowledge`, `Full Twin output`).
+  2. **Anti-Circularity Guard** (`backend/app/evaluation/metrics.py`):
+     - Automatically rejects accuracy computation if `validate_independence()` is False, returning `MetricStatus.INVALID_GROUND_TRUTH` with diagnostic explanation.
+     - Never returns $1.00 / 1.00 / 1.00$ when labels are Twin-derived.
+     - Distinguishes `PARTIAL_PATCH_ONLY` (directly modified entities from git diff) from true impact accuracy.
+  3. **Fair Evaluation Harness** (`backend/app/evaluation/harness.py`):
+     - Enforces baseline fairness: all baselines and Full Twin receive identical change sets and identical ground-truth sets.
+     - Rejects evaluation if ground truth is Twin-derived.
+  4. **Independent Benchmark Dataset** (`benchmark_cases/lab_record_system/`):
+     - `commit_pair.json`: Formal historical specification for commits `815c0749` $\to$ `22432b8d`.
+     - `manual_labels.json`: Independent architect review declaring verified affected entities with evidence references and independent provenance.
+  5. **Integrity Test Suite** (`backend/tests/test_evaluation_integrity.py`):
+     - 10 targeted tests covering circular ground truth rejection, independent manual label acceptance, patch-only partial status, unknown ground truth handling, baseline fairness, metric determinism, provenance validation, immutability, prediction/outcome separation, and zero circular import dependency between `app.services.impact` and `app.evaluation`.
+  6. **Academic Claim Invalidation & Documentation**:
+     - Published `docs/EVALUATION_INTEGRITY_AUDIT.md`.
+     - Updated `docs/EVALUATION_METHODOLOGY.md`, `docs/BASELINE_COMPARISON.md`, and `docs/IMPACT_EVALUATION.md`.
+     - Formally invalidated the $1.00 / 1.00 / 1.00$ claim and substituted: *"Evaluation result not yet suitable for accuracy claims."*
+
+
+
 
 
 

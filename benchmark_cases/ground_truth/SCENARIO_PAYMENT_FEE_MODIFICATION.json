@@ -1,0 +1,170 @@
+{
+  "case_id": "SCENARIO_PAYMENT_FEE_MODIFICATION",
+  "evaluation_mode": "INDEPENDENT_LABELS",
+  "ground_truth_independent_of_twin": true,
+  "items": [
+    {
+      "entity": "backend.services.payment_service.PaymentService.calculate_fees",
+      "entity_qual_name": "backend.services.payment_service.PaymentService.calculate_fees",
+      "entity_type": "DIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Direct dependency in scenario SCENARIO_PAYMENT_FEE_MODIFICATION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Directly affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "rationale": "Directly affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "evidence_reference": null
+    },
+    {
+      "entity": "backend.services.payment_service.PaymentService.process_payment",
+      "entity_qual_name": "backend.services.payment_service.PaymentService.process_payment",
+      "entity_type": "DIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Direct dependency in scenario SCENARIO_PAYMENT_FEE_MODIFICATION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Directly affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "rationale": "Directly affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "evidence_reference": null
+    },
+    {
+      "entity": "backend.services.payment_service.PaymentService",
+      "entity_qual_name": "backend.services.payment_service.PaymentService",
+      "entity_type": "DIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Direct dependency in scenario SCENARIO_PAYMENT_FEE_MODIFICATION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Directly affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "rationale": "Directly affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "evidence_reference": null
+    },
+    {
+      "entity": "backend.api.payment.process_payment_endpoint",
+      "entity_qual_name": "backend.api.payment.process_payment_endpoint",
+      "entity_type": "DIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Direct dependency in scenario SCENARIO_PAYMENT_FEE_MODIFICATION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Directly affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "rationale": "Directly affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "evidence_reference": null
+    },
+    {
+      "entity": "backend.services.payment_service.PaymentService.charge",
+      "entity_qual_name": "backend.services.payment_service.PaymentService.charge",
+      "entity_type": "INDIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Transitive dependency in scenario SCENARIO_PAYMENT_FEE_MODIFICATION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Transitively affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "rationale": "Transitively affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "evidence_reference": null
+    },
+    {
+      "entity": "backend.api.checkout.checkout_endpoint",
+      "entity_qual_name": "backend.api.checkout.checkout_endpoint",
+      "entity_type": "INDIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Transitive dependency in scenario SCENARIO_PAYMENT_FEE_MODIFICATION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Transitively affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "rationale": "Transitively affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "evidence_reference": null
+    },
+    {
+      "entity": "frontend.src.components.PaymentWidget",
+      "entity_qual_name": "frontend.src.components.PaymentWidget",
+      "entity_type": "INDIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Transitive dependency in scenario SCENARIO_PAYMENT_FEE_MODIFICATION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Transitively affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "rationale": "Transitively affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "evidence_reference": null
+    },
+    {
+      "entity": "frontend.src.components.Checkout",
+      "entity_qual_name": "frontend.src.components.Checkout",
+      "entity_type": "INDIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Transitive dependency in scenario SCENARIO_PAYMENT_FEE_MODIFICATION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Transitively affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "rationale": "Transitively affected entity verified independently for SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "evidence_reference": null
+    },
+    {
+      "entity": "tests.test_payment",
+      "entity_qual_name": "tests.test_payment",
+      "entity_type": "TEST",
+      "ground_truth_type": "GROUND_TRUTH_TEST",
+      "source": "TEST",
+      "method": "test_contract_inspection",
+      "evidence": [
+        "Test suite directly asserting changed behavior in SCENARIO_PAYMENT_FEE_MODIFICATION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Test verifying affected functionality in SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "rationale": "Test verifying affected functionality in SCENARIO_PAYMENT_FEE_MODIFICATION",
+      "evidence_reference": null
+    }
+  ],
+  "is_immutable": true
+}

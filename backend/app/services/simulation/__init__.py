@@ -21,6 +21,15 @@ from app.services.simulation.validator import ScenarioValidator, scenario_valida
 from app.services.simulation.virtual_twin import VirtualTwinModel
 from app.services.simulation.engine import ScenarioSimulationEngine, scenario_simulation_engine
 from app.services.simulation.service import ScenarioService, scenario_service
+from app.services.simulation.orchestration import (
+    MultiAgentScenarioOrchestrator,
+    multi_agent_scenario_orchestrator,
+    NaturalLanguageScenarioPlan,
+    OrchestratedScenarioResult,
+    StructuredFinding,
+    ScenarioEngineeringReport,
+    FindingCategory,
+)
 
 __all__ = [
     "MutationType",
@@ -42,4 +51,12 @@ __all__ = [
     "scenario_simulation_engine",
     "ScenarioService",
     "scenario_service",
+    "MultiAgentScenarioOrchestrator",
+    "multi_agent_scenario_orchestrator",
+    "NaturalLanguageScenarioPlan",
+    "OrchestratedScenarioResult",
+    "StructuredFinding",
+    "ScenarioEngineeringReport",
+    "FindingCategory",
 ]
+

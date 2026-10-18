@@ -59,6 +59,20 @@ class ChangeImpactAnalyzer:
         cfg = config or ImpactConfig()
         analysis_id = f"impact_{uuid.uuid4().hex[:12]}"
 
+        # Pre-load artifacts once for both change detection and propagation
+        if base_artifacts is None:
+            base_artifacts = (
+                db.query(StructuralArtifact)
+                .filter_by(snapshot_id=base_snapshot_id)
+                .all()
+            )
+        if target_artifacts is None:
+            target_artifacts = (
+                db.query(StructuralArtifact)
+                .filter_by(snapshot_id=target_snapshot_id)
+                .all()
+            )
+
         # 1. Detect Changes (symbol-level where supported, file-level fallback) or use provided change_set
         if change_set is None:
             change_set = self.detector.detect_changes(
@@ -66,19 +80,35 @@ class ChangeImpactAnalyzer:
                 repository_id=repository_id,
                 base_snapshot_id=base_snapshot_id,
                 target_snapshot_id=target_snapshot_id,
+                base_artifacts=base_artifacts,
+                target_artifacts=target_artifacts,
             )
 
-        # Handle No-Change scenario
-        if not change_set.changes:
+        # Handle Identical / No-Change scenario
+        is_identical = (base_snapshot_id == target_snapshot_id) or (change_set.status == "IDENTICAL_COMMITS")
+        if not change_set.changes or is_identical:
             elapsed_ms = round((time.time() - start_time) * 1000, 2)
+            if is_identical:
+                status_str = "IDENTICAL_COMMITS"
+                msg = change_set.message or "Baseline and Target refer to the identical commit or snapshot."
+            elif change_set.status == "VERIFIED_ZERO_CHANGES":
+                status_str = "VERIFIED_ZERO_CHANGES"
+                msg = change_set.message or "Zero structural or file differences detected between selected revisions."
+            elif change_set.status == "REVISION_RESOLUTION_FAILED":
+                status_str = "FAILED"
+                msg = change_set.message or "Could not resolve revision or snapshot."
+            else:
+                status_str = "COMPLETED"
+                msg = change_set.message or "No changes detected between selected snapshots."
+
             return ImpactResult(
                 analysis_id=analysis_id,
                 repository_id=repository_id,
                 base_snapshot_id=base_snapshot_id,
                 target_snapshot_id=target_snapshot_id,
-                status="completed",
-                message="No changes detected between selected snapshots.",
-                summary=ImpactSummary(),
+                status=status_str,
+                message=msg,
+                summary=ImpactSummary(status=status_str, message=msg, changed=0),
                 changes=[],
                 findings=[],
                 paths=[],
@@ -91,6 +121,7 @@ class ChangeImpactAnalyzer:
                     "affected_tests": [],
                     "affected_database_entities": [],
                 },
+                impact_tree={"direct": [], "indirect": [], "tests": []},
                 execution_time_ms=elapsed_ms,
             )
 
@@ -148,10 +179,23 @@ class ChangeImpactAnalyzer:
             else:
                 affected_components.add(f.target_qual_name)
 
+        unique_affected_nodes = directly_affected_nodes.union(indirectly_affected_nodes)
+        multi_hop_affected_nodes = {f.target_qual_name for f in findings if f.impact_level >= 2}
+
+        depth_1_paths = sum(1 for p in paths if p.depth == 1)
+        depth_2_paths = sum(1 for p in paths if p.depth == 2)
+        depth_3_paths = sum(1 for p in paths if p.depth == 3)
+
         summary = ImpactSummary(
             changed=len(changed_artifacts),
             directly_affected=len(directly_affected_nodes),
             indirectly_affected=len(indirectly_affected_nodes),
+            unique_affected=len(unique_affected_nodes),
+            multi_hop_affected=len(multi_hop_affected_nodes),
+            total_evidence_paths=len(paths),
+            depth_1_paths=depth_1_paths,
+            depth_2_paths=depth_2_paths,
+            depth_3_paths=depth_3_paths,
             affected_components=len(affected_components),
             affected_services=len(affected_services),
             affected_apis=len(affected_apis),
@@ -170,6 +214,21 @@ class ChangeImpactAnalyzer:
             "affected_database_entities": sorted(list(affected_dbs)),
         }
 
+        impact_tree = {
+            "direct": [
+                {"id": f.impacted_node_id, "name": f.target_qual_name, "type": f.target_type}
+                for f in findings if f.impact_level == 1
+            ],
+            "indirect": [
+                {"id": f.impacted_node_id, "name": f.target_qual_name, "type": f.target_type}
+                for f in findings if f.impact_level >= 2
+            ],
+            "tests": [
+                {"id": f.impacted_node_id, "name": f.target_qual_name, "type": f.target_type}
+                for f in findings if "TEST" in (f.target_type or "").upper()
+            ],
+        }
+
         elapsed_ms = round((time.time() - start_time) * 1000, 2)
 
         return ImpactResult(
@@ -184,6 +243,7 @@ class ChangeImpactAnalyzer:
             findings=findings,
             paths=paths,
             affected_categories=categories,
+            impact_tree=impact_tree,
             execution_time_ms=elapsed_ms,
         )
 

@@ -115,7 +115,7 @@ def acquire_github_repository(
             branch_name="",
             remote_url=github_url,
             error_message=f"Invalid repository URL: {reason}",
-            user_facing_error="The repository URL is not valid. Please use a public HTTPS GitHub URL.",
+            user_facing_error=reason if "This is not a repository URL" in reason else "The repository URL is not valid. Please use a public HTTPS GitHub URL.",
         )
 
     # Normalize URL (strip .git suffix for display; keep for clone)
@@ -294,3 +294,212 @@ def _user_facing_clone_error(returncode: int, stderr: str) -> str:
     if "already exists" in stderr_lower:
         return "Repository workspace already exists. Please try again."
     return "Repository acquisition failed. Please verify the URL is correct and accessible."
+
+
+def discover_repository_commits(
+    workspace_path: str,
+    max_count: int = 50,
+    allow_deepen: bool = True,
+    default_branch: str = "main",
+) -> dict:
+    """
+    Safely introspects the real Git repository at workspace_path to discover accessible commits.
+    - If shallow and allow_deepen=True, attempts to deepen history up to max_count commits.
+    - Extracts full SHA, short SHA, author, date, message, and head status.
+    - Never fabricates commits.
+    """
+    abs_path = os.path.abspath(workspace_path)
+    dot_git = os.path.join(abs_path, ".git")
+    if not os.path.exists(dot_git):
+        return {
+            "is_git_repo": False,
+            "is_shallow": False,
+            "total_commits": 0,
+            "commits": [],
+            "error": "Directory is not a Git repository.",
+        }
+
+    clean_env = _get_sanitized_git_env()
+    shallow_file = os.path.join(dot_git, "shallow")
+    is_shallow = os.path.exists(shallow_file)
+
+    # If the repository is shallow and allow_deepen is True, try deepening history
+    if is_shallow and allow_deepen:
+        try:
+            deepen_args = ["git", "fetch", f"--depth={max_count}", "origin", default_branch]
+            subprocess.run(
+                deepen_args,
+                cwd=abs_path,
+                env=clean_env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            is_shallow = os.path.exists(shallow_file)
+        except Exception:
+            pass
+
+    # Resolve HEAD commit SHA
+    head_sha = ""
+    try:
+        head_res = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=abs_path,
+            env=clean_env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if head_res.returncode == 0:
+            head_sha = head_res.stdout.strip()
+    except Exception:
+        pass
+
+    # Read git log
+    commits = []
+    try:
+        log_res = subprocess.run(
+            ["git", "log", f"-n{max_count}", "--pretty=format:%H\x1f%h\x1f%an\x1f%ae\x1f%aI\x1f%s"],
+            cwd=abs_path,
+            env=clean_env,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if log_res.returncode == 0 and log_res.stdout.strip():
+            for line in log_res.stdout.strip().split("\n"):
+                parts = line.split("\x1f")
+                if len(parts) >= 6:
+                    c_sha = parts[0].strip()
+                    s_sha = parts[1].strip()
+                    author_name = parts[2].strip()
+                    author_email = parts[3].strip()
+                    date_str = parts[4].strip()
+                    subject = parts[5].strip()
+                    commits.append({
+                        "commit_sha": c_sha,
+                        "short_sha": s_sha,
+                        "author": f"{author_name} <{author_email}>" if author_email else author_name,
+                        "authored_date": date_str,
+                        "message": subject,
+                        "is_head": (c_sha == head_sha),
+                    })
+    except Exception as exc:
+        return {
+            "is_git_repo": True,
+            "is_shallow": is_shallow,
+            "total_commits": 0,
+            "commits": [],
+            "error": f"Failed to read git log: {str(exc)}",
+        }
+
+    return {
+        "is_git_repo": True,
+        "is_shallow": is_shallow,
+        "total_commits": len(commits),
+        "commits": commits,
+        "head_sha": head_sha,
+    }
+
+
+def extract_commit_source_tree(
+    workspace_path: str,
+    commit_sha: str,
+    dest_dir: str,
+    default_branch: str = "main",
+) -> tuple[bool, Optional[str]]:
+    """
+    Safely extracts the repository source tree at a specific commit SHA into dest_dir
+    using `git archive` piped to `tar -x`.
+    Does NOT modify the workspace working directory or branch.
+    Guarantees isolated extraction for structural twin analysis.
+    """
+    abs_path = os.path.abspath(workspace_path)
+    clean_env = _get_sanitized_git_env()
+
+    if not os.path.isdir(abs_path):
+        return False, f"Repository directory '{abs_path}' not found."
+
+    # 1. Verify if commit exists locally
+    check_proc = subprocess.run(
+        ["git", "cat-file", "-e", f"{commit_sha}^{{commit}}"],
+        cwd=abs_path,
+        env=clean_env,
+        capture_output=True,
+        text=True,
+    )
+    if check_proc.returncode != 0:
+        # Detect current branch from repo if default_branch is fallback
+        resolved_branch = default_branch
+        curr_branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=abs_path,
+            env=clean_env,
+            capture_output=True,
+            text=True,
+        )
+        if curr_branch.returncode == 0 and curr_branch.stdout.strip() and curr_branch.stdout.strip() != "HEAD":
+            resolved_branch = curr_branch.stdout.strip()
+
+        # Attempt fetching by commit SHA directly, then fallback to branches
+        fetch_targets = [commit_sha, resolved_branch]
+        if resolved_branch != "master":
+            fetch_targets.append("master")
+        if resolved_branch != "main":
+            fetch_targets.append("main")
+
+        fetched = False
+        for target in fetch_targets:
+            try:
+                f_res = subprocess.run(
+                    ["git", "fetch", "--depth=50", "origin", target],
+                    cwd=abs_path,
+                    env=clean_env,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if f_res.returncode == 0:
+                    check_proc = subprocess.run(
+                        ["git", "cat-file", "-e", f"{commit_sha}^{{commit}}"],
+                        cwd=abs_path,
+                        env=clean_env,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if check_proc.returncode == 0:
+                        fetched = True
+                        break
+            except Exception:
+                continue
+
+        if not fetched and check_proc.returncode != 0:
+            return False, f"Commit '{commit_sha}' not found in local repository or remote origin."
+
+    # 2. Extract commit tree into dest_dir
+    os.makedirs(dest_dir, exist_ok=True)
+    try:
+        p1 = subprocess.Popen(
+            ["git", "archive", commit_sha],
+            cwd=abs_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=clean_env,
+        )
+        p2 = subprocess.Popen(
+            ["tar", "-x", "-C", dest_dir],
+            stdin=p1.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=clean_env,
+        )
+        p1.stdout.close()
+        out, err = p2.communicate(timeout=60)
+        p1.wait(timeout=10)
+        if p2.returncode != 0:
+            err_msg = err.decode("utf-8", errors="replace") if err else "Tar extraction failed"
+            return False, f"Archive extraction failed: {err_msg}"
+        return True, None
+    except Exception as exc:
+        return False, f"Exception during tree extraction: {str(exc)}"
+

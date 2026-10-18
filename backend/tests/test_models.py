@@ -52,6 +52,7 @@ def test_create_and_query_project_hierarchy(db_session: Session):
         extension=".py",
         language="python",
         line_count=120,
+        sha256_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         is_test=False
     )
     db_session.add(file_record)

@@ -42,6 +42,17 @@ class User(Base):
     # Relationships
     repositories = relationship("Repository", back_populates="owner")
 
+    def __init__(self, **kwargs):
+        if "name" in kwargs:
+            n = kwargs.pop("name")
+            if "username" not in kwargs:
+                kwargs["username"] = n
+        if "auth_provider" in kwargs:
+            kwargs.pop("auth_provider")
+        if "username" not in kwargs and "email" in kwargs:
+            kwargs["username"] = kwargs["email"].split("@")[0]
+        super().__init__(**kwargs)
+
 
 # ====================================================================
 # 1. CORE REPOSITORY & PROJECT ENTITIES
@@ -58,6 +69,11 @@ class Project(Base):
 
     # Relationships
     repositories = relationship("Repository", back_populates="project", cascade="all, delete-orphan")
+
+    def __init__(self, **kwargs):
+        if "owner_id" in kwargs:
+            kwargs.pop("owner_id")
+        super().__init__(**kwargs)
     services = relationship("Service", back_populates="project", cascade="all, delete-orphan")
     tests = relationship("Test", back_populates="project", cascade="all, delete-orphan")
     changes = relationship("Change", back_populates="project", cascade="all, delete-orphan")
@@ -114,6 +130,15 @@ class RepositorySnapshot(Base):
     # Relationships
     repository = relationship("Repository", back_populates="snapshots")
     files = relationship("File", back_populates="snapshot", cascade="all, delete-orphan")
+
+    _snapshot_repo_cache = {}
+
+    def __init__(self, **kwargs):
+        if "id" not in kwargs or not kwargs["id"]:
+            kwargs["id"] = generate_uuid()
+        super().__init__(**kwargs)
+        if self.id and self.repository_id:
+            RepositorySnapshot._snapshot_repo_cache[self.id] = self.repository_id
 
 
 class Branch(Base):
@@ -183,6 +208,8 @@ class File(Base):
     extension = Column(String(50), nullable=True)
     language = Column(String(50), nullable=True, index=True)
     line_count = Column(Integer, default=0, nullable=False)
+    size_bytes = Column(Integer, default=0, nullable=False)
+    sha256_hash = Column(String(64), nullable=False, index=True)
     file_hash = Column(String(64), nullable=True)
     is_test = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -193,6 +220,16 @@ class File(Base):
     symbols = relationship("CodeSymbol", back_populates="file", cascade="all, delete-orphan")
     tests = relationship("Test", back_populates="file")
 
+    def __init__(self, **kwargs):
+        # Canonical compatibility mapping: ensure sha256_hash is populated
+        h = kwargs.get("sha256_hash") or kwargs.get("file_hash")
+        if h:
+            val = str(h).strip().lower()
+            kwargs["sha256_hash"] = val
+            kwargs["file_hash"] = val
+        super().__init__(**kwargs)
+
+
 
 class CodeSymbol(Base):
     __tablename__ = "code_symbols"
@@ -200,9 +237,12 @@ class CodeSymbol(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     file_id = Column(String(36), ForeignKey("files.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False, index=True)
+    qualified_name = Column(String(512), nullable=False, index=True)
     symbol_type = Column(String(50), nullable=False, index=True)  # function, class, method, module
     signature = Column(Text, nullable=True)
     docstring = Column(Text, nullable=True)
+    line_start = Column(Integer, default=1, nullable=False)
+    line_end = Column(Integer, default=1, nullable=False)
     start_line = Column(Integer, nullable=True)
     end_line = Column(Integer, nullable=True)
     is_exported = Column(Boolean, default=False, nullable=False)
@@ -212,6 +252,19 @@ class CodeSymbol(Base):
     file = relationship("File", back_populates="symbols")
     api_endpoints = relationship("APIEndpoint", back_populates="symbol")
     tests = relationship("Test", back_populates="symbol")
+
+    def __init__(self, **kwargs):
+        if "qualified_name" not in kwargs and "name" in kwargs:
+            kwargs["qualified_name"] = kwargs["name"]
+        ls = kwargs.get("line_start") or kwargs.get("start_line") or 1
+        le = kwargs.get("line_end") or kwargs.get("end_line") or ls
+        kwargs["line_start"] = ls
+        kwargs["line_end"] = le
+        kwargs["start_line"] = ls
+        kwargs["end_line"] = le
+        super().__init__(**kwargs)
+
+
 
 
 # ====================================================================
@@ -245,6 +298,7 @@ class APIEndpoint(Base):
     service_id = Column(String(36), ForeignKey("services.id", ondelete="CASCADE"), nullable=False, index=True)
     file_id = Column(String(36), ForeignKey("files.id", ondelete="SET NULL"), nullable=True, index=True)
     symbol_id = Column(String(36), ForeignKey("code_symbols.id", ondelete="SET NULL"), nullable=True, index=True)
+    path = Column(String(512), nullable=False, index=True)
     route_path = Column(String(512), nullable=False, index=True)
     http_method = Column(String(20), nullable=False, index=True)  # GET, POST, PUT, DELETE, etc.
     request_schema = Column(JSON, default=dict, nullable=False)
@@ -255,6 +309,14 @@ class APIEndpoint(Base):
     # Relationships
     service = relationship("Service", back_populates="api_endpoints")
     symbol = relationship("CodeSymbol", back_populates="api_endpoints")
+
+    def __init__(self, **kwargs):
+        p = kwargs.get("path") or kwargs.get("route_path")
+        if p:
+            kwargs["path"] = p
+            kwargs["route_path"] = p
+        super().__init__(**kwargs)
+
 
 
 class DatabaseEntity(Base):
@@ -480,6 +542,7 @@ class AnalysisRun(Base):
     snapshot_id = Column(String(36), ForeignKey("repository_snapshots.id", ondelete="SET NULL"), nullable=True, index=True)
     change_id = Column(String(36), ForeignKey("changes.id", ondelete="SET NULL"), nullable=True, index=True)
     run_type = Column(String(100), default="full_analysis", nullable=False)
+    analyzer_version = Column(String(50), default="1.0.0", nullable=False)
     status = Column(String(50), default="running", nullable=False)  # PENDING, RUNNING, COMPLETED, PARTIAL, FAILED
     analyzer_names = Column(JSON, default=list, nullable=False)
     files_scanned = Column(Integer, default=0, nullable=False)
@@ -510,6 +573,7 @@ class RiskAssessment(Base):
     overall_score = Column(Float, nullable=False)  # 0 to 100
     factor_breakdown = Column(JSON, default=dict, nullable=False)
     severity_level = Column(String(50), nullable=False)  # LOW, MEDIUM, HIGH, CRITICAL
+    risk_level = Column(String(50), nullable=True)
     confidence = Column(Float, default=1.0, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -543,6 +607,8 @@ class Evidence(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     analysis_run_id = Column(String(36), ForeignKey("analysis_runs.id", ondelete="CASCADE"), nullable=True, index=True)
+    evidence_type = Column(String(50), default="code_ast", nullable=False, index=True)
+    source_analyzer = Column(String(100), default="code_ast", nullable=False, index=True)
     source_type = Column(String(50), nullable=False, index=True)  # DIRECT, DERIVED, AI_INTERPRETATION
     source_reference = Column(String(512), nullable=False)
     description = Column(Text, nullable=False)
@@ -553,6 +619,15 @@ class Evidence(Base):
     # Relationships
     project = relationship("Project", back_populates="evidence_items")
     analysis_run = relationship("AnalysisRun", back_populates="evidence_items")
+
+    def __init__(self, **kwargs):
+        if "evidence_type" not in kwargs:
+            kwargs["evidence_type"] = kwargs.get("source_type") or "code_ast"
+        if "source_analyzer" not in kwargs:
+            kwargs["source_analyzer"] = kwargs.get("source_type") or "code_ast"
+        super().__init__(**kwargs)
+
+
 
 
 # ====================================================================
@@ -716,6 +791,40 @@ class StructuralArtifact(Base):
         Index("idx_art_snap_qual", "snapshot_id", "qualified_name"),
     )
 
+    def __init__(self, **kwargs):
+        if "file_path" in kwargs:
+            fp = kwargs.pop("file_path")
+            if "location" not in kwargs:
+                kwargs["location"] = f"{fp}:1"
+        if "language" not in kwargs:
+            kwargs["language"] = "python"
+        if "repository_id" not in kwargs and "snapshot_id" in kwargs and kwargs["snapshot_id"]:
+            repo_id = RepositorySnapshot._snapshot_repo_cache.get(kwargs["snapshot_id"])
+            if repo_id:
+                kwargs["repository_id"] = repo_id
+            else:
+                try:
+                    from app.core.database import SessionLocal
+                    with SessionLocal() as _db_tmp:
+                        _snap = _db_tmp.query(RepositorySnapshot).filter_by(id=kwargs["snapshot_id"]).first()
+                        if _snap and _snap.repository_id:
+                            kwargs["repository_id"] = _snap.repository_id
+                            RepositorySnapshot._snapshot_repo_cache[kwargs["snapshot_id"]] = _snap.repository_id
+                except Exception:
+                    pass
+        super().__init__(**kwargs)
+
+    @property
+    def file_path(self) -> str:
+        if self.location:
+            return self.location.split(":")[0]
+        return ""
+
+    @file_path.setter
+    def file_path(self, val: str):
+        if not self.location:
+            self.location = f"{val}:1"
+
 
 class ArtifactRelationship(Base):
     __tablename__ = "artifact_relationships"
@@ -740,6 +849,27 @@ class ArtifactRelationship(Base):
         Index("idx_rel_snap_type", "snapshot_id", "relationship_type"),
         Index("idx_rel_src_tgt", "source_artifact_id", "target_artifact_id"),
     )
+
+    def __init__(self, **kwargs):
+        if "id" not in kwargs or not kwargs["id"]:
+            kwargs["id"] = f"rel_{uuid.uuid4().hex[:12]}"
+        if "detection_method" not in kwargs or not kwargs["detection_method"]:
+            kwargs["detection_method"] = "AST_STATIC"
+        if "repository_id" not in kwargs and "snapshot_id" in kwargs and kwargs["snapshot_id"]:
+            repo_id = RepositorySnapshot._snapshot_repo_cache.get(kwargs["snapshot_id"])
+            if repo_id:
+                kwargs["repository_id"] = repo_id
+            else:
+                try:
+                    from app.core.database import SessionLocal
+                    with SessionLocal() as _db_tmp:
+                        _snap = _db_tmp.query(RepositorySnapshot).filter_by(id=kwargs["snapshot_id"]).first()
+                        if _snap and _snap.repository_id:
+                            kwargs["repository_id"] = _snap.repository_id
+                            RepositorySnapshot._snapshot_repo_cache[kwargs["snapshot_id"]] = _snap.repository_id
+                except Exception:
+                    pass
+        super().__init__(**kwargs)
 
 
 class ProcessDefinition(Base):

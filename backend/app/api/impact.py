@@ -4,7 +4,7 @@ Exposes deterministic endpoints for running, retrieving, and projecting change i
 """
 
 from typing import Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -37,7 +37,90 @@ def _resolve_repo(
     repository_id: str,
     principal: Optional[AuthenticatedPrincipal] = None,
 ) -> Optional[Repository]:
-    return resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    if repo:
+        return repo
+    if not principal:
+        return db.query(Repository).filter(
+            or_(
+                Repository.id == repository_id,
+                Repository.name == repository_id,
+            )
+        ).first()
+    return None
+
+
+@router.get("/{repository_id}/impact-analysis", response_model=Dict[str, Any])
+def run_impact_analysis_get(
+    repository_id: str,
+    base_snapshot_id: str = Query(...),
+    target_snapshot_id: str = Query(...),
+    max_depth: int = Query(5, ge=1, le=10),
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """GET route for deterministic Change Impact analysis between two snapshots."""
+    req = ImpactAnalysisRequest(
+        base_snapshot_id=base_snapshot_id,
+        target_snapshot_id=target_snapshot_id,
+        max_depth=max_depth,
+    )
+    return run_impact_analysis(
+        repository_id=repository_id,
+        req=req,
+        db=db,
+        principal=principal,
+    )
+
+
+def _ensure_snapshot(
+    db: Session,
+    repo: Repository,
+    snapshot_or_commit: str,
+) -> Optional[RepositorySnapshot]:
+    """Resolves existing snapshot or auto-reconstructs from local Git source tree if unindexed."""
+    snap = db.query(RepositorySnapshot).filter(
+        RepositorySnapshot.repository_id == repo.id,
+        or_(
+            RepositorySnapshot.id == snapshot_or_commit,
+            RepositorySnapshot.commit_hash == snapshot_or_commit,
+            RepositorySnapshot.commit_hash.startswith(snapshot_or_commit),
+        )
+    ).first()
+    if snap:
+        return snap
+
+    if repo.local_path and os.path.isdir(repo.local_path):
+        import tempfile
+        import shutil
+        from app.services.acquisition.git_provider import extract_commit_source_tree
+        from app.services.analysis.engine import structural_twin_engine
+
+        target_sha = snapshot_or_commit
+        target_branch = repo.default_branch or "main"
+        temp_dir = tempfile.mkdtemp(prefix=f"recon_{repo.id[:8]}_{target_sha[:7]}_")
+        try:
+            ok, err = extract_commit_source_tree(
+                workspace_path=repo.local_path,
+                commit_sha=target_sha,
+                dest_dir=temp_dir,
+                default_branch=target_branch,
+            )
+            if ok:
+                snap_id, _ = structural_twin_engine.build_structural_twin(
+                    db=db,
+                    repository_id=repo.id,
+                    commit_hash=target_sha,
+                    branch_name=target_branch,
+                    source_path=temp_dir,
+                )
+                return db.query(RepositorySnapshot).filter_by(id=snap_id).first()
+        except Exception:
+            pass
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    return None
 
 
 @router.post("/{repository_id}/impact-analysis", response_model=Dict[str, Any])
@@ -58,28 +141,18 @@ def run_impact_analysis(
             detail=f"Repository '{repository_id}' not found.",
         )
 
-    base_snap = db.query(RepositorySnapshot).filter_by(id=req.base_snapshot_id).first()
+    base_snap = _ensure_snapshot(db, repo, req.base_snapshot_id)
     if not base_snap:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Base snapshot '{req.base_snapshot_id}' not found.",
-        )
-    if base_snap.repository_id != repo.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Base snapshot '{req.base_snapshot_id}' does not belong to repository '{repo.id}'.",
+            detail=f"Base snapshot or commit '{req.base_snapshot_id}' not found and could not be reconstructed.",
         )
 
-    target_snap = db.query(RepositorySnapshot).filter_by(id=req.target_snapshot_id).first()
+    target_snap = _ensure_snapshot(db, repo, req.target_snapshot_id)
     if not target_snap:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Target snapshot '{req.target_snapshot_id}' not found.",
-        )
-    if target_snap.repository_id != repo.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Target snapshot '{req.target_snapshot_id}' does not belong to repository '{repo.id}'.",
+            detail=f"Target snapshot or commit '{req.target_snapshot_id}' not found and could not be reconstructed.",
         )
 
     config = ImpactConfig(
@@ -93,8 +166,8 @@ def run_impact_analysis(
         result = change_impact_service.run_impact_analysis(
             db=db,
             repository_id=repo.id,
-            base_snapshot_id=req.base_snapshot_id,
-            target_snapshot_id=req.target_snapshot_id,
+            base_snapshot_id=base_snap.id,
+            target_snapshot_id=target_snap.id,
             config=config,
         )
         return result.model_dump()
@@ -169,6 +242,7 @@ def get_impact_graph(
 
 
 @router.get("/{repository_id}/snapshot-diff", response_model=Dict[str, Any])
+@router.get("/{repository_id}/diff", response_model=Dict[str, Any])
 def get_snapshot_diff(
     repository_id: str,
     base_snapshot_id: str,

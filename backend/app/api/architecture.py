@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.core.database import get_db
-from app.models.entities import Repository
+from app.models.entities import Repository, RepositorySnapshot
+from app.core.auth import resolve_authorized_repo, get_current_user_optional, AuthenticatedPrincipal
 from app.services.architecture.service import architecture_service
 from app.services.architecture.models import (
     ArchitectureConformanceReport,
@@ -27,12 +28,13 @@ def check_architecture_drift(
     baseline_path: Optional[str] = Query(None, description="Optional custom baseline path"),
     persist: bool = Query(True, description="Whether to persist results in PostgreSQL"),
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Evaluates architecture drift from repository evidence (AST / import relationships)
     against the architecture baseline. Does NOT guess or use LLM estimation.
     """
-    repo = db.query(Repository).filter_by(id=repository_id).first()
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
     if not repo:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
 
@@ -61,9 +63,14 @@ def check_architecture_drift(
 def get_conformance_report(
     repository_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Retrieves the latest verified architecture conformance report for a repository."""
-    report = architecture_service.get_latest_report(db=db, repository_id=repository_id)
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
+
+    report = architecture_service.get_latest_report(db=db, repository_id=repo.id)
     if not report:
         raise HTTPException(status_code=404, detail=f"No architecture conformance report found for repository '{repository_id}'")
     return report
@@ -73,8 +80,19 @@ def get_conformance_report(
 def compare_snapshots(
     req: CompareSnapshotsRequest,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Compares architecture drift reports between Snapshot A and Snapshot B."""
+    snap_a = db.query(RepositorySnapshot).filter_by(id=req.snapshot_a_id).first()
+    snap_b = db.query(RepositorySnapshot).filter_by(id=req.snapshot_b_id).first()
+    if not snap_a or not snap_b:
+        raise HTTPException(status_code=404, detail="One or both snapshots not found.")
+
+    repo_a = resolve_authorized_repo(db=db, repository_id=snap_a.repository_id, principal=principal)
+    repo_b = resolve_authorized_repo(db=db, repository_id=snap_b.repository_id, principal=principal)
+    if not repo_a or not repo_b:
+        raise HTTPException(status_code=404, detail="Snapshots not found or unauthorized.")
+
     try:
         return architecture_service.compare_snapshots(
             db=db,

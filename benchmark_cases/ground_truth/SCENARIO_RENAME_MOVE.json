@@ -1,0 +1,26 @@
+{
+  "case_id": "SCENARIO_RENAME_MOVE",
+  "evaluation_mode": "INDEPENDENT_LABELS",
+  "ground_truth_independent_of_twin": true,
+  "items": [
+    {
+      "entity": "utils.calc_helpers",
+      "entity_qual_name": "utils.calc_helpers",
+      "entity_type": "DIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Direct dependency in scenario SCENARIO_RENAME_MOVE"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Directly affected entity verified independently for SCENARIO_RENAME_MOVE",
+      "rationale": "Directly affected entity verified independently for SCENARIO_RENAME_MOVE",
+      "evidence_reference": null
+    }
+  ],
+  "is_immutable": true
+}

@@ -10,82 +10,199 @@ from app.models.entities import (
     Evidence,
     AnalysisRun,
 )
+from app.services.acquisition.git_provider import (
+    discover_repository_commits,
+    extract_commit_source_tree,
+)
 from app.services.analysis.engine import structural_twin_engine
 from app.services.analysis.query.twin_query_service import twin_query_service
 
 router = APIRouter(prefix="/repositories", tags=["Structural Digital Twin"])
 
 
-@router.post("/{repository_id}/analyze", response_model=Dict[str, Any])
-def analyze_repository(
+@router.get("/{repository_id}/commits", response_model=Dict[str, Any])
+@router.get("/{repository_id}/history/commits", response_model=Dict[str, Any])
+def get_repository_commits(
     repository_id: str,
-    commit_hash: str = "HEAD",
-    branch_name: str = "main",
+    max_count: int = Query(default=30, le=100),
     db: Session = Depends(get_db),
 ):
     """
-    Executes the Phase 3 Analyzer Runtime to parse source code, extract structural artifacts,
-    derive typed relationships, record evidence, and build a persistent Digital Twin snapshot.
+    Discovers actual accessible Git commits for the repository.
+    Cross-references each commit with existing analyzed Twin snapshots.
+    Preserves exact commit SHA, author, timestamp, and message.
+    Distinguishes commit availability from snapshot availability.
+    Never fabricates historical snapshots or commits.
     """
     repo = db.query(Repository).filter_by(id=repository_id).first()
     if not repo:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Repository '{repository_id}' not found.",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
 
-    try:
-        snapshot_id, result = structural_twin_engine.build_structural_twin(
-            db=db,
-            repository_id=repo.id,
-            commit_hash=commit_hash,
-            branch_name=branch_name,
-        )
-        return {
-            "status": result.status,
-            "run_id": result.run_id,
-            "repository_id": repo.id,
-            "snapshot_id": snapshot_id,
-            "files_scanned": result.files_scanned,
-            "artifacts_created": len(result.artifacts),
-            "relationships_created": len(result.relationships),
-            "evidence_count": len(result.evidence_items),
-            "warnings_count": len(result.warnings),
-            "errors_count": len(result.errors),
-            "analyzers_executed": result.analyzer_names,
-            "summary": result.summary,
-        }
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Structural analysis failed: {str(exc)}",
-        )
+    # 1. Query existing analyzed snapshots in DB
+    existing_snaps = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).all()
+    snap_by_commit = {s.commit_hash: s for s in existing_snaps if s.commit_hash}
 
+    # 2. Discover Git commits
+    discovery = discover_repository_commits(
+        workspace_path=repo.local_path,
+        max_count=max_count,
+        allow_deepen=True,
+        default_branch=repo.default_branch or "main",
+    )
 
-@router.get("/{repository_id}/twin", response_model=Dict[str, Any])
-def get_repository_twin(
-    repository_id: str,
-    db: Session = Depends(get_db),
-):
-    """Returns overview of the Digital Twin state for a repository."""
-    repo = db.query(Repository).filter_by(id=repository_id).first()
-    if not repo:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found")
+    commits_data = []
+    seen_shas = set()
 
-    snapshots = twin_query_service.get_snapshots_by_repo(db, repository_id)
-    latest_snapshot = snapshots[0] if snapshots else None
+    for c in discovery.get("commits", []):
+        sha = c["commit_sha"]
+        seen_shas.add(sha)
+        matched_snap = snap_by_commit.get(sha)
+        commits_data.append({
+            "commit_sha": sha,
+            "short_sha": c["short_sha"],
+            "branch_name": repo.default_branch or "main",
+            "message": c["message"],
+            "author": c["author"],
+            "authored_date": c["authored_date"],
+            "is_head": c["is_head"],
+            "has_snapshot": (matched_snap is not None),
+            "snapshot_id": matched_snap.id if matched_snap else None,
+            "status": "ANALYZED" if matched_snap else "AVAILABLE_FOR_ANALYSIS",
+            "total_files": matched_snap.total_files if matched_snap else None,
+            "total_symbols": matched_snap.total_symbols if matched_snap else None,
+            "created_at": matched_snap.created_at.isoformat() if (matched_snap and matched_snap.created_at) else None,
+        })
 
-    structure = {}
-    if latest_snapshot:
-        structure = twin_query_service.get_component_structure(db, latest_snapshot.id)
+    # Include any snapshots in DB that might not have appeared in git log (e.g. non-git or different ref)
+    for s in existing_snaps:
+        if s.commit_hash and s.commit_hash not in seen_shas:
+            commits_data.append({
+                "commit_sha": s.commit_hash,
+                "short_sha": s.commit_hash[:7] if len(s.commit_hash) >= 7 else s.commit_hash,
+                "branch_name": s.branch_name or repo.default_branch or "main",
+                "message": f"Snapshot {s.id[:10]}",
+                "author": "Observed Snapshot",
+                "authored_date": s.created_at.isoformat() if s.created_at else None,
+                "is_head": False,
+                "has_snapshot": True,
+                "snapshot_id": s.id,
+                "status": "ANALYZED",
+                "total_files": s.total_files,
+                "total_symbols": s.total_symbols,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            })
+
+    total_accessible = len(commits_data)
+    total_analyzed = sum(1 for c in commits_data if c["has_snapshot"])
+    is_shallow = discovery.get("is_shallow", False)
+
+    limitation_reason = None
+    if total_accessible < 2:
+        if is_shallow:
+            limitation_reason = (
+                f"Repository clone is shallow (history depth 1). Only 1 commit ({commits_data[0]['short_sha'] if commits_data else 'HEAD'}) "
+                "is accessible locally. Pairwise Change Impact requires at least two distinct commits. "
+                "Use What-If Simulation to evaluate hypothetical changes on this snapshot."
+            )
+        else:
+            limitation_reason = (
+                "Repository has only 1 accessible commit in Git history. Pairwise Change Impact "
+                "requires at least two distinct states to compute AST deltas and propagate blast radius. "
+                "Use What-If Simulation to evaluate hypothetical changes on this snapshot."
+            )
 
     return {
         "repository_id": repo.id,
         "repository_name": repo.name,
-        "total_snapshots": len(snapshots),
-        "latest_snapshot_id": latest_snapshot.id if latest_snapshot else None,
-        "component_structure": structure,
+        "default_branch": repo.default_branch or "main",
+        "total_commits": total_accessible,
+        "total_analyzed_snapshots": total_analyzed,
+        "is_shallow": is_shallow,
+        "can_perform_pairwise_impact": (total_accessible >= 2),
+        "limitation_reason": limitation_reason,
+        "commits": commits_data,
     }
+
+
+@router.get("/{repository_id}/commits/{commit_sha}/analyze", response_model=Dict[str, Any])
+@router.post("/{repository_id}/snapshots/reconstruct", response_model=Dict[str, Any])
+@router.post("/{repository_id}/commits/{commit_sha}/analyze", response_model=Dict[str, Any])
+def reconstruct_snapshot(
+    repository_id: str,
+    commit_sha: Optional[str] = None,
+    payload: Optional[Dict[str, Any]] = None,
+    branch_name: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Reconstructs the actual historical source tree at commit_sha using git archive,
+    extracts structural artifacts, computes typed relationships, and persists a real Digital Twin snapshot.
+    Does NOT modify the workspace working directory or branch.
+    Zero fabrication: derives all twin entities directly from the historical commit AST.
+    """
+    repo = db.query(Repository).filter_by(id=repository_id).first()
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
+
+    target_sha = commit_sha or (payload.get("commit_sha") if payload else None)
+    if not target_sha:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing required commit_sha.")
+
+    target_branch = branch_name or (payload.get("branch_name") if payload else None) or repo.default_branch or "main"
+
+    # Check if snapshot already exists
+    existing = db.query(RepositorySnapshot).filter_by(repository_id=repo.id, commit_hash=target_sha).first()
+    if existing:
+        return {
+            "status": "ALREADY_EXISTS",
+            "snapshot_id": existing.id,
+            "commit_hash": existing.commit_hash,
+            "branch_name": existing.branch_name,
+            "total_files": existing.total_files,
+            "total_symbols": existing.total_symbols,
+            "message": f"Snapshot for commit {target_sha[:7]} already exists in Digital Twin database.",
+        }
+
+    # Extract historical source tree into isolated temp directory
+    import tempfile
+    import shutil
+    temp_dir = tempfile.mkdtemp(prefix=f"recon_{repo.id[:8]}_{target_sha[:7]}_")
+
+    try:
+        ok, err = extract_commit_source_tree(
+            workspace_path=repo.local_path,
+            commit_sha=target_sha,
+            dest_dir=temp_dir,
+            default_branch=target_branch,
+        )
+        if not ok:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to extract historical commit '{target_sha[:7]}': {err}",
+            )
+
+        # Build Digital Twin on historical tree
+        snapshot_id, result = structural_twin_engine.build_structural_twin(
+            db=db,
+            repository_id=repo.id,
+            commit_hash=target_sha,
+            branch_name=target_branch,
+            source_path=temp_dir,
+        )
+
+        return {
+            "status": "COMPLETED",
+            "snapshot_id": snapshot_id,
+            "commit_hash": target_sha,
+            "branch_name": target_branch,
+            "files_scanned": result.files_scanned,
+            "artifacts_created": len(result.artifacts),
+            "relationships_created": len(result.relationships),
+            "evidence_count": len(result.evidence_items),
+            "message": f"Historical snapshot successfully reconstructed and indexed for commit {target_sha[:7]}.",
+        }
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @router.get("/{repository_id}/snapshots", response_model=List[Dict[str, Any]])

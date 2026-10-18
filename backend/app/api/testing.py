@@ -56,15 +56,40 @@ def run_test_impact_analysis(
             detail=f"Repository '{repository_id}' not found.",
         )
 
-    target_snap = db.query(RepositorySnapshot).filter_by(id=req.target_snapshot_id).first()
-    if not target_snap or target_snap.repository_id != repo.id:
+    from app.api.impact import _ensure_snapshot
+
+    target_snap = _ensure_snapshot(db, repo, req.target_snapshot_id)
+    if not target_snap:
+        target_snap = db.query(RepositorySnapshot).filter(
+            RepositorySnapshot.repository_id == repo.id,
+            or_(
+                RepositorySnapshot.id == req.target_snapshot_id,
+                RepositorySnapshot.commit_hash == req.target_snapshot_id,
+                RepositorySnapshot.commit_hash.startswith(req.target_snapshot_id),
+            ),
+        ).first()
+
+    if not target_snap:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Target snapshot '{req.target_snapshot_id}' not found for repository '{repo.id}'.",
         )
 
     base_snapshot_id = req.base_snapshot_id
-    if not base_snapshot_id:
+    base_snap = None
+    if base_snapshot_id:
+        base_snap = _ensure_snapshot(db, repo, base_snapshot_id)
+        if not base_snap:
+            base_snap = db.query(RepositorySnapshot).filter(
+                RepositorySnapshot.repository_id == repo.id,
+                or_(
+                    RepositorySnapshot.id == base_snapshot_id,
+                    RepositorySnapshot.commit_hash == base_snapshot_id,
+                    RepositorySnapshot.commit_hash.startswith(base_snapshot_id),
+                ),
+            ).first()
+
+    if not base_snap:
         # Find preceding snapshot within this repository
         prev_snap = (
             db.query(RepositorySnapshot)
@@ -78,14 +103,7 @@ def run_test_impact_analysis(
         if not prev_snap:
             # If no earlier snapshot, fall back to target snapshot itself (diff will be empty)
             prev_snap = target_snap
-        base_snapshot_id = prev_snap.id
-
-    base_snap = db.query(RepositorySnapshot).filter_by(id=base_snapshot_id).first()
-    if not base_snap or base_snap.repository_id != repo.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Base snapshot '{base_snapshot_id}' not found for repository '{repo.id}'.",
-        )
+        base_snap = prev_snap
 
     config = TestImpactConfig(
         max_depth=req.max_depth or 6,
@@ -97,8 +115,8 @@ def run_test_impact_analysis(
         result = test_impact_service.run_test_impact_analysis(
             db=db,
             repository_id=repo.id,
-            base_snapshot_id=base_snapshot_id,
-            target_snapshot_id=req.target_snapshot_id,
+            base_snapshot_id=base_snap.id,
+            target_snapshot_id=target_snap.id,
             config=config,
         )
         from fastapi.encoders import jsonable_encoder

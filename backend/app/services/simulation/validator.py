@@ -55,9 +55,11 @@ class ScenarioValidator:
             existing_rel_pairs.add((r.source_artifact_id, r.target_artifact_id))
             existing_rel_with_type.add((r.source_artifact_id, r.target_artifact_id, (r.relationship_type or "").upper()))
 
+        import re
+
         def resolve_entity(ident: str) -> Tuple[Optional[StructuralArtifact], Optional[str]]:
             """
-            Resolves an entity identifier by ID, qualified_name, or unique name.
+            Resolves an entity identifier by ID, qualified_name, unique name, or location stem.
             Returns (artifact, ambiguity_error_if_any).
             """
             if not ident:
@@ -72,11 +74,46 @@ class ScenarioValidator:
                     return matches[0], None
                 candidates = [m.qualified_name for m in matches[:5]]
                 return None, f"Ambiguous entity reference '{ident}'. Matches multiple artifacts: {candidates}. Please use the fully-qualified name."
-            # Also check case-insensitive match on qualified_name
-            ident_lower = ident.lower()
+
+            ident_lower = ident.lower().strip()
+            ident_stem = re.sub(r'\.(?:ts|tsx|js|jsx|py|java|go|json|yml|yaml|css|html)$', '', ident_lower)
+            ident_clean = re.sub(r'[^a-zA-Z0-9]', '', ident_lower)
+            ident_stem_clean = re.sub(r'[^a-zA-Z0-9]', '', ident_stem)
+
+            # Check case-insensitive / stem match on qualified_name or name
             for qn, art in by_qual.items():
-                if qn.lower() == ident_lower:
+                if qn.lower() in (ident_lower, ident_stem):
                     return art, None
+            for nm, arts in by_name.items():
+                if nm.lower() in (ident_lower, ident_stem):
+                    if len(arts) == 1:
+                        return arts[0], None
+                nm_clean = re.sub(r'[^a-zA-Z0-9]', '', nm.lower())
+                if ident_stem_clean and nm_clean == ident_stem_clean:
+                    if len(arts) == 1:
+                        return arts[0], None
+
+            # Check file location suffix or filename match
+            loc_matches = []
+            for art in base_artifacts:
+                loc = (art.location or "").lower()
+                f_name = loc.split(":")[0].split("/")[-1]
+                f_name_stem = re.sub(r'\.(?:ts|tsx|js|jsx|py|java|go|json|yml|yaml|css|html)$', '', f_name)
+                if f_name in (ident_lower, ident_stem) or f_name_stem in (ident_lower, ident_stem):
+                    loc_matches.append(art)
+                elif ident_lower in loc or (ident_stem and ident_stem in loc):
+                    loc_matches.append(art)
+
+            if len(loc_matches) == 1:
+                return loc_matches[0], None
+            elif len(loc_matches) > 1:
+                prio = [m for m in loc_matches if m.artifact_type in ("CLASS", "MODULE", "SERVICE", "COMPONENT")]
+                if len(prio) == 1:
+                    return prio[0], None
+                if prio:
+                    return prio[0], None
+                return loc_matches[0], None
+
             # Check route/path match for API endpoints
             for art in base_artifacts:
                 if art.artifact_type in ("API_ENDPOINT", "ENDPOINT") or "/api/" in (art.location or ""):

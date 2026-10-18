@@ -7,12 +7,30 @@ Provides:
 3. Symlink escape detection preventing traversal outside authorized roots.
 """
 
+import hashlib
 import os
 import tempfile
 from pathlib import Path
 from typing import Optional, List
 from fastapi import HTTPException, status
 from app.core.config import settings
+
+# Canonical File Content Hashing
+def compute_file_sha256(filepath: str) -> str:
+    """Computes deterministic 64-character lowercase hexadecimal SHA-256 hash of file content.
+    Streams in 64KB chunks to safely handle files of any size without unbounded memory usage.
+    """
+    hasher = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest().lower()
+
+
+def compute_bytes_sha256(content: bytes) -> str:
+    """Computes deterministic 64-character lowercase hexadecimal SHA-256 hash of byte sequence."""
+    return hashlib.sha256(content).hexdigest().lower()
+
 
 # Base repository root of the application
 _DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent

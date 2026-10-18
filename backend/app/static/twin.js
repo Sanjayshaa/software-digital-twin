@@ -112,6 +112,8 @@
     selectedEdgeId: null,
     impactMode: false,
     impactRootId: null,
+    viewDimension: '2d',
+    lastSimulationResult: null,
 
     // Graph Data
     rawGraph: { nodes: [], edges: [], summary: {} },
@@ -133,27 +135,29 @@
     isDraggingCanvas: false,
     dragStart: { x: 0, y: 0 },
     draggedNode: null,
+    hoveredNode: null,
     physicsEnabled: true,
     animFrameId: null,
+    showEdgeLabels: false,
 
-    // Colors
+    // MiroFish-inspired Color Palette (High-Contrast for Clean White Canvas)
     colors: {
-      CLASS: '#38bdf8',
-      METHOD: '#818cf8',
-      FUNCTION: '#818cf8',
-      MODULE: '#34d399',
-      PACKAGE: '#2dd4bf',
-      DIRECTORY: '#14b8a6',
-      API_ENDPOINT: '#f472b6',
-      SERVICE: '#a78bfa',
-      TEST_CASE: '#fbbf24',
-      TEST_SUITE: '#f59e0b',
-      DATABASE_TABLE: '#fb923c',
-      DATABASE: '#ea580c',
-      EXTERNAL_DEPENDENCY: '#64748b',
-      DEFAULT: '#94a3b8',
-      DRIFT: '#ef4444',
-      IMPACT: '#f59e0b',
+      CLASS: '#0284C7',
+      METHOD: '#6366F1',
+      FUNCTION: '#DB2777',
+      MODULE: '#059669',
+      PACKAGE: '#2563EB',
+      DIRECTORY: '#0284C7',
+      API_ENDPOINT: '#E11D48',
+      SERVICE: '#7C3AED',
+      TEST_CASE: '#CA8A04',
+      TEST_SUITE: '#B45309',
+      DATABASE_TABLE: '#D97706',
+      DATABASE: '#EA580C',
+      EXTERNAL_DEPENDENCY: '#64748B',
+      DEFAULT: '#64748B',
+      DRIFT: '#DC2626',
+      IMPACT: '#D97706',
     },
   };
 
@@ -194,19 +198,38 @@
   };
 
   // --- Initializer ---
-  window.addEventListener('DOMContentLoaded', () => {
-    ThemeManager.init();
-    initCanvas();
-    initNavigation();
-    initModal();
-    initAuth();
-    initCommandPalette();
-    initAskSoftware();
-    initEventListeners();
-    initPhase5Handlers();
-    initSimulationHandlers();
+  function bootApplication() {
+    try {
+      ThemeManager.init();
+      initCanvas();
+      initNavigation();
+      initModal();
+      initAuth();
+      initCommandPalette();
+      initAskSoftware();
+      initEventListeners();
+      initPhase5Handlers();
+      initSimulationHandlers();
+    } catch (err) {
+      console.error('Error during component initialization:', err);
+    }
     startApplicationStateMachine();
-  });
+  }
+
+  // Safety watchdog: ensure boot-screen is dismissed even if network requests hang
+  setTimeout(() => {
+    if (document.body && document.body.classList.contains('booting')) {
+      console.warn('Boot safety watchdog triggered: force-dismissing boot screen.');
+      document.body.classList.remove('booting');
+      if (typeof updateStateUI === 'function') updateStateUI();
+    }
+  }, 2500);
+
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', bootApplication);
+  } else {
+    bootApplication();
+  }
 
   function initCanvas() {
     state.canvas = document.getElementById('twin-canvas');
@@ -220,16 +243,26 @@
     if (!state.canvas) return;
     const parent = state.canvas.parentElement;
     if (!parent) return;
+    const isFull = parent.classList.contains('graph-fullscreen-mode');
     const rect = parent.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-    state.width = rect.width;
-    state.height = rect.height;
+    const w = Math.round(isFull ? window.innerWidth : (rect.width || parent.clientWidth || 1000));
+    const h = Math.round(isFull ? window.innerHeight : (rect.height || parent.clientHeight || 700));
+    if (w <= 0 || h <= 0) return;
+    state.width = w;
+    state.height = h;
+    state.dpr = window.devicePixelRatio || 1;
     state.canvas.width = state.width * state.dpr;
     state.canvas.height = state.height * state.dpr;
+    state.canvas.style.width = `${state.width}px`;
+    state.canvas.style.height = `${state.height}px`;
+    state.ctx.setTransform(1, 0, 0, 1, 0, 0);
     state.ctx.scale(state.dpr, state.dpr);
     if (!state.transform.x && !state.transform.y) {
       state.transform.x = state.width / 2;
       state.transform.y = state.height / 2;
+    }
+    if (window.Twin3D && window.Twin3D.active) {
+      window.Twin3D.onResize();
     }
   }
 
@@ -316,12 +349,27 @@
     // Level Selector
     document.querySelectorAll('.level-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.level-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+        document.querySelectorAll('.level-btn').forEach(b => {
+          b.classList.remove('active', 'bg-[#0071e3]', 'text-white');
+          b.classList.add('bg-[#F1F5F9]', 'text-[#0F172A]');
+        });
+        btn.classList.add('active', 'bg-[#0071e3]', 'text-white');
+        btn.classList.remove('bg-[#F1F5F9]', 'text-[#0F172A]');
         state.currentLevel = parseInt(btn.dataset.level, 10);
         loadGraph();
       });
     });
+
+    // Graph Node Search Input
+    const graphSearchInput = document.getElementById('graph-search-input');
+    if (graphSearchInput) {
+      graphSearchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          performGraphSearch(graphSearchInput.value);
+        }
+      });
+    }
 
     // Neighborhood Depth Slider
     const depthRange = document.getElementById('depth-range');
@@ -416,7 +464,10 @@
       loadChangesView();
     } else if (viewName === 'impact') {
       loadChangesView();
-      executeChangeImpactAnalysis();
+      const isValid = validateBaselineAndTargetSelection();
+      if (isValid && !currentImpactAnalysisResult) {
+        executeChangeImpactAnalysis();
+      }
     } else if (viewName === 'evidence') {
       loadEvidenceView();
     } else if (viewName === 'runtime') {
@@ -494,6 +545,7 @@
   function initModal() {
     initGlobalModalHandlers();
     initOnboardModal();
+    initIngestModal();
   }
 
   function initGlobalModalHandlers() {
@@ -609,6 +661,140 @@
     closeModal('modal-ingest-runtime');
   }
 
+  function initIngestModal() {
+    const tabCodebase = document.getElementById('tab-ingest-codebase');
+    const tabTelemetry = document.getElementById('tab-ingest-telemetry');
+    const panelCodebase = document.getElementById('panel-ingest-codebase');
+    const panelTelemetry = document.getElementById('panel-ingest-telemetry');
+    const btnCodebase = document.getElementById('modal-ingest-codebase-btn');
+    const btnTelemetry = document.getElementById('modal-ingest-submit-btn');
+    const closeBtn = document.getElementById('modal-ingest-close-btn');
+    const cancelBtn = document.getElementById('modal-ingest-cancel-btn');
+
+    closeBtn?.addEventListener('click', closeIngestModal);
+    cancelBtn?.addEventListener('click', closeIngestModal);
+
+    tabCodebase?.addEventListener('click', () => {
+      tabCodebase.className = 'flex-1 py-1.5 rounded-lg text-xs font-semibold bg-white text-[#0F172A] shadow-xs';
+      tabTelemetry.className = 'flex-1 py-1.5 rounded-lg text-xs font-medium text-[#64748B] hover:text-[#0F172A]';
+      if (panelCodebase) panelCodebase.style.display = 'block';
+      if (panelTelemetry) panelTelemetry.style.display = 'none';
+      if (btnCodebase) btnCodebase.style.display = 'inline-flex';
+      if (btnTelemetry) btnTelemetry.style.display = 'none';
+    });
+
+    tabTelemetry?.addEventListener('click', () => {
+      tabTelemetry.className = 'flex-1 py-1.5 rounded-lg text-xs font-semibold bg-white text-[#0F172A] shadow-xs';
+      tabCodebase.className = 'flex-1 py-1.5 rounded-lg text-xs font-medium text-[#64748B] hover:text-[#0F172A]';
+      if (panelTelemetry) panelTelemetry.style.display = 'block';
+      if (panelCodebase) panelCodebase.style.display = 'none';
+      if (btnTelemetry) btnTelemetry.style.display = 'inline-flex';
+      if (btnCodebase) btnCodebase.style.display = 'none';
+    });
+
+    btnCodebase?.addEventListener('click', async () => {
+      if (!state.currentRepoId) {
+        showNotification('Connect a repository before analyzing.', 'warning');
+        return;
+      }
+      const branchInput = document.getElementById('input-ingest-branch');
+      const commitInput = document.getElementById('input-ingest-commit');
+      const branch = (branchInput?.value || 'main').trim();
+      const commit = (commitInput?.value || 'HEAD').trim();
+
+      const progBox = document.getElementById('ingest-progress-box');
+      const stepQueued = document.getElementById('ingest-step-queued');
+      const stepAnalyzing = document.getElementById('ingest-step-analyzing');
+      const stepPersisting = document.getElementById('ingest-step-persisting');
+      const stepReady = document.getElementById('ingest-step-ready');
+
+      if (progBox) progBox.style.display = 'block';
+      if (btnCodebase) btnCodebase.disabled = true;
+
+      // Stage 1: Queued
+      if (stepQueued) stepQueued.className = 'flex items-center gap-1.5 text-[#2563EB] font-bold';
+
+      try {
+        // Stage 2: Analyzing
+        setTimeout(() => {
+          if (stepQueued) stepQueued.className = 'flex items-center gap-1.5 text-[#059669]';
+          if (stepAnalyzing) stepAnalyzing.className = 'flex items-center gap-1.5 text-[#2563EB] font-bold';
+        }, 300);
+
+        // Stage 3: Persisting
+        setTimeout(() => {
+          if (stepAnalyzing) stepAnalyzing.className = 'flex items-center gap-1.5 text-[#059669]';
+          if (stepPersisting) stepPersisting.className = 'flex items-center gap-1.5 text-[#2563EB] font-bold';
+        }, 700);
+
+        const url = `/repositories/${state.currentRepoId}/analyze?commit_hash=${encodeURIComponent(commit)}&branch_name=${encodeURIComponent(branch)}`;
+        const res = await apiFetch(url, { method: 'POST' });
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText || `Analysis failed (HTTP ${res.status})`);
+        }
+        const result = await res.json();
+
+        // Stage 4: Ready
+        if (stepPersisting) stepPersisting.className = 'flex items-center gap-1.5 text-[#059669]';
+        if (stepReady) stepReady.style.display = 'flex';
+
+        showNotification(`Ingestion complete! ${result.artifacts_created} artifacts & ${result.relationships_created} relations indexed.`, 'success');
+
+        setTimeout(async () => {
+          closeIngestModal();
+          if (btnCodebase) btnCodebase.disabled = false;
+          if (progBox) progBox.style.display = 'none';
+          if (stepReady) stepReady.style.display = 'none';
+          await loadSnapshotsForCurrentRepo(result.snapshot_id);
+          await loadOverviewData();
+          await refreshActiveView();
+        }, 1200);
+
+      } catch (err) {
+        console.error('Codebase ingestion failed', err);
+        showNotification(`Ingestion failed: ${err.message}`, 'error');
+        if (btnCodebase) btnCodebase.disabled = false;
+        if (progBox) progBox.style.display = 'none';
+      }
+    });
+
+    btnTelemetry?.addEventListener('click', async () => {
+      const envSelect = document.getElementById('input-ingest-env');
+      const jsonText = document.getElementById('input-ingest-json');
+      const env = envSelect ? envSelect.value : 'production';
+      const raw = jsonText ? jsonText.value.trim() : '';
+
+      if (!raw) {
+        showNotification('Please enter JSON runtime events.', 'warning');
+        return;
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (e) {
+        showNotification('Invalid JSON format.', 'error');
+        return;
+      }
+      const events = Array.isArray(parsed) ? parsed : [parsed];
+      try {
+        const res = await apiFetch(`/repositories/${state.currentRepoId}/runtime-events/ingest`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ environment: env, events }),
+        });
+        if (!res.ok) throw new Error('Failed to ingest telemetry');
+        showNotification(`Ingested ${events.length} runtime events.`, 'success');
+        closeIngestModal();
+        if (jsonText) jsonText.value = '';
+        loadOverviewRuntime(state.currentRepoId);
+        loadOverviewIncidents(state.currentRepoId);
+      } catch (err) {
+        showNotification(err.message, 'error');
+      }
+    });
+  }
+
   function openCreateIncidentModal() {
     openModal('modal-create-incident');
   }
@@ -618,9 +804,7 @@
   }
 
   function openAuthModal() {
-    openModal('modal-auth');
-    hideAuthError();
-    document.getElementById('auth-input-username')?.focus();
+    window.location.href = '/login';
   }
 
   function closeAuthModal() {
@@ -700,8 +884,22 @@
             return;
           }
 
+          const forbiddenSubpaths = ['/blob/', '/tree/', '/issues/', '/pull/', '/commit/', '/actions/'];
+          const matchedForbidden = forbiddenSubpaths.find(sub => repoUrl.includes(sub));
+          if (matchedForbidden) {
+            showOnboardError(`Please provide a root repository URL (e.g. https://github.com/org/repo). Subpaths such as "${matchedForbidden}" are not supported.`);
+            return;
+          }
+
           try {
-            await triggerGithubOnboarding({ repo_url: repoUrl, branch: branch || undefined, name: name || undefined, access_token: token || undefined });
+            await triggerGithubOnboarding({
+              github_url: repoUrl,
+              repo_url: repoUrl,
+              branch: branch || undefined,
+              name: name || undefined,
+              github_token: token || undefined,
+              access_token: token || undefined
+            });
           } finally {
             if (tokenInput) tokenInput.value = '';
           }
@@ -758,28 +956,42 @@
     }
 
     try {
-      const res = await nativeFetch('/repositories/connect-github', {
+      const res = await apiFetch('/repositories/connect-github', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({ detail: 'Failed to connect GitHub repository' }));
-        throw new Error(errData.detail || 'GitHub connection error');
+        const rawText = await res.text().catch(() => '');
+        let errData;
+        try {
+          errData = JSON.parse(rawText);
+        } catch (_) {
+          errData = { detail: rawText || `Server returned HTTP ${res.status}` };
+        }
+        const norm = normalizeApiError(errData, 'GitHub Connection');
+        throw new Error(norm.message);
       }
 
       const result = await res.json();
+      if (result.session_token) {
+        localStorage.setItem('jwt_token', result.session_token);
+        await checkAuthentication();
+      }
       const newRepoId = result.repository?.id || result.repository_id;
+      const newSnapId = result.snapshot_id;
       showNotification('GitHub repository synthesized into Digital Twin!', 'success');
       setTimeout(async () => {
         closeConnectModal();
-        await startApplicationStateMachine(newRepoId);
+        await startApplicationStateMachine(newRepoId, newSnapId);
         switchPrimaryView('overview');
       }, 700);
     } catch (err) {
       console.error('GitHub onboarding error', err);
-      showOnboardError(err.message || 'Failed to connect GitHub repository.');
+      if (progBox) progBox.style.display = 'none';
+      const norm = normalizeApiError(err, 'GitHub Connection');
+      showOnboardError(norm.message || 'Failed to connect GitHub repository.');
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Connect & Synthesize Twin';
@@ -802,7 +1014,7 @@
     }
 
     try {
-      const res = await nativeFetch('/repositories/onboard', {
+      const res = await apiFetch('/repositories/onboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -812,21 +1024,35 @@
       });
 
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({ detail: 'Analysis failed' }));
-        throw new Error(errData.detail || 'Analysis execution error');
+        const rawText = await res.text().catch(() => '');
+        let errData;
+        try {
+          errData = JSON.parse(rawText);
+        } catch (_) {
+          errData = { detail: rawText || `Server returned HTTP ${res.status}` };
+        }
+        const norm = normalizeApiError(errData, 'Local Ingestion');
+        throw new Error(norm.message);
       }
 
       const result = await res.json();
+      if (result.session_token) {
+        localStorage.setItem('jwt_token', result.session_token);
+        await checkAuthentication();
+      }
       const newRepoId = result.repository?.id || result.repository_id;
+      const newSnapId = result.snapshot_id;
       showNotification('Codebase successfully synthesized!', 'success');
       setTimeout(async () => {
         closeConnectModal();
-        await startApplicationStateMachine(newRepoId);
+        await startApplicationStateMachine(newRepoId, newSnapId);
         switchPrimaryView('overview');
       }, 700);
     } catch (err) {
       console.error('Local onboarding error', err);
-      showOnboardError(err.message || 'Failed to analyze repository. Check filesystem path.');
+      if (progBox) progBox.style.display = 'none';
+      const norm = normalizeApiError(err, 'Local Ingestion');
+      showOnboardError(norm.message || 'Failed to analyze repository. Check filesystem path.');
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Connect & Synthesize Twin';
@@ -849,27 +1075,41 @@
       formData.append('file', file);
       if (repoName) formData.append('name', repoName);
 
-      const res = await nativeFetch('/repositories/upload-archive', {
+      const res = await apiFetch('/repositories/upload-archive', {
         method: 'POST',
         body: formData,
       });
 
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({ detail: 'Archive processing failed' }));
-        throw new Error(errData.detail || 'Archive processing error');
+        const rawText = await res.text().catch(() => '');
+        let errData;
+        try {
+          errData = JSON.parse(rawText);
+        } catch (_) {
+          errData = { detail: rawText || `Server returned HTTP ${res.status}` };
+        }
+        const norm = normalizeApiError(errData, 'Archive Upload');
+        throw new Error(norm.message);
       }
 
       const result = await res.json();
+      if (result.session_token) {
+        localStorage.setItem('jwt_token', result.session_token);
+        await checkAuthentication();
+      }
       const newRepoId = result.repository?.id || result.repository_id;
+      const newSnapId = result.snapshot_id;
       showNotification('Project archive synthesized into Digital Twin!', 'success');
       setTimeout(async () => {
         closeConnectModal();
-        await startApplicationStateMachine(newRepoId);
+        await startApplicationStateMachine(newRepoId, newSnapId);
         switchPrimaryView('overview');
       }, 700);
     } catch (err) {
       console.error('Archive onboarding error', err);
-      showOnboardError(err.message || 'Failed to upload or analyze archive.');
+      if (progBox) progBox.style.display = 'none';
+      const norm = normalizeApiError(err, 'Archive Upload');
+      showOnboardError(norm.message || 'Failed to upload or analyze archive.');
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Connect & Synthesize Twin';
@@ -891,6 +1131,47 @@
     logoutBtn?.addEventListener('click', logoutUser);
     authCloseBtn?.addEventListener('click', closeAuthModal);
     authCancelBtn?.addEventListener('click', closeAuthModal);
+
+    const userMenuBtn = document.getElementById('user-menu-btn');
+    const userDropdown = document.getElementById('user-dropdown-menu');
+    userMenuBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (userDropdown) {
+        userDropdown.style.display = userDropdown.style.display === 'block' ? 'none' : 'block';
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (userDropdown && !userDropdown.contains(e.target) && e.target !== userMenuBtn) {
+        userDropdown.style.display = 'none';
+      }
+    });
+
+    document.getElementById('menu-btn-profile')?.addEventListener('click', () => {
+      if (userDropdown) userDropdown.style.display = 'none';
+      openModal('modal-user-profile');
+    });
+
+    document.getElementById('menu-btn-settings')?.addEventListener('click', () => {
+      if (userDropdown) userDropdown.style.display = 'none';
+      openModal('modal-user-profile');
+    });
+
+    document.getElementById('menu-btn-logout')?.addEventListener('click', () => {
+      if (userDropdown) userDropdown.style.display = 'none';
+      logoutUser();
+    });
+
+    document.getElementById('modal-profile-close-btn')?.addEventListener('click', () => {
+      closeModal('modal-user-profile');
+    });
+    document.getElementById('modal-profile-done-btn')?.addEventListener('click', () => {
+      closeModal('modal-user-profile');
+    });
+    document.getElementById('modal-profile-logout-btn')?.addEventListener('click', () => {
+      closeModal('modal-user-profile');
+      logoutUser();
+    });
 
     let authMode = 'login';
 
@@ -1022,6 +1303,16 @@
     const profileSection = document.getElementById('header-user-profile');
     const avatarEl = document.getElementById('header-user-avatar');
     const nameEl = document.getElementById('header-user-name');
+    const dropUsername = document.getElementById('dropdown-username');
+    const dropEmail = document.getElementById('dropdown-email');
+    const dropRole = document.getElementById('dropdown-role');
+    const modalAvatar = document.getElementById('profile-modal-avatar');
+    const modalUsername = document.getElementById('profile-modal-username');
+    const modalEmail = document.getElementById('profile-modal-email');
+    const modalRole = document.getElementById('profile-modal-role');
+    const modalRoleText = document.getElementById('profile-modal-role-text');
+    const modalUserId = document.getElementById('profile-modal-user-id');
+    const modalAuthStatus = document.getElementById('profile-modal-auth-status');
 
     if (user) {
       if (loginBtn) loginBtn.style.display = 'none';
@@ -1029,9 +1320,22 @@
       const initials = (user.username || 'U').slice(0, 2).toUpperCase();
       if (avatarEl) avatarEl.textContent = initials;
       if (nameEl) nameEl.textContent = user.username || 'User';
+      if (dropUsername) dropUsername.textContent = user.username || 'User';
+      if (dropEmail) dropEmail.textContent = user.email || 'user@digitaltwin.local';
+      if (dropRole) dropRole.textContent = user.role || 'engineer';
+
+      if (modalAvatar) modalAvatar.textContent = initials;
+      if (modalUsername) modalUsername.textContent = user.username || 'User';
+      if (modalEmail) modalEmail.textContent = user.email || 'user@digitaltwin.local';
+      if (modalRole) modalRole.textContent = user.role || 'engineer';
+      if (modalRoleText) modalRoleText.textContent = `${user.role || 'engineer'} (Full Twin Access)`;
+      if (modalUserId) modalUserId.textContent = user.user_id || user.id || 'usr_active';
+      if (modalAuthStatus) modalAuthStatus.textContent = 'Active JWT Session (Verified)';
     } else {
       if (loginBtn) loginBtn.style.display = 'flex';
       if (profileSection) profileSection.style.display = 'none';
+      const drop = document.getElementById('user-dropdown-menu');
+      if (drop) drop.style.display = 'none';
     }
   }
 
@@ -1074,9 +1378,15 @@
     if (typeof err === 'string') return { code: 'API_ERROR', message: err, stage, retryable: true };
     const code = err.code || (err.status ? `HTTP_${err.status}` : 'API_ERROR');
     let message = err.message || err.detail || err.error;
-    if (typeof message === 'object') {
+    if (Array.isArray(message)) {
+      message = message.map(item => {
+        if (typeof item === 'string') return item;
+        const field = item.loc ? item.loc[item.loc.length - 1] : 'field';
+        return `${field}: ${item.msg || 'invalid value'}`;
+      }).join('; ');
+    } else if (typeof message === 'object') {
       try {
-        message = JSON.stringify(message);
+        message = message.msg || message.detail || message.message || JSON.stringify(message);
       } catch (_) {
         message = 'The service encountered an issue processing the request.';
       }
@@ -1298,98 +1608,99 @@
     document.body.classList.add('booting');
     setAppState('BOOT');
 
-    // Step 1: RESTORING_SESSION & AUTH CHECK
-    setAppState('AUTHENTICATION_CHECK');
-    await checkAuthentication();
-
-    // If unauthenticated guest, clear any stale selected repo/snap from localStorage
-    if (!state.user) {
-      localStorage.removeItem('selected_repo_id');
-      localStorage.removeItem('selected_snapshot_id');
-    }
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const targetRepo = state.user ? (preferredRepoId || urlParams.get('repo') || localStorage.getItem('selected_repo_id')) : null;
-    const targetSnap = state.user ? (preferredSnapId || urlParams.get('snapshot') || localStorage.getItem('selected_snapshot_id')) : null;
-
-    // Step 2: LOAD_REPOSITORIES
-    setAppState('LOAD_REPOSITORIES');
-    let loadedRepos = [];
     try {
-      const res = await apiFetch('/repositories');
-      if (res.ok) {
-        loadedRepos = await res.json();
-      } else {
-        throw new Error(`Failed to load repositories (HTTP ${res.status})`);
-      }
-    } catch (err) {
-      console.error('State machine error loading repositories:', err);
-      setAppState('LOAD_ERROR', { error: err.message });
-      await finishBoot();
-      return;
-    }
+      // Step 1: RESTORING_SESSION & AUTH CHECK
+      setAppState('AUTHENTICATION_CHECK');
+      await checkAuthentication();
 
-    const validRepos = loadedRepos.filter(r => r.environment !== 'TEST' && r.environment !== 'FIXTURE');
-    state.repositories = validRepos;
-    populateRepoSelect(validRepos);
-
-    if (!state.user) {
-      state.currentRepoId = null;
-      state.currentSnapshotId = null;
-      setAppState('NO_REPOSITORY');
-      populateSnapshotSelects([]);
-      updateSidebarRepoCard(null);
-      switchPrimaryView('overview');
-      await finishBoot();
-      return;
-    }
-
-    if (validRepos.length === 0) {
-      state.currentRepoId = null;
-      state.currentSnapshotId = null;
-      setAppState('NO_REPOSITORY');
-      populateSnapshotSelects([]);
-      updateSidebarRepoCard(null);
-      switchPrimaryView('overview');
-      await finishBoot();
-      return;
-    }
-
-    // Step 3: VALIDATE_REPOSITORY
-    setAppState('VALIDATE_REPOSITORY');
-    if (targetRepo) {
-      const matched = validRepos.find(r => r.id === targetRepo || r.name === targetRepo);
-      if (matched) {
-        state.currentRepoId = matched.id;
-        localStorage.setItem('selected_repo_id', matched.id);
-        const repoSelect = document.getElementById('repo-select');
-        if (repoSelect) repoSelect.value = matched.id;
-        updateSidebarRepoCard(matched);
-      } else {
+      // If unauthenticated guest, clear any stale selected repo/snap from localStorage
+      if (!state.user) {
         localStorage.removeItem('selected_repo_id');
+        localStorage.removeItem('selected_snapshot_id');
+      }
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const targetRepo = state.user ? (preferredRepoId || urlParams.get('repo') || localStorage.getItem('selected_repo_id')) : null;
+      const targetSnap = state.user ? (preferredSnapId || urlParams.get('snapshot') || localStorage.getItem('selected_snapshot_id')) : null;
+
+      // Step 2: LOAD_REPOSITORIES
+      setAppState('LOAD_REPOSITORIES');
+      let loadedRepos = [];
+      try {
+        const res = await apiFetch('/repositories');
+        if (res.ok) {
+          loadedRepos = await res.json();
+        } else {
+          throw new Error(`Failed to load repositories (HTTP ${res.status})`);
+        }
+      } catch (err) {
+        console.error('State machine error loading repositories:', err);
+        setAppState('LOAD_ERROR', { error: err.message });
+        return;
+      }
+
+      const validRepos = loadedRepos.filter(r => r.environment !== 'TEST' && r.environment !== 'FIXTURE');
+      state.repositories = validRepos;
+      populateRepoSelect(validRepos);
+
+      if (!state.user) {
+        state.currentRepoId = null;
+        state.currentSnapshotId = null;
+        setAppState('NO_REPOSITORY');
+        populateSnapshotSelects([]);
+        updateSidebarRepoCard(null);
+        switchPrimaryView('overview');
+        return;
+      }
+
+      if (validRepos.length === 0) {
+        state.currentRepoId = null;
+        state.currentSnapshotId = null;
+        setAppState('NO_REPOSITORY');
+        populateSnapshotSelects([]);
+        updateSidebarRepoCard(null);
+        switchPrimaryView('overview');
+        return;
+      }
+
+      // Step 3: VALIDATE_REPOSITORY
+      setAppState('VALIDATE_REPOSITORY');
+      if (targetRepo) {
+        const matched = validRepos.find(r => r.id === targetRepo);
+        if (matched) {
+          state.currentRepoId = matched.id;
+          localStorage.setItem('selected_repo_id', matched.id);
+          const repoSelect = document.getElementById('repo-select');
+          if (repoSelect) repoSelect.value = matched.id;
+          updateSidebarRepoCard(matched);
+        } else {
+          localStorage.removeItem('selected_repo_id');
+          state.currentRepoId = null;
+          state.currentSnapshotId = null;
+          setAppState('SELECT_REPOSITORY');
+          populateSnapshotSelects([]);
+          updateSidebarRepoCard(null);
+          switchPrimaryView('overview');
+          return;
+        }
+      } else {
         state.currentRepoId = null;
         state.currentSnapshotId = null;
         setAppState('SELECT_REPOSITORY');
         populateSnapshotSelects([]);
         updateSidebarRepoCard(null);
         switchPrimaryView('overview');
-        await finishBoot();
         return;
       }
-    } else {
-      state.currentRepoId = null;
-      state.currentSnapshotId = null;
-      setAppState('SELECT_REPOSITORY');
-      populateSnapshotSelects([]);
-      updateSidebarRepoCard(null);
-      switchPrimaryView('overview');
-      await finishBoot();
-      return;
-    }
 
-    // Step 4: LOAD_SNAPSHOTS
-    await loadSnapshotsForCurrentRepo(targetSnap);
-    await finishBoot();
+      // Step 4: LOAD_SNAPSHOTS
+      await loadSnapshotsForCurrentRepo(targetSnap);
+    } catch (fatalErr) {
+      console.error('Fatal state machine error during boot:', fatalErr);
+      setAppState('LOAD_ERROR', { error: fatalErr.message });
+    } finally {
+      await finishBoot();
+    }
   }
 
   function populateRepoSelect(repos = []) {
@@ -1428,18 +1739,26 @@
     if (!repoId) return;
 
     try {
-      const res = await apiFetch(`/repositories/${repoId}/graph/snapshots`);
-      if (!res.ok) {
-        throw new Error(`Failed to load snapshots for repository (HTTP ${res.status})`);
+      const [snapRes, commitsRes] = await Promise.all([
+        apiFetch(`/repositories/${repoId}/graph/snapshots`),
+        apiFetch(`/repositories/${repoId}/commits`).catch(() => null),
+      ]);
+      if (!snapRes.ok) {
+        throw new Error(`Failed to load snapshots for repository (HTTP ${snapRes.status})`);
       }
-      state.snapshots = await res.json();
+      state.snapshots = await snapRes.json();
+      if (commitsRes && commitsRes.ok) {
+        state.commitHistoryInfo = await commitsRes.json();
+      } else {
+        state.commitHistoryInfo = null;
+      }
     } catch (err) {
       console.error('State machine error loading snapshots:', err);
       setAppState('LOAD_ERROR', { error: err.message });
       return;
     }
 
-    populateSnapshotSelects(state.snapshots);
+    populateSnapshotSelects(state.snapshots, state.commitHistoryInfo);
 
     // Step 6: VALIDATE_SNAPSHOT
     setAppState('VALIDATE_SNAPSHOT');
@@ -1458,8 +1777,14 @@
         setAppState('INVALID_SNAPSHOT', { snapId: targetSnap, repoName: currentRepo?.name || repoId });
         return;
       }
+    } else if (state.snapshots && state.snapshots.length > 0) {
+      // Default to latest synthesized snapshot for the active repository
+      const latestSnap = state.snapshots[0];
+      state.currentSnapshotId = latestSnap.id;
+      localStorage.setItem('selected_snapshot_id', latestSnap.id);
+      const snapSelect = document.getElementById('snapshot-select');
+      if (snapSelect) snapSelect.value = latestSnap.id;
     } else {
-      // Never silently select first snapshot
       state.currentSnapshotId = null;
       const snapSelect = document.getElementById('snapshot-select');
       if (snapSelect) snapSelect.value = '';
@@ -1469,69 +1794,300 @@
 
     // Step 7: LOAD_APPLICATION_DATA
     setAppState('LOAD_APPLICATION_DATA');
-    if (state.currentSnapshotId) {
-      loadFileTree();
+    try {
+      if (state.currentSnapshotId) {
+        loadFileTree();
+      }
+      await refreshActiveView();
+    } catch (e) {
+      console.warn('Non-fatal error refreshing active view on boot:', e);
     }
-    await refreshActiveView();
 
     // Step 8: READY
     setAppState('READY');
   }
 
-  function populateSnapshotSelects(snapshots = []) {
+  function setImpactMetricCardState(metricState, summary = {}) {
+    const cards = [
+      { id: 'metric-impact-changed', key: 'changed', defaultColor: '#F59E0B' },
+      { id: 'metric-impact-direct', key: 'unique_affected', fallbackKey: 'directly_affected', defaultColor: '#EF4444' },
+      { id: 'metric-impact-indirect', key: 'multi_hop_affected', fallbackKey: 'indirectly_affected', defaultColor: '#EC4899' },
+      { id: 'metric-impact-components', key: 'affected_components', defaultColor: '#3B82F6' },
+      { id: 'metric-impact-apis', key: 'affected_apis', defaultColor: '#8B5CF6' },
+      { id: 'metric-impact-processes', key: 'affected_processes', defaultColor: '#06B6D4' },
+      { id: 'metric-impact-tests', key: 'affected_tests', defaultColor: '#10B981' },
+    ];
+
+    cards.forEach(c => {
+      const el = document.getElementById(c.id);
+      if (!el) return;
+
+      if (metricState === 'LOADING') {
+        el.innerHTML = '<span class="text-xs font-semibold text-[#94A3B8] animate-pulse">LOADING</span>';
+      } else if (metricState === 'READY') {
+        let val = summary[c.key];
+        if (val === undefined && c.fallbackKey) val = summary[c.fallbackKey];
+        val = (typeof val === 'number') ? val : 0;
+        el.textContent = String(val);
+        el.style.color = c.defaultColor;
+      } else if (metricState === 'ZERO') {
+        el.textContent = '0';
+        el.style.color = c.defaultColor;
+      } else if (metricState === 'BLOCKED') {
+        el.innerHTML = '<span class="text-xs font-bold text-[#94A3B8] tracking-wider">BLOCKED</span>';
+      } else if (metricState === 'ERROR') {
+        el.innerHTML = '<span class="text-xs font-bold text-[#EF4444] tracking-wider">ERROR</span>';
+      } else if (metricState === 'UNKNOWN') {
+        el.innerHTML = '<span class="text-xs font-bold text-[#64748B] tracking-wider">UNKNOWN</span>';
+      }
+    });
+  }
+
+  function validateBaselineAndTargetSelection() {
+    const baseSelect = document.getElementById('impact-base-select') || document.getElementById('diff-base-select');
+    const targetSelect = document.getElementById('impact-target-select') || document.getElementById('diff-target-select');
+    const runBtn = document.getElementById('btn-run-impact-action');
+    const anim3dBtn = document.getElementById('btn-impact-visualize-3d');
+    const metaSpan = document.getElementById('impact-analysis-meta');
+    const tree = document.getElementById('impact-paths-tree');
+
+    if (!baseSelect || !targetSelect) return false;
+
+    const baseOpt = baseSelect.selectedOptions[0];
+    const targetOpt = targetSelect.selectedOptions[0];
+    const baseSha = baseOpt?.dataset.sha || baseSelect.value;
+    const targetSha = targetOpt?.dataset.sha || targetSelect.value;
+
+    // Invalidate stale analysis and disable 3D animation
+    currentImpactAnalysisResult = null;
+    if (anim3dBtn) {
+      anim3dBtn.disabled = true;
+      anim3dBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      anim3dBtn.classList.remove('hover:bg-[#1E293B]', 'cursor-pointer');
+      anim3dBtn.title = 'Execute Change Impact first to enable 3D propagation animation';
+    }
+
+    if (!baseSha || !targetSha) {
+      if (runBtn) {
+        runBtn.disabled = true;
+        runBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      }
+      setImpactMetricCardState('BLOCKED');
+      if (metaSpan) metaSpan.innerHTML = '<span style="color:#64748B;">Select Baseline and Target commits to compare.</span>';
+      return false;
+    }
+
+    if (baseSha === targetSha) {
+      if (runBtn) {
+        runBtn.disabled = true;
+        runBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      }
+      setImpactMetricCardState('BLOCKED');
+      if (metaSpan) {
+        metaSpan.innerHTML = `<span style="color:#F59E0B; font-weight:600;">Baseline and Target refer to the same commit (${baseSha.slice(0, 7)}). Please select distinct commits.</span>`;
+      }
+      if (tree) {
+        tree.innerHTML = '<div class="p-6 text-center text-xs text-[#F59E0B] bg-[#FFFBEB] rounded-xl border border-dashed border-[#FDE68A]">Identical commits selected for Baseline and Target. Change Impact requires two distinct states.</div>';
+      }
+      return false;
+    }
+
+    // Distinct commits selected
+    if (runBtn) {
+      runBtn.disabled = false;
+      runBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+    setImpactMetricCardState('ZERO');
+    const baseIndexed = baseOpt?.dataset.hasSnapshot === 'true';
+    const targetIndexed = targetOpt?.dataset.hasSnapshot === 'true';
+    let readyMsg = `Ready to analyze impact: <strong>${baseSha.slice(0, 7)}</strong> → <strong>${targetSha.slice(0, 7)}</strong>`;
+    if (!baseIndexed || !targetIndexed) {
+      readyMsg += ` <span style="color:#38BDF8;">(Will auto-reconstruct unindexed historical commit from source tree)</span>`;
+    }
+    if (metaSpan) metaSpan.innerHTML = readyMsg;
+    return true;
+  }
+
+  function populateSnapshotSelects(snapshots = [], commitInfo = null) {
     const snapSelect = document.getElementById('snapshot-select');
     const diffBaseSelect = document.getElementById('diff-base-select');
     const diffTargetSelect = document.getElementById('diff-target-select');
+    const impactBaseSelect = document.getElementById('impact-base-select');
+    const impactTargetSelect = document.getElementById('impact-target-select');
     const sbDiffSelect = document.getElementById('diff-snapshot-select');
     const hasRepo = Boolean(state.currentRepoId);
 
-    [snapSelect, diffBaseSelect, diffTargetSelect, sbDiffSelect].forEach(sel => {
+    const allSelectors = [snapSelect, diffBaseSelect, diffTargetSelect, impactBaseSelect, impactTargetSelect, sbDiffSelect];
+
+    allSelectors.forEach(sel => {
       if (!sel) return;
       sel.innerHTML = '';
       const promptOpt = document.createElement('option');
       promptOpt.value = '';
       if (sel === snapSelect) promptOpt.textContent = '-- Select Snapshot --';
-      else if (sel === diffBaseSelect) promptOpt.textContent = '-- Select Baseline --';
-      else if (sel === diffTargetSelect) promptOpt.textContent = '-- Select Target --';
+      else if (sel === diffBaseSelect || sel === impactBaseSelect) promptOpt.textContent = '-- Baseline Commit --';
+      else if (sel === diffTargetSelect || sel === impactTargetSelect) promptOpt.textContent = '-- Target Commit --';
       else promptOpt.textContent = '-- Select Comparison --';
       promptOpt.disabled = true;
       if (!state.currentSnapshotId || !hasRepo) promptOpt.selected = true;
       sel.appendChild(promptOpt);
     });
 
-    if (!hasRepo || snapshots.length === 0) return;
+    const noticeBanner = document.getElementById('impact-notice-banner');
+    const noticeMsg = document.getElementById('impact-notice-message');
+    const trySimBtn = document.getElementById('btn-impact-try-simulation');
 
+    if (trySimBtn) {
+      trySimBtn.onclick = () => switchPrimaryView('simulation');
+    }
+
+    if (!hasRepo) {
+      if (noticeBanner) noticeBanner.style.display = 'none';
+      return;
+    }
+
+    // 1. Populate top-bar snapshot-select with analyzed snapshots only
     snapshots.forEach((s) => {
+      if (!snapSelect) return;
       const branch = s.branch_name || s.branch || 'main';
       const shortHash = (s.commit_hash && s.commit_hash !== 'no-git') ? s.commit_hash.slice(0, 7) : (s.id ? s.id.slice(0, 7) : 'HEAD');
       const dateStr = s.created_at ? new Date(s.created_at).toLocaleDateString() : '';
       const label = `${branch} · ${shortHash}${dateStr ? ' (' + dateStr + ')' : ''}`;
-      [snapSelect, diffBaseSelect, diffTargetSelect, sbDiffSelect].forEach(sel => {
-        if (!sel) return;
-        const opt = document.createElement('option');
-        opt.value = s.id;
-        opt.textContent = label;
-        if (s.id === state.currentSnapshotId && sel === snapSelect) {
-          opt.selected = true;
-        }
-        sel.appendChild(opt);
-      });
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = label;
+      if (s.id === state.currentSnapshotId) opt.selected = true;
+      snapSelect.appendChild(opt);
     });
+
+    // 2. Populate pairwise comparison selectors with discovered historical commits
+    const comparisonSelectors = [diffBaseSelect, diffTargetSelect, impactBaseSelect, impactTargetSelect, sbDiffSelect];
+    const commits = commitInfo?.commits || [];
+
+    if (commits.length > 0) {
+      commits.forEach(c => {
+        const branch = c.branch_name || 'main';
+        const shortHash = c.short_sha || c.commit_sha.slice(0, 7);
+        const dateStr = c.authored_date ? new Date(c.authored_date).toLocaleDateString() : '';
+        const msgTrunc = c.message ? (c.message.length > 40 ? c.message.slice(0, 37) + '...' : c.message) : '';
+        const statusTag = c.has_snapshot ? '[ANALYZED]' : '[UNINDEXED]';
+        const label = `${branch} · ${shortHash} — "${msgTrunc}" (${dateStr}) ${statusTag}`;
+
+        comparisonSelectors.forEach(sel => {
+          if (!sel) return;
+          const opt = document.createElement('option');
+          opt.value = c.snapshot_id || c.commit_sha;
+          opt.textContent = label;
+          opt.dataset.sha = c.commit_sha;
+          opt.dataset.shortSha = shortHash;
+          opt.dataset.hasSnapshot = c.has_snapshot ? 'true' : 'false';
+          opt.dataset.snapshotId = c.snapshot_id || '';
+          opt.dataset.message = c.message || '';
+          sel.appendChild(opt);
+        });
+      });
+
+      // Default selections: Target = latest commit (commits[0]), Baseline = older analyzed snapshot or commits[1]
+      if (commits.length >= 2) {
+        const targetCommit = commits[0];
+        let baseCommit = commits.find((c, i) => i > 0 && c.has_snapshot) || commits[1];
+        const targetVal = targetCommit.snapshot_id || targetCommit.commit_sha;
+        const baseVal = baseCommit.snapshot_id || baseCommit.commit_sha;
+
+        if (diffTargetSelect) diffTargetSelect.value = targetVal;
+        if (impactTargetSelect) impactTargetSelect.value = targetVal;
+        if (diffBaseSelect) diffBaseSelect.value = baseVal;
+        if (impactBaseSelect) impactBaseSelect.value = baseVal;
+      }
+    } else {
+      // Fallback to snapshots if commits API unavailable
+      snapshots.forEach(s => {
+        const branch = s.branch_name || s.branch || 'main';
+        const shortHash = (s.commit_hash && s.commit_hash !== 'no-git') ? s.commit_hash.slice(0, 7) : (s.id ? s.id.slice(0, 7) : 'HEAD');
+        const dateStr = s.created_at ? new Date(s.created_at).toLocaleDateString() : '';
+        const label = `${branch} · ${shortHash}${dateStr ? ' (' + dateStr + ')' : ''} [ANALYZED]`;
+        comparisonSelectors.forEach(sel => {
+          if (!sel) return;
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = label;
+          opt.dataset.sha = s.commit_hash || s.id;
+          opt.dataset.hasSnapshot = 'true';
+          opt.dataset.snapshotId = s.id;
+          sel.appendChild(opt);
+        });
+      });
+      if (snapshots.length >= 2) {
+        if (diffTargetSelect) diffTargetSelect.value = snapshots[0].id;
+        if (impactTargetSelect) impactTargetSelect.value = snapshots[0].id;
+        if (diffBaseSelect) diffBaseSelect.value = snapshots[1].id;
+        if (impactBaseSelect) impactBaseSelect.value = snapshots[1].id;
+      }
+    }
+
+    // 3. Handle notice banner states truthfully
+    const totalCommits = commitInfo?.total_commits ?? commits.length;
+    const totalSnapshots = commitInfo?.total_analyzed_snapshots ?? snapshots.length;
+
+    if (totalCommits < 2) {
+      if (noticeBanner) {
+        noticeBanner.style.display = 'flex';
+        if (noticeMsg) {
+          noticeMsg.textContent = `Single commit repository (${commits[0]?.short_sha || 'HEAD'}). Pairwise Change Impact requires at least two distinct commits. Use What-If Simulation for single-commit analysis.`;
+        }
+      }
+      setImpactMetricCardState('BLOCKED');
+      const runBtn = document.getElementById('btn-run-impact-action');
+      if (runBtn) {
+        runBtn.disabled = true;
+        runBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      }
+    } else {
+      if (noticeBanner) {
+        if (totalSnapshots < 2) {
+          noticeBanner.style.display = 'flex';
+          if (noticeMsg) {
+            noticeMsg.textContent = `Multiple historical commits found (${totalCommits} commits), with ${totalSnapshots} analyzed snapshot. Select any historical commit as Baseline and click Execute Impact to automatically reconstruct its snapshot from the Git source tree.`;
+          }
+        } else if (commitInfo?.is_shallow) {
+          noticeBanner.style.display = 'flex';
+          if (noticeMsg) {
+            noticeMsg.textContent = `Bounded Git history: ${totalCommits} historical commits discovered. ${totalSnapshots} Twin snapshots ready for pairwise analysis.`;
+          }
+        } else {
+          noticeBanner.style.display = 'none';
+        }
+      }
+      validateBaselineAndTargetSelection();
+    }
   }
 
   function configureDiffSelectors() {
     const diffBaseSelect = document.getElementById('diff-base-select');
     const diffTargetSelect = document.getElementById('diff-target-select');
+    const impactBaseSelect = document.getElementById('impact-base-select');
+    const impactTargetSelect = document.getElementById('impact-target-select');
     const sbDiffSelect = document.getElementById('diff-snapshot-select');
 
-    if (state.currentSnapshotId) {
-      if (diffTargetSelect) diffTargetSelect.value = state.currentSnapshotId;
-      const snapSelect = document.getElementById('snapshot-select');
-      if (snapSelect) snapSelect.value = state.currentSnapshotId;
+    if (impactBaseSelect && diffBaseSelect) {
+      impactBaseSelect.onchange = () => {
+        diffBaseSelect.value = impactBaseSelect.value;
+        validateBaselineAndTargetSelection();
+      };
+      diffBaseSelect.onchange = () => {
+        impactBaseSelect.value = diffBaseSelect.value;
+        validateBaselineAndTargetSelection();
+      };
     }
-    if (state.diffSnapshotId) {
-      if (diffBaseSelect) diffBaseSelect.value = state.diffSnapshotId;
-      if (sbDiffSelect) sbDiffSelect.value = state.diffSnapshotId;
+    if (impactTargetSelect && diffTargetSelect) {
+      impactTargetSelect.onchange = () => {
+        diffTargetSelect.value = impactTargetSelect.value;
+        validateBaselineAndTargetSelection();
+      };
+      diffTargetSelect.onchange = () => {
+        impactTargetSelect.value = diffTargetSelect.value;
+        validateBaselineAndTargetSelection();
+      };
     }
   }
 
@@ -1629,12 +2185,128 @@
 
     if (elRepo) elRepo.textContent = repo?.name || 'Software Digital Twin';
     if (elBranch) elBranch.textContent = snap?.branch_name || repo?.default_branch || 'main';
-    if (elSnap) elSnap.textContent = (snap?.id || state.currentSnapshotId || 'snap_latest').slice(0, 14);
-    if (elCommit) elCommit.textContent = (snap?.commit_hash || 'HEAD').slice(0, 8);
+    if (elSnap) elSnap.textContent = snap?.id ? snap.id.slice(0, 14) : (state.currentSnapshotId ? state.currentSnapshotId.slice(0, 14) : '—');
+    if (elCommit) elCommit.textContent = (snap?.commit_hash && snap.commit_hash !== 'HEAD') ? snap.commit_hash.slice(0, 8) : '—';
     if (elFiles) elFiles.textContent = m.files ?? 0;
     if (elArts) elArts.textContent = m.artifacts ?? 0;
     if (elRels) elRels.textContent = m.relationships ?? 0;
     if (elStatus) elStatus.innerHTML = '<span class="status-pulse"></span> SYNCHRONIZED';
+  }
+
+  // Robust typed adapter for Architecture Packages
+  function mapArchitecturePackage(rawPkg) {
+    if (!rawPkg || typeof rawPkg !== 'object') {
+      return {
+        name: 'root',
+        artifact_count: '—',
+        module_count: '—',
+        files_count: '—',
+        sample_components: []
+      };
+    }
+    const artCount = rawPkg.artifact_count !== undefined && rawPkg.artifact_count !== null
+      ? rawPkg.artifact_count
+      : (rawPkg.total_artifacts !== undefined && rawPkg.total_artifacts !== null ? rawPkg.total_artifacts : '—');
+
+    const modCount = rawPkg.module_count !== undefined && rawPkg.module_count !== null
+      ? rawPkg.module_count
+      : (rawPkg.modules !== undefined && rawPkg.modules !== null ? rawPkg.modules : '—');
+
+    const fileCount = rawPkg.files_count !== undefined && rawPkg.files_count !== null
+      ? rawPkg.files_count
+      : (rawPkg.file_count !== undefined && rawPkg.file_count !== null ? rawPkg.file_count : '—');
+
+    return {
+      name: rawPkg.name || 'root',
+      artifact_count: artCount,
+      module_count: modCount,
+      files_count: fileCount,
+      sample_components: Array.isArray(rawPkg.sample_components) ? rawPkg.sample_components : []
+    };
+  }
+
+  // Snapshot History Ledger Renderer
+  function renderSnapshotHistory(snapshots = []) {
+    const listEl = document.getElementById('ov-snapshot-history-list');
+    const countEl = document.getElementById('ov-snap-history-count');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    const count = (snapshots && Array.isArray(snapshots)) ? snapshots.length : 0;
+    if (countEl) countEl.textContent = `${count} Snapshot${count === 1 ? '' : 's'}`;
+
+    if (!snapshots || snapshots.length === 0) {
+      listEl.innerHTML = '<div class="p-4 text-center text-xs text-[#64748B] bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl">No historical snapshots recorded for this repository.</div>';
+      return;
+    }
+
+    snapshots.forEach((s, idx) => {
+      const isCurrent = s.id === state.currentSnapshotId;
+      const shortHash = (s.commit_hash && s.commit_hash !== 'no-git') ? s.commit_hash.slice(0, 7) : (s.id ? s.id.slice(0, 7) : 'HEAD');
+      const branch = s.branch_name || s.branch || 'main';
+      const timeStr = s.created_at ? new Date(s.created_at).toLocaleString() : 'Recent';
+      const row = document.createElement('div');
+      row.className = `p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
+        isCurrent ? 'bg-[#F0FDF4] border-[#86EFAC]' : 'bg-white border-[#E2E8F0] hover:bg-[#F8FAFC]'
+      }`;
+
+      row.innerHTML = `
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center font-mono text-xs font-bold ${
+            isCurrent ? 'bg-[#DCFCE7] text-[#15803D]' : 'bg-[#F1F5F9] text-[#475569]'
+          }">
+            #${snapshots.length - idx}
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-xs font-bold text-[#0F172A]">${escapeHtml(shortHash)}</span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#F1F5F9] text-[#334155] border border-[#CBD5E1]">${escapeHtml(branch)}</span>
+              ${isCurrent ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DCFCE7] text-[#166534] border border-[#86EFAC]">ACTIVE SNAPSHOT</span>' : ''}
+            </div>
+            <div class="text-[11px] text-[#64748B] mt-0.5 flex items-center gap-2">
+              <span>Created: ${escapeHtml(timeStr)}</span>
+              <span>·</span>
+              <span class="font-mono text-[10px]">${escapeHtml((s.id || '').slice(0, 14))}</span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          ${!isCurrent ? `
+            <button class="btn-set-active-snap px-3 py-1.5 rounded-lg bg-white border border-[#CBD5E1] hover:bg-[#F1F5F9] text-xs font-semibold text-[#0F172A] transition-colors" data-sid="${s.id}">
+              Set Active
+            </button>
+          ` : ''}
+          <button class="btn-compare-base-snap px-3 py-1.5 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] hover:bg-[#DBEAFE] text-xs font-semibold text-[#1D4ED8] transition-colors" data-sid="${s.id}">
+            Compare as Base →
+          </button>
+        </div>
+      `;
+      listEl.appendChild(row);
+    });
+
+    listEl.querySelectorAll('.btn-set-active-snap').forEach(btn => {
+      btn.onclick = async () => {
+        const sid = btn.dataset.sid;
+        state.currentSnapshotId = sid;
+        localStorage.setItem('selected_snapshot_id', sid);
+        const snapSelect = document.getElementById('snapshot-select');
+        if (snapSelect) snapSelect.value = sid;
+        await loadOverviewData();
+        showNotification(`Switched active snapshot to ${sid.slice(0, 10)}`, 'success');
+      };
+    });
+
+    listEl.querySelectorAll('.btn-compare-base-snap').forEach(btn => {
+      btn.onclick = () => {
+        const sid = btn.dataset.sid;
+        switchPrimaryView('impact');
+        const bSel = document.getElementById('diff-base-select') || document.getElementById('impact-base-select');
+        const tSel = document.getElementById('diff-target-select') || document.getElementById('impact-target-select');
+        if (bSel) bSel.value = sid;
+        if (tSel) tSel.value = state.currentSnapshotId || sid;
+        executeChangeImpactAnalysis();
+      };
+    });
   }
 
   // --- 4. Overview View Data Loader (Engineering Command Center) ---
@@ -1717,11 +2389,19 @@
       const pkgGrid = document.getElementById('ov-packages-grid');
       if (pkgGrid) {
         pkgGrid.innerHTML = '';
-        const pkgs = data.architecture_packages || [];
-        if (pkgs.length === 0) {
-          pkgGrid.innerHTML = '<div class="col-span-full p-4 text-center text-xs text-[#64748B] bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl">No macro packages identified in this snapshot.</div>';
+        if (rawPkgs.length === 0) {
+          if ((m.files || 0) > 0 && (m.artifacts || 0) === 0) {
+            pkgGrid.innerHTML = `
+              <div class="col-span-full p-4 text-center text-xs text-[#0369A1] bg-[#F0F9FF] border border-[#BAE6FD] rounded-xl">
+                <div class="font-bold flex items-center justify-center gap-1.5"><span class="material-symbols-outlined text-[16px]">info</span> Documentation / Non-Code Repository Detected</div>
+                <p class="text-[#64748B] mt-1">This repository contains ${m.files} indexed files (e.g. Markdown, configuration, or documentation), but contains no supported programming language AST symbols (classes, functions, or API endpoints).</p>
+              </div>`;
+          } else {
+            pkgGrid.innerHTML = '<div class="col-span-full p-4 text-center text-xs text-[#64748B] bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl">No macro packages identified in this snapshot.</div>';
+          }
         } else {
-          pkgs.forEach(pkg => {
+          rawPkgs.forEach(rawPkg => {
+            const pkg = mapArchitecturePackage(rawPkg);
             const card = document.createElement('div');
             card.className = 'twin-card p-4 flex flex-col justify-between space-y-3';
             const sampleHtml = (pkg.sample_components || []).slice(0, 3).map(c => `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-[#F1F5F9] border border-[#CBD5E1] text-[#6D28D9]">${escapeHtml(c)}</span>`).join(' ');
@@ -1746,13 +2426,7 @@
 
           pkgGrid.querySelectorAll('.btn-explore-pkg').forEach(btn => {
             btn.onclick = () => {
-              switchPrimaryView('architecture');
-              switchArchSubtab('graph');
-              const searchInput = document.getElementById('graph-search-input');
-              if (searchInput) {
-                searchInput.value = btn.dataset.pkg;
-                performGraphSearch(btn.dataset.pkg);
-              }
+              performGraphSearch(btn.dataset.pkg);
             };
           });
         }
@@ -1761,11 +2435,11 @@
       // Dynamic Architecture Flow Pipeline
       const flowList = document.getElementById('ov-flow-nodes-list');
       if (flowList) {
-        const pkgs = data.architecture_packages || [];
-        if (pkgs.length === 0) {
+        const rawPkgs = data.architecture_packages || [];
+        if (rawPkgs.length === 0) {
           flowList.innerHTML = '<div class="w-full text-center py-6 text-xs text-[#64748B]">No architectural packages detected in this snapshot.</div>';
         } else {
-          const topPkgs = pkgs.slice(0, 5);
+          const topPkgs = rawPkgs.slice(0, 5);
           const icons = ['devices', 'router', 'receipt_long', 'memory', 'database'];
           const colors = [
             { bg: '#F0F9FF', text: '#0284C7', border: '#BAE6FD', badgeBg: '#E0F2FE', badgeText: '#0369A1' },
@@ -1775,7 +2449,8 @@
             { bg: '#FAF5FF', text: '#7C3AED', border: '#DDD6FE', badgeBg: '#EDE9FE', badgeText: '#6D28D9' },
           ];
 
-          flowList.innerHTML = topPkgs.map((pkg, i) => {
+          flowList.innerHTML = topPkgs.map((rawPkg, i) => {
+            const pkg = mapArchitecturePackage(rawPkg);
             const col = colors[i % colors.length];
             const icon = icons[i % icons.length];
             const nodeHtml = `
@@ -1784,9 +2459,9 @@
                   <span class="material-symbols-outlined text-[18px]">${icon}</span>
                 </div>
                 <span class="text-xs font-bold text-[#0F172A] mt-1 truncate max-w-[120px]">${escapeHtml(pkg.name)}</span>
-                <span class="text-[10px] text-[#64748B]">${pkg.total_artifacts} artifacts</span>
+                <span class="text-[10px] text-[#64748B]">${pkg.artifact_count} artifacts</span>
                 <span class="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[${col.badgeBg}] text-[${col.badgeText}] text-[10px] font-semibold border border-[${col.border}]">
-                  ${pkg.modules || pkg.module_count || 1} modules
+                  ${pkg.module_count} modules
                 </span>
               </div>
             `;
@@ -1821,12 +2496,12 @@
                 <div class="text-lg font-bold text-[#F59E0B] mt-0.5">${imp.changed_count}</div>
               </div>
               <div class="twin-card p-2.5 text-center">
-                <div class="text-[10px] text-[#64748B] uppercase font-bold">Direct</div>
-                <div class="text-lg font-bold text-[#EF4444] mt-0.5">${imp.directly_affected_count}</div>
+                <div class="text-[10px] text-[#64748B] uppercase font-bold">Unique Affected</div>
+                <div class="text-lg font-bold text-[#EF4444] mt-0.5">${imp.unique_affected ?? imp.directly_affected_count}</div>
               </div>
               <div class="twin-card p-2.5 text-center">
-                <div class="text-[10px] text-[#64748B] uppercase font-bold">Indirect</div>
-                <div class="text-lg font-bold text-[#EC4899] mt-0.5">${imp.indirectly_affected_count}</div>
+                <div class="text-[10px] text-[#64748B] uppercase font-bold">Multi-Hop</div>
+                <div class="text-lg font-bold text-[#EC4899] mt-0.5">${imp.multi_hop_affected ?? imp.indirectly_affected_count}</div>
               </div>
               <div class="twin-card p-2.5 text-center">
                 <div class="text-[10px] text-[#64748B] uppercase font-bold">Components</div>
@@ -1914,17 +2589,60 @@
       }
 
       // Compact Twin Controls Metrics
+      // Compact Twin Controls Metrics
       const causalCovEl = document.getElementById('ov-causal-coverage');
       if (causalCovEl) {
-        causalCovEl.textContent = `${m.relationships || 0} Relations Indexed`;
+        causalCovEl.textContent = `${m.relationships || 0} Indexed`;
       }
       const driftCountEl = document.getElementById('ov-drift-count');
       if (driftCountEl) {
-        driftCountEl.textContent = `${m.violations || 0} breaking changes`;
+        if (data.violations && data.violations.length > 0) {
+          driftCountEl.textContent = `${data.violations.length} breaking changes`;
+          driftCountEl.className = 'text-xs font-semibold text-[#DC2626]';
+        } else if (data.analysis_status?.architecture_validation === 'Evaluated') {
+          driftCountEl.textContent = '0 breaking changes';
+          driftCountEl.className = 'text-xs font-semibold text-[#16A34A]';
+        } else {
+          driftCountEl.textContent = 'Not evaluated';
+          driftCountEl.className = 'text-xs font-semibold text-[#64748B]';
+        }
+      }
+
+      // Simulator Target & Action Box in Overview
+      const simTargetLabel = document.getElementById('ov-sim-target-label');
+      if (simTargetLabel) {
+        const sHash = (data.snapshot?.commit_hash && data.snapshot?.commit_hash !== 'HEAD' && data.snapshot?.commit_hash !== 'no-git')
+          ? data.snapshot.commit_hash.slice(0, 7)
+          : (data.snapshot?.id ? data.snapshot.id.slice(0, 7) : 'HEAD');
+        simTargetLabel.textContent = `${data.snapshot?.branch_name || 'main'} · ${sHash}`;
+      }
+      const blastBtn = document.getElementById('ov-btn-run-blast-radius');
+      const blastBtnText = document.getElementById('ov-btn-run-blast-radius-text');
+      if (blastBtn) {
+        if (state.snapshots && state.snapshots.length >= 2) {
+          if (blastBtnText) blastBtnText.textContent = 'Run Blast-Radius Analysis';
+          blastBtn.onclick = () => {
+            switchPrimaryView('impact');
+            const bSel = document.getElementById('diff-base-select') || document.getElementById('impact-base-select');
+            const tSel = document.getElementById('diff-target-select') || document.getElementById('impact-target-select');
+            if (tSel && state.snapshots[0]) tSel.value = state.snapshots[0].id;
+            if (bSel && state.snapshots[1]) bSel.value = state.snapshots[1].id;
+            executeChangeImpactAnalysis();
+          };
+        } else {
+          if (blastBtnText) blastBtnText.textContent = 'Select Comparison (2 Snapshots Required)';
+          blastBtn.onclick = () => {
+            showNotification('Impact analysis requires two distinct snapshots. Create or ingest an additional snapshot to run pairwise blast-radius analysis.', 'warning');
+            switchPrimaryView('changes');
+          };
+        }
       }
 
       // Render Discovered Architecture Packages & Tiers
       renderArchitectureTiers(data.architecture_packages || []);
+
+      // Snapshot History Ledger
+      renderSnapshotHistory(state.snapshots || []);
 
       // Analysis Pipeline Status
       const pipeTestVal = document.getElementById('pipe-test-val');
@@ -1958,7 +2676,14 @@
 
       const bd = data.component_breakdown || {};
       if (ovCompCount) ovCompCount.textContent = m.artifacts ?? 0;
-      if (ovCompSub) ovCompSub.textContent = `${bd.MODULE || 0} modules · ${bd.CLASS || 0} classes`;
+      if (ovCompSub) {
+        const subParts = [];
+        if (bd.MODULE) subParts.push(`${bd.MODULE} modules`);
+        if (bd.CLASS) subParts.push(`${bd.CLASS} classes`);
+        if (bd.COMPONENT) subParts.push(`${bd.COMPONENT} components`);
+        if (subParts.length === 0) subParts.push(`${m.artifacts ?? 0} artifacts`);
+        ovCompSub.textContent = subParts.join(' · ');
+      }
       if (ovApisCount) ovApisCount.textContent = m.apis ?? 0;
       if (ovApisSub) ovApisSub.textContent = `${m.apis ?? 0} endpoints registered`;
       if (ovDepsCount) ovDepsCount.textContent = m.relationships ?? 0;
@@ -1995,7 +2720,8 @@
       return;
     }
 
-    packages.forEach(pkg => {
+    packages.forEach(rawPkg => {
+      const pkg = mapArchitecturePackage(rawPkg);
       const card = document.createElement('div');
       card.className = 'bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-2xs space-y-3 flex flex-col justify-between';
       const sampleBadges = (pkg.sample_components || []).slice(0, 3).map(c =>
@@ -2009,20 +2735,26 @@
               <span>📦</span> ${escapeHtml(pkg.name)}
             </span>
             <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">
-              ${pkg.artifact_count || pkg.total_artifacts || 0} artifacts
+              ${pkg.artifact_count} artifacts
             </span>
           </div>
           <div class="text-[11px] text-[#64748B] flex items-center gap-3">
-            <span>${pkg.module_count || pkg.modules || 1} Modules</span>
-            <span>${pkg.files_count || 1} Files</span>
+            <span>${pkg.module_count} Modules</span>
+            <span>${pkg.files_count} Files</span>
           </div>
         </div>
         ${sampleBadges ? `<div class="flex flex-wrap gap-1">${sampleBadges}</div>` : ''}
-        <button class="text-xs text-[#0071e3] hover:text-[#0059b5] font-semibold text-left pt-1 border-t border-[#F1F5F9] flex items-center gap-1" onclick="window.TwinApp.switchPrimaryView('architecture'); window.TwinApp.switchArchSubtab('graph');" type="button">
+        <button class="btn-tier-inspect text-xs text-[#0071e3] hover:text-[#0059b5] font-semibold text-left pt-1 border-t border-[#F1F5F9] flex items-center gap-1" data-pkg="${escapeHtml(pkg.name)}" type="button">
           Inspect in Graph →
         </button>
       `;
       container.appendChild(card);
+    });
+
+    container.querySelectorAll('.btn-tier-inspect').forEach(btn => {
+      btn.onclick = () => {
+        performGraphSearch(btn.dataset.pkg);
+      };
     });
   }
 
@@ -2049,6 +2781,8 @@
       const badgesContainer = document.getElementById('ov-incident-badges');
       const confEl = document.getElementById('ov-incident-confidence');
       const invBtn = document.getElementById('ov-btn-investigate');
+      const invBtnLabel = document.getElementById('ov-btn-investigate-label');
+      const invBtnIcon = document.getElementById('ov-btn-investigate-icon');
       const viewIncidentsBtn = document.getElementById('ov-btn-view-incidents');
 
       if (incidents.length > 0) {
@@ -2089,6 +2823,9 @@
 
         if (confEl) confEl.textContent = 'Evidence: Causal graph correlation';
 
+        if (invBtnLabel) invBtnLabel.textContent = 'Investigate Incident';
+        if (invBtnIcon) invBtnIcon.textContent = 'travel_explore';
+
         const doInvestigate = () => {
           switchPrimaryView('incidents');
           investigateIncident(inc.id);
@@ -2105,7 +2842,7 @@
         if (stripeEl) stripeEl.className = "absolute left-0 top-0 bottom-0 w-1.5 bg-[#94A3B8]";
         if (pillEl) pillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569] text-[11px] font-bold border border-[#CBD5E1]";
         if (pulseEl) pulseEl.className = "w-2 h-2 rounded-full bg-[#94A3B8]";
-        if (statusEl) statusEl.textContent = 'Runtime Status Unavailable';
+        if (statusEl) statusEl.textContent = 'Operational (0 Incidents)';
 
         if (titleEl) {
           titleEl.textContent = 'No Incidents Recorded';
@@ -2115,7 +2852,7 @@
           descEl.textContent = 'No active incidents recorded for this repository. Ingest runtime telemetry to observe live operational evidence.';
           descEl.className = "text-xs text-[#64748B] mt-1 leading-relaxed";
         }
-        if (targetEl) targetEl.textContent = 'No live telemetry';
+        if (targetEl) targetEl.textContent = 'No active incident target';
 
         if (badgesContainer) {
           badgesContainer.innerHTML = `
@@ -2126,7 +2863,10 @@
           `;
         }
 
-        if (confEl) confEl.textContent = 'Evidence: Static model (no live telemetry)';
+        if (confEl) confEl.textContent = 'Deterministic static verification';
+
+        if (invBtnLabel) invBtnLabel.textContent = 'View Incidents (0 Active)';
+        if (invBtnIcon) invBtnIcon.textContent = 'visibility';
 
         const doViewIncidents = () => {
           switchPrimaryView('incidents');
@@ -2334,114 +3074,127 @@
 
     async function runSoftwareQuery(query) {
       if (!resultsContainer) return;
-      resultsContainer.innerHTML = `
-        <div class="flex items-center justify-center p-12 text-on-surface-variant gap-3">
-          <span class="material-symbols-outlined animate-spin text-primary">progress_activity</span>
-          <span class="text-xs font-mono">Synthesizing twin graph, telemetry, and evidence for: "${escapeHtml(query)}"...</span>
-        </div>
-      `;
-
-      const qLower = query.toLowerCase();
       const repoId = state.currentRepoId;
       const snapId = state.currentSnapshotId;
 
-      try {
-        if (qLower.includes('incident') || qLower.includes('triage') || qLower.includes('outage') || qLower.includes('failure')) {
-          const res = await fetch(`/repositories/${repoId}/incidents`);
-          const incidents = res.ok ? await res.json() : [];
-          if (incidents.length === 0) {
-            resultsContainer.innerHTML = `
-              <div class="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 space-y-3">
-                <div class="flex items-center gap-2 text-emerald-400 font-semibold text-sm">
-                  <span class="material-symbols-outlined">check_circle</span> Zero Active Incidents
-                </div>
-                <p class="text-xs text-on-surface-variant">The software digital twin reports zero open production incidents. All monitored services and components are within normal operating parameters.</p>
-              </div>
-            `;
-          } else {
-            resultsContainer.innerHTML = `
-              <div class="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 space-y-4">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2 text-red-400 font-semibold text-sm">
-                    <span class="material-symbols-outlined">warning</span> Found ${incidents.length} Tracked Incident(s)
-                  </div>
-                  <button class="px-3 py-1 rounded-lg bg-red-600/20 text-red-400 text-xs font-medium border border-red-500/30" onclick="window.TwinApp.switchPrimaryView('incidents')">Open Triage View →</button>
-                </div>
-                <div class="space-y-3">
-                  ${incidents.map(inc => `
-                    <div class="p-3 bg-surface-container rounded-xl border border-outline-variant/20 flex items-center justify-between">
-                      <div>
-                        <div class="text-xs font-bold text-on-surface">${escapeHtml(inc.title)}</div>
-                        <div class="text-[11px] text-on-surface-variant mt-0.5">${escapeHtml(inc.description || 'Target: ' + (inc.affected_component_name || 'Component root'))}</div>
-                      </div>
-                      <button class="px-2.5 py-1 rounded-lg bg-primary hover:bg-blue-600 text-white text-[11px] font-semibold" onclick="window.TwinApp.investigateIncident('${inc.id}')">Investigate Causal Path</button>
-                    </div>
-                  `).join('')}
-                </div>
-              </div>
-            `;
-          }
-        } else if (qLower.includes('blast radius') || qLower.includes('impact') || qLower.includes('change')) {
-          resultsContainer.innerHTML = `
-            <div class="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 space-y-4">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2 text-primary font-semibold text-sm">
-                  <span class="material-symbols-outlined">radar</span> Change Impact Intelligence
-                </div>
-                <button class="px-3 py-1 rounded-lg bg-primary text-white text-xs font-semibold" onclick="window.TwinApp.switchPrimaryView('impact')">Run Full Blast-Radius →</button>
-              </div>
-              <p class="text-xs text-on-surface-variant">Deterministic change detection computes structural diffs between Git snapshots and propagates causal dependency paths through the architecture graph to identify directly and indirectly affected components, APIs, process steps, and test suites.</p>
+      if (!repoId) {
+        resultsContainer.innerHTML = `
+          <div class="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 space-y-3">
+            <div class="flex items-center gap-2 text-amber-400 font-semibold text-sm">
+              <span class="material-symbols-outlined">warning</span> No Repository Selected
             </div>
-          `;
-        } else {
-          let url = `/repositories/${repoId}/components`;
-          if (snapId) url += `?snapshot_id=${snapId}`;
-          const res = await fetch(url);
-          const data = res.ok ? await res.json() : { components: [] };
-          const components = data.components || [];
-          const matches = components.filter(c =>
-            c.name.toLowerCase().includes(qLower) ||
-            (c.qualified_name && c.qualified_name.toLowerCase().includes(qLower)) ||
-            (c.location && c.location.toLowerCase().includes(qLower))
-          ).slice(0, 10);
+            <p class="text-xs text-on-surface-variant">Please connect or select a repository to query Twin Knowledge.</p>
+          </div>
+        `;
+        return;
+      }
 
-          if (matches.length > 0) {
-            resultsContainer.innerHTML = `
-              <div class="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 space-y-4">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2 text-cyan-400 font-semibold text-sm">
-                    <span class="material-symbols-outlined">category</span> Matched ${matches.length} Architectural Component(s)
-                  </div>
-                  <button class="px-3 py-1 rounded-lg bg-surface-container-high hover:bg-surface-container-highest text-xs text-on-surface" onclick="window.TwinApp.switchPrimaryView('components')">View All in Catalog →</button>
+      resultsContainer.innerHTML = `
+        <div class="flex items-center justify-center p-12 text-on-surface-variant gap-3">
+          <span class="material-symbols-outlined animate-spin text-primary">progress_activity</span>
+          <span class="text-xs font-mono">Querying deterministic Twin Knowledge for: "${escapeHtml(query)}"...</span>
+        </div>
+      `;
+
+      try {
+        const res = await apiFetch(`/repositories/${repoId}/twin-knowledge/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: query, snapshot_id: snapId || null }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(errData.detail || `Query failed with status ${res.status}`);
+        }
+
+        const data = await res.json();
+        const prov = data.provenance || 'OBSERVED';
+        let provBadgeClass = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+        if (prov === 'DERIVED') provBadgeClass = 'bg-blue-500/10 text-blue-400 border-blue-500/30';
+        else if (prov === 'INFERRED') provBadgeClass = 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+        else if (prov === 'SIMULATED') provBadgeClass = 'bg-purple-500/10 text-purple-400 border-purple-500/30';
+        else if (prov === 'UNKNOWN') provBadgeClass = 'bg-rose-500/10 text-rose-400 border-rose-500/30';
+
+        const confPct = Math.round((data.confidence ?? 1.0) * 100);
+        const groundedEntities = data.grounded_entities || [];
+        const evidenceIds = data.evidence_ids || [];
+        const suggestedActions = data.suggested_actions || [];
+
+        resultsContainer.innerHTML = `
+          <div class="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 space-y-5 animate-in fade-in duration-200">
+            <!-- Header Bar -->
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 pb-4">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary">psychology</span>
+                <span class="text-sm font-bold text-on-surface">Twin Knowledge Result</span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono border ${provBadgeClass}">${escapeHtml(prov)}</span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-surface-container-high text-on-surface-variant border border-outline-variant/30">${escapeHtml(data.intent || 'QUERY')}</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs font-mono text-on-surface-variant">
+                <span class="material-symbols-outlined text-xs text-emerald-400">verified</span>
+                <span>${confPct}% Grounded</span>
+              </div>
+            </div>
+
+            <!-- Answer Box -->
+            <div class="p-4 bg-surface-container/60 rounded-xl border border-outline-variant/20">
+              <p class="text-xs leading-relaxed text-on-surface font-sans">${escapeHtml(data.answer)}</p>
+            </div>
+
+            <!-- Grounded Entities -->
+            ${groundedEntities.length > 0 ? `
+              <div class="space-y-2">
+                <div class="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-xs">account_tree</span>
+                  Grounded Twin Entities (${groundedEntities.length})
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  ${matches.map(c => `
-                    <div class="p-3 bg-surface-container rounded-xl border border-outline-variant/20 hover:border-primary/40 transition-colors">
-                      <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-on-surface">${escapeHtml(c.name)}</span>
-                        <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">${escapeHtml(c.type)}</span>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  ${groundedEntities.map(ent => `
+                    <div class="p-2.5 bg-surface-container rounded-lg border border-outline-variant/20 flex flex-col justify-between">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-xs font-semibold text-on-surface truncate">${escapeHtml(ent.name || ent.title || ent.id || 'Entity')}</span>
+                        ${ent.type ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">${escapeHtml(ent.type)}</span>` : ''}
+                        ${ent.severity ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-rose-500/10 text-rose-400 border border-rose-500/20">${escapeHtml(ent.severity)}</span>` : ''}
                       </div>
-                      <div class="text-[11px] text-on-surface-variant font-mono mt-1 truncate">${escapeHtml(c.location || c.qualified_name || '-')}</div>
+                      ${ent.location ? `<div class="text-[10px] text-on-surface-variant font-mono mt-1 truncate">${escapeHtml(ent.location)}</div>` : ''}
+                      ${ent.evidence_id ? `<div class="mt-1.5 text-[9px] font-mono text-cyan-400 flex items-center gap-1"><span class="material-symbols-outlined text-[10px]">fingerprint</span>${escapeHtml(ent.evidence_id)}</div>` : ''}
                     </div>
                   `).join('')}
                 </div>
               </div>
-            `;
-          } else {
-            resultsContainer.innerHTML = `
-              <div class="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-6 space-y-3">
-                <div class="flex items-center gap-2 text-on-surface font-semibold text-sm">
-                  <span class="material-symbols-outlined">search</span> Query Result
-                </div>
-                <p class="text-xs text-on-surface-variant">No exact components matched "${escapeHtml(query)}". Try querying about active incidents, blast radius, specific module names, or run a full snapshot comparison.</p>
+            ` : ''}
+
+            <!-- Authoritative Evidence Chain -->
+            ${evidenceIds.length > 0 ? `
+              <div class="pt-2 border-t border-outline-variant/15 flex flex-wrap items-center gap-2">
+                <span class="text-[10px] uppercase font-bold text-on-surface-variant">Evidence Provenance:</span>
+                ${evidenceIds.map(eid => `
+                  <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-surface-container-highest text-cyan-300 border border-cyan-500/20 flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[10px]">verified</span>
+                    ${escapeHtml(eid)}
+                  </span>
+                `).join('')}
               </div>
-            `;
-          }
-        }
+            ` : ''}
+
+            <!-- Suggested Actions -->
+            ${suggestedActions.length > 0 ? `
+              <div class="flex flex-wrap items-center gap-2 pt-2">
+                ${suggestedActions.map(act => `
+                  <button class="px-3 py-1.5 rounded-lg bg-primary hover:bg-blue-600 text-white text-xs font-medium transition-colors flex items-center gap-1.5" onclick="window.TwinApp.switchPrimaryView('${act.view}')">
+                    <span>${escapeHtml(act.label)}</span>
+                    <span class="material-symbols-outlined text-xs">arrow_forward</span>
+                  </button>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+        `;
       } catch (err) {
         resultsContainer.innerHTML = `
-          <div class="bg-surface-container-low border border-red-500/30 rounded-2xl p-6 space-y-2 text-red-400 text-xs">
-            <div class="font-bold flex items-center gap-2"><span class="material-symbols-outlined">error</span> Query Failed</div>
+          <div class="bg-surface-container-low border border-rose-500/30 rounded-2xl p-6 space-y-2 text-rose-400 text-xs">
+            <div class="font-bold flex items-center gap-2"><span class="material-symbols-outlined">error</span> Deterministic Twin Query Error</div>
             <p>${escapeHtml(err.message)}</p>
           </div>
         `;
@@ -3186,7 +3939,7 @@
     try {
       const baseSelect = document.getElementById('diff-base-select');
       const targetSelect = document.getElementById('diff-target-select');
-      const targetSnapId = (targetSelect && targetSelect.value) || state.currentSnapshotId || (state.snapshots[0] ? state.snapshots[0].id : null);
+      const targetSnapId = (targetSelect && targetSelect.value) || state.currentSnapshotId || null;
       let baseSnapId = (baseSelect && baseSelect.value && baseSelect.value !== targetSnapId)
         ? baseSelect.value
         : (state.diffSnapshotId && state.diffSnapshotId !== targetSnapId
@@ -3356,7 +4109,35 @@
       }
 
     } catch (err) {
-      if (banner) banner.textContent = `Analysis error: ${err.message}`;
+      if (banner) {
+        banner.className = 'p-3 bg-[#FEF2F2] border border-[#FCA5A5] rounded-xl text-xs text-[#991B1B] font-semibold flex items-center justify-between gap-2';
+        banner.innerHTML = `
+          <div class="flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[16px] text-[#EF4444]">error</span>
+            <span>Test Impact Computation: ${escapeHtml(err.message)}</span>
+          </div>
+          <button onclick="TwinApp.executeTestImpactAnalysis()" class="px-2.5 py-1 rounded bg-[#EF4444] text-white text-[11px] font-bold hover:bg-[#DC2626]">Retry</button>
+        `;
+      }
+      ['ti-metric-affected', 'ti-metric-direct', 'ti-metric-indirect', 'ti-metric-unaffected', 'ti-metric-unknown'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '—';
+      });
+      ['ti-tab-count-affected', 'ti-tab-count-unknown', 'ti-tab-count-unaffected'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '—';
+      });
+      if (affectedList) {
+        affectedList.innerHTML = `
+          <div class="p-8 text-center bg-white border border-[#FCA5A5] rounded-xl text-xs">
+            <span class="material-symbols-outlined text-2xl text-[#EF4444] mb-1">error</span>
+            <div class="font-bold text-[#991B1B]">Test Impact Analysis Failed</div>
+            <p class="text-[#64748B] mt-1">${escapeHtml(err.message)}</p>
+            <p class="text-[#94A3B8] text-[11px] mt-0.5">Please ensure both baseline and target revisions are valid.</p>
+            <button onclick="TwinApp.executeTestImpactAnalysis()" class="mt-3 px-3 py-1.5 rounded-lg bg-[#0071E3] text-white text-xs font-semibold hover:bg-[#0077ED]">Retry Analysis</button>
+          </div>
+        `;
+      }
     }
   }
 
@@ -3421,17 +4202,22 @@
       riskBtn.onclick = () => executeRiskAnalysis();
     }
 
-    const viewGraphBtn = document.getElementById('btn-view-impact-graph');
-    if (viewGraphBtn) {
-      viewGraphBtn.onclick = () => projectImpactGraph();
-    }
-
     const baseSelect = document.getElementById('diff-base-select');
     const targetSelect = document.getElementById('diff-target-select');
+    const impactBaseSelect = document.getElementById('impact-base-select');
+    const impactTargetSelect = document.getElementById('impact-target-select');
 
     if (baseSelect && targetSelect) {
-      baseSelect.onchange = () => executeSnapshotDiff();
-      targetSelect.onchange = () => executeSnapshotDiff();
+      baseSelect.onchange = () => {
+        if (impactBaseSelect) impactBaseSelect.value = baseSelect.value;
+        validateBaselineAndTargetSelection();
+        executeSnapshotDiff();
+      };
+      targetSelect.onchange = () => {
+        if (impactTargetSelect) impactTargetSelect.value = targetSelect.value;
+        validateBaselineAndTargetSelection();
+        executeSnapshotDiff();
+      };
 
       // Automatically execute snapshot diff if both base and target are selected
       if (baseSelect.value && targetSelect.value && baseSelect.value !== targetSelect.value) {
@@ -3490,67 +4276,333 @@
     }
   }
 
+  function renderImpactDiffTable(changes = []) {
+    const diffTbody = document.getElementById('diff-table-body');
+    if (!diffTbody) return;
+    diffTbody.innerHTML = '';
+    if (!changes || changes.length === 0) {
+      diffTbody.innerHTML = '<tr><td colspan="5" class="td-empty" style="text-align:center; padding: 2rem; color:#64748B;">Zero structural changes detected between selected commits.</td></tr>';
+      return;
+    }
+    changes.forEach(c => {
+      const tr = document.createElement('tr');
+      const statusClass = c.change_type === 'ADDED' ? 'diff-add' : (c.change_type === 'REMOVED' ? 'diff-del' : 'diff-mod');
+      tr.innerHTML = `
+        <td><span class="diff-tag ${statusClass}">${c.change_type}</span></td>
+        <td>
+          <a href="#" onclick="window.TwinApp.inspectNodeByName('${escapeHtml(c.qualified_name)}'); return false;" style="color:#38bdf8;text-decoration:none;font-weight:600;">
+            ${escapeHtml(c.qualified_name)}
+          </a>
+        </td>
+        <td><span class="type-pill type-${c.artifact_type}">${c.artifact_type}</span></td>
+        <td class="text-mono" style="font-size:11px;">${escapeHtml(c.source_file || '')}${c.line_start ? `:${c.line_start}-${c.line_end}` : ''}</td>
+        <td style="font-size:11px;color:var(--text-secondary);">${escapeHtml(c.evidence?.[0] || c.detection_method)} (${c.is_symbol_level ? 'Symbol Level' : 'File Fallback'})</td>
+      `;
+      diffTbody.appendChild(tr);
+    });
+  }
+
+  function renderCausalPropagationTree(data) {
+    const pathsContainer = document.getElementById('impact-paths-tree');
+    const pathsCount = document.getElementById('impact-paths-count');
+    if (pathsCount) pathsCount.textContent = (data.paths || []).length;
+    if (!pathsContainer) return;
+
+    pathsContainer.innerHTML = '';
+
+    const paths = data.paths || [];
+    const changes = data.changes || [];
+    const directAffected = data.impact_tree?.direct || [];
+    const indirectAffected = data.impact_tree?.indirect || [];
+    const tests = data.impact_tree?.tests || [];
+
+    if (changes.length === 0) {
+      pathsContainer.innerHTML = '<div class="p-6 text-center text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl border border-dashed border-[#CBD5E1]">Zero code changes detected between baseline and target commits. Downstream propagation is empty.</div>';
+      return;
+    }
+
+    if (paths.length === 0 && directAffected.length === 0) {
+      pathsContainer.innerHTML = `
+        <div class="p-6 text-center text-xs text-[#10B981] bg-[#ECFDF5] rounded-xl border border-dashed border-[#A7F3D0] space-y-1">
+          <div class="font-bold text-sm">✓ Analysis Completed: Zero Downstream Impact</div>
+          <div class="text-[#065F46]">The ${changes.length} changed entities are isolated. No components, services, APIs, or tests depend on these modified symbols.</div>
+        </div>
+      `;
+      return;
+    }
+
+    // Top Summary Banner in Tree
+    const headerSummary = document.createElement('div');
+    headerSummary.className = 'p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg flex flex-wrap items-center justify-between gap-2 text-xs';
+    headerSummary.innerHTML = `
+      <div class="flex items-center gap-3">
+        <span class="font-bold text-[#0F172A]">Causal Impact Chains:</span>
+        <span class="px-2 py-0.5 rounded bg-[#FEF3C7] text-[#92400E] font-semibold text-[11px]">${changes.length} Changed</span>
+        <span class="px-2 py-0.5 rounded bg-[#FEE2E2] text-[#991B1B] font-semibold text-[11px]">${directAffected.length} Direct</span>
+        <span class="px-2 py-0.5 rounded bg-[#FCE7F3] text-[#9D174D] font-semibold text-[11px]">${indirectAffected.length} Multi-Hop</span>
+        <span class="px-2 py-0.5 rounded bg-[#D1FAE5] text-[#065F46] font-semibold text-[11px]">${tests.length} Tests</span>
+      </div>
+      <span class="text-[#64748B] text-[11px]">Max Propagation Depth: ${data.summary?.max_propagation_depth || 1}</span>
+    `;
+    pathsContainer.appendChild(headerSummary);
+
+    // Render individual paths
+    paths.forEach((p, idx) => {
+      const card = document.createElement('div');
+      card.className = 'p-3 bg-white rounded-lg border border-[#E2E8F0] shadow-2xs space-y-2';
+
+      let chainHtml = '';
+      for (let i = 0; i < p.nodes.length; i++) {
+        const nodeName = p.nodes[i];
+        const isRoot = (i === 0);
+        const isTarget = (i === p.nodes.length - 1);
+        const isTestNode = isTarget && p.terminal_type === 'TEST';
+
+        let nodeBg = 'bg-[#F1F5F9] text-[#334155] border-[#CBD5E1]';
+        if (isRoot) nodeBg = 'bg-[#FEF3C7] text-[#92400E] border-[#FDE68A]';
+        else if (isTestNode) nodeBg = 'bg-[#D1FAE5] text-[#065F46] border-[#A7F3D0]';
+        else if (isTarget) nodeBg = 'bg-[#FEE2E2] text-[#991B1B] border-[#FECACA]';
+
+        chainHtml += `
+          <span onclick="window.TwinApp.inspectNodeByName('${escapeHtml(nodeName)}')" class="inline-flex items-center px-2 py-1 rounded text-xs font-mono font-semibold cursor-pointer border ${nodeBg} hover:opacity-80 transition-opacity">
+            ${escapeHtml(nodeName)}
+          </span>
+        `;
+        if (i < p.relationships.length) {
+          const rel = p.relationships[i] || 'IMPACTS';
+          chainHtml += `<span class="text-[#8B5CF6] text-[10px] font-bold px-1 select-none">--[${rel}]--></span>`;
+        }
+      }
+
+      card.innerHTML = `
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2">
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#EDE9FE] text-[#6D28D9]">DEPTH ${p.depth}</span>
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#F1F5F9] text-[#475569] uppercase">${p.terminal_type}</span>
+          </div>
+          <span class="text-[11px] font-semibold text-[#10B981]">${(p.confidence * 100).toFixed(0)}% Confidence</span>
+        </div>
+        <div class="flex items-center flex-wrap gap-1 pt-1">
+          ${chainHtml}
+        </div>
+      `;
+      pathsContainer.appendChild(card);
+    });
+
+    // Test coverage & verification section
+    if (tests.length > 0) {
+      const testSection = document.createElement('div');
+      testSection.className = 'mt-3 p-3 bg-[#ECFDF5] border border-[#A7F3D0] rounded-lg text-xs space-y-2';
+      testSection.innerHTML = `
+        <div class="flex items-center justify-between font-bold text-[#065F46]">
+          <span class="flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[16px]">verified</span>
+            <span>Impacted Verification Suites (${tests.length})</span>
+          </span>
+          <span class="text-[11px] font-semibold px-2 py-0.5 rounded bg-white/80 border border-[#A7F3D0]">Requires Re-Run (Historical Execution Not Evaluated)</span>
+        </div>
+        <div class="space-y-1">
+          ${tests.map(t => `
+            <div class="flex items-center justify-between font-mono text-[11px] bg-white/70 px-2 py-1 rounded border border-[#D1FAE5]">
+              <span class="text-[#047857] font-semibold">${escapeHtml(t.qualified_name || t.id)}</span>
+              <span class="text-[#64748B] text-[10px]">${escapeHtml(t.source_file || '')}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      pathsContainer.appendChild(testSection);
+    } else {
+      const noTestsNote = document.createElement('div');
+      noTestsNote.className = 'p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-xs text-[#64748B] flex flex-col sm:flex-row sm:items-center justify-between gap-1';
+      noTestsNote.innerHTML = `
+        <div class="flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-[16px] text-[#F59E0B]">warning</span>
+          <span>No historical execution evidence available for this commit. No test suites directly cover changed symbols.</span>
+        </div>
+        <span class="text-[10px] font-semibold text-[#D97706] bg-[#FEF3C7] px-2 py-0.5 rounded border border-[#FDE68A]">Coverage Gap (Unverified)</span>
+      `;
+      pathsContainer.appendChild(noTestsNote);
+    }
+  }
+
+  function renderImpactFindingsTable(findings = []) {
+    const findingsBody = document.getElementById('impact-findings-body');
+    const findingsCount = document.getElementById('impact-findings-count');
+    if (findingsCount) findingsCount.textContent = (findings || []).length;
+    if (!findingsBody) return;
+
+    findingsBody.innerHTML = '';
+    if (!findings || findings.length === 0) {
+      findingsBody.innerHTML = '<tr><td colspan="7" class="td-empty">Zero impact findings generated.</td></tr>';
+      return;
+    }
+    findings.forEach(f => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><span class="badge" style="background:${f.impact_level === 1 ? '#ef444422' : '#ec489922'};color:${f.impact_level === 1 ? '#ef4444' : '#ec4899'};font-size:10px;padding:2px 6px;">Level ${f.impact_level}</span></td>
+        <td><a href="#" onclick="window.TwinApp.inspectNodeByName('${escapeHtml(f.source_qual_name)}'); return false;" style="color:#f59e0b;font-weight:600;text-decoration:none;">${escapeHtml(f.source_qual_name)}</a></td>
+        <td><span style="font-family:var(--font-mono);font-size:11px;color:#c084fc;font-weight:700;">${f.relationship_type}</span></td>
+        <td><a href="#" onclick="window.TwinApp.inspectNodeByName('${escapeHtml(f.target_qual_name)}'); return false;" style="color:#38bdf8;font-weight:600;text-decoration:none;">${escapeHtml(f.target_qual_name)}</a></td>
+        <td><span class="type-pill type-${f.target_type}">${f.target_type}</span></td>
+        <td style="color:#10b981;font-weight:600;">${(f.confidence * 100).toFixed(0)}%</td>
+        <td style="font-size:11px;color:var(--text-secondary);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(f.evidence.join(' \n'))}">
+          ${escapeHtml(f.evidence[f.evidence.length - 1] || f.detection_method)}
+        </td>
+      `;
+      findingsBody.appendChild(tr);
+    });
+  }
+
+  function renderImpactCategoriesGrid(cats = {}) {
+    const catGrid = document.getElementById('impact-categories-grid');
+    if (!catGrid) return;
+    catGrid.innerHTML = '';
+    const catLabels = [
+      { key: 'affected_components', title: 'Affected Components', color: '#38bdf8' },
+      { key: 'affected_services', title: 'Affected Services', color: '#a78bfa' },
+      { key: 'affected_apis', title: 'Affected APIs', color: '#f472b6' },
+      { key: 'affected_processes', title: 'Affected Processes', color: '#818cf8' },
+      { key: 'affected_tests', title: 'Affected Tests', color: '#10b981' },
+      { key: 'affected_database_entities', title: 'Affected Database Entities', color: '#fb923c' },
+    ];
+
+    catLabels.forEach(cat => {
+      const items = cats[cat.key] || [];
+      const card = document.createElement('div');
+      card.style.cssText = 'background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:12px;';
+      card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;border-bottom:1px solid var(--border-subtle);padding-bottom:6px;">
+          <h4 style="font-size:12px;font-weight:700;color:${cat.color};text-transform:uppercase;">${cat.title}</h4>
+          <span class="badge" style="background:${cat.color}22;color:${cat.color};font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;">${items.length}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;">
+          ${items.length > 0 ? items.map(name => `
+            <div onclick="window.TwinApp.inspectNodeByName('${escapeHtml(name)}')" style="cursor:pointer;font-family:var(--font-mono);font-size:11px;color:var(--text-primary);padding:3px 6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(name)}">
+              • ${escapeHtml(name)}
+            </div>
+          `).join('') : '<div style="color:var(--text-muted);font-size:11px;">None identified.</div>'}
+        </div>
+      `;
+      catGrid.appendChild(card);
+    });
+  }
+
   async function executeChangeImpactAnalysis() {
-    const baseSelect = document.getElementById('diff-base-select');
-    const targetSelect = document.getElementById('diff-target-select');
+    const baseSelect = document.getElementById('impact-base-select') || document.getElementById('diff-base-select');
+    const targetSelect = document.getElementById('impact-target-select') || document.getElementById('diff-target-select');
     const depthInput = document.getElementById('impact-depth-input');
     const impactContainer = document.getElementById('impact-analysis-container');
     const diffTbody = document.getElementById('diff-table-body');
     const metaSpan = document.getElementById('impact-analysis-meta');
+    const tree = document.getElementById('impact-paths-tree');
+    const runBtn = document.getElementById('btn-run-impact-action');
+    const anim3dBtn = document.getElementById('btn-impact-visualize-3d');
 
     if (!baseSelect || !targetSelect) return;
-    const baseId = baseSelect.value;
-    const targetId = targetSelect.value;
+    const baseOpt = baseSelect.selectedOptions[0];
+    const targetOpt = targetSelect.selectedOptions[0];
+    const baseSha = baseOpt?.dataset.sha || baseSelect.value;
+    const targetSha = targetOpt?.dataset.sha || targetSelect.value;
     const maxDepth = depthInput ? parseInt(depthInput.value, 10) || 5 : 5;
 
-    if (!baseId || !targetId) {
-      if (diffTbody) {
-        diffTbody.innerHTML = '<tr><td colspan="5" class="td-empty" style="text-align:center; padding: 2rem; color:#64748B;">Please select both Baseline and Target snapshots to compare.</td></tr>';
-      }
+    if (!baseSha || !targetSha) {
+      setImpactMetricCardState('BLOCKED');
+      if (metaSpan) metaSpan.innerHTML = `<span style="color:#64748B;">Please select both Baseline and Target commits to compare.</span>`;
+      if (diffTbody) diffTbody.innerHTML = '<tr><td colspan="5" class="td-empty" style="text-align:center; padding: 2rem; color:#64748B;">Please select both Baseline and Target commits to compare.</td></tr>';
+      if (tree) tree.innerHTML = '<div class="p-6 text-center text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl border border-dashed border-[#CBD5E1]">Please select distinct Baseline and Target commits in the dropdowns above to execute impact propagation.</div>';
       return;
     }
 
-    if (baseId === targetId) {
+    if (baseSha === targetSha) {
+      setImpactMetricCardState('BLOCKED');
+      currentImpactAnalysisResult = null;
+      if (anim3dBtn) {
+        anim3dBtn.disabled = true;
+        anim3dBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      }
       if (metaSpan) {
-        metaSpan.innerHTML = `<span style="color:#f59e0b; font-weight:600;">Baseline and Target snapshots are identical. Select distinct snapshots to analyze changes.</span>`;
+        metaSpan.innerHTML = `<span style="color:#f59e0b; font-weight:600;">Baseline and Target refer to the same commit (${baseSha.slice(0, 7)}). Select distinct commits to analyze changes.</span>`;
       }
       if (diffTbody) {
-        diffTbody.innerHTML = '<tr><td colspan="5" class="td-empty" style="text-align:center; padding: 2rem; color:#64748B;">Identical snapshots selected (Base == Target). Comparison requires distinct versions.</td></tr>';
+        diffTbody.innerHTML = '<tr><td colspan="5" class="td-empty" style="text-align:center; padding: 2rem; color:#64748B;">Identical commits selected (Baseline == Target). Pairwise comparison requires distinct commits.</td></tr>';
       }
-      const tree = document.getElementById('impact-paths-tree');
       if (tree) {
-        tree.innerHTML = '<div class="p-6 text-center text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl border border-dashed border-[#CBD5E1]">Identical snapshots selected (Base == Target). Please select distinct versions to compute impact propagation paths.</div>';
+        tree.innerHTML = '<div class="p-6 text-center text-xs text-[#F59E0B] bg-[#FFFBEB] rounded-xl border border-dashed border-[#FDE68A]">Identical commits selected (Baseline == Target). Please select distinct versions to compute impact propagation paths.</div>';
       }
-      document.getElementById('metric-impact-changed').textContent = '-';
-      document.getElementById('metric-impact-direct').textContent = '-';
-      document.getElementById('metric-impact-indirect').textContent = '-';
-      document.getElementById('metric-impact-components').textContent = '-';
-      document.getElementById('metric-impact-apis').textContent = '-';
-      document.getElementById('metric-impact-processes').textContent = '-';
-      document.getElementById('metric-impact-tests').textContent = '-';
       return;
     }
 
     state.impactAnalysisSeq = (state.impactAnalysisSeq || 0) + 1;
     const currentSeq = state.impactAnalysisSeq;
 
-    if (impactContainer) {
-      impactContainer.style.display = 'block';
+    if (impactContainer) impactContainer.style.display = 'block';
+    if (runBtn) {
+      runBtn.disabled = true;
+      runBtn.classList.add('opacity-70');
+      runBtn.innerHTML = '<span class="material-symbols-outlined text-[15px] animate-spin">refresh</span><span>Analyzing...</span>';
     }
+    setImpactMetricCardState('LOADING');
     if (metaSpan) {
-      metaSpan.innerHTML = `<span style="color:#a78bfa;">Analyzing blast-radius traversal (depth ≤ ${maxDepth})...</span>`;
+      metaSpan.innerHTML = `<span style="color:#a78bfa;">Computing deterministic Change Impact & Blast Radius (depth ≤ ${maxDepth})...</span>`;
     }
     if (diffTbody) {
       diffTbody.innerHTML = '<tr><td colspan="5" class="td-loading">⚡ Running deterministic Change Impact & Blast Radius analysis...</td></tr>';
     }
 
     try {
+      // Step A: Check if Baseline or Target snapshot needs reconstruction from Git source tree
+      let resolvedBaseId = baseOpt?.dataset.snapshotId || baseSelect.value;
+      let resolvedTargetId = targetOpt?.dataset.snapshotId || targetSelect.value;
+
+      if (!resolvedBaseId || baseOpt?.dataset.hasSnapshot === 'false') {
+        if (metaSpan) metaSpan.innerHTML = `<span style="color:#38bdf8;">Reconstructing historical Twin snapshot for commit ${baseSha.slice(0, 7)} from Git source tree...</span>`;
+        const reconRes = await fetch(`/repositories/${state.currentRepoId}/snapshots/reconstruct`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ commit_sha: baseSha }),
+        });
+        if (!reconRes.ok) {
+          const errData = await reconRes.json().catch(() => ({}));
+          throw new Error(errData.detail || `Failed to reconstruct baseline commit ${baseSha.slice(0, 7)}`);
+        }
+        const reconData = await reconRes.json();
+        resolvedBaseId = reconData.snapshot_id;
+        if (baseOpt) {
+          baseOpt.value = resolvedBaseId;
+          baseOpt.dataset.hasSnapshot = 'true';
+          baseOpt.dataset.snapshotId = resolvedBaseId;
+          baseOpt.textContent = baseOpt.textContent.replace('[UNINDEXED]', '[ANALYZED]');
+        }
+      }
+
+      if (!resolvedTargetId || targetOpt?.dataset.hasSnapshot === 'false') {
+        if (metaSpan) metaSpan.innerHTML = `<span style="color:#38bdf8;">Reconstructing historical Twin snapshot for commit ${targetSha.slice(0, 7)} from Git source tree...</span>`;
+        const reconRes = await fetch(`/repositories/${state.currentRepoId}/snapshots/reconstruct`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ commit_sha: targetSha }),
+        });
+        if (!reconRes.ok) {
+          const errData = await reconRes.json().catch(() => ({}));
+          throw new Error(errData.detail || `Failed to reconstruct target commit ${targetSha.slice(0, 7)}`);
+        }
+        const reconData = await reconRes.json();
+        resolvedTargetId = reconData.snapshot_id;
+        if (targetOpt) {
+          targetOpt.value = resolvedTargetId;
+          targetOpt.dataset.hasSnapshot = 'true';
+          targetOpt.dataset.snapshotId = resolvedTargetId;
+          targetOpt.textContent = targetOpt.textContent.replace('[UNINDEXED]', '[ANALYZED]');
+        }
+      }
+
+      // Step B: Execute deterministic Change Impact analysis
       const res = await fetch(`/repositories/${state.currentRepoId}/impact-analysis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          base_snapshot_id: baseId,
-          target_snapshot_id: targetId,
+          base_snapshot_id: resolvedBaseId,
+          target_snapshot_id: resolvedTargetId,
           max_depth: maxDepth,
           include_tests: true,
           include_processes: true,
@@ -3569,185 +4621,94 @@
       if (currentSeq !== state.impactAnalysisSeq) return;
       currentImpactAnalysisResult = data;
 
+      if (data.status === 'NOT_READY') {
+        setImpactMetricCardState('BLOCKED');
+        if (anim3dBtn) {
+          anim3dBtn.disabled = true;
+          anim3dBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+        if (metaSpan) {
+          metaSpan.innerHTML = `Status: <strong style="color:#f59e0b;">NOT_READY</strong> | ${escapeHtml(data.message || 'Pairwise Change Impact requires two distinct snapshots.')}`;
+        }
+        if (diffTbody) {
+          diffTbody.innerHTML = `<tr><td colspan="5" class="td-empty" style="color:#f59e0b;font-weight:600;">⚠ NOT_READY: ${escapeHtml(data.message || 'No change detected between selected snapshots.')}</td></tr>`;
+        }
+        return;
+      }
+
       // 1. Update Metrics
       const s = data.summary || {};
-      document.getElementById('metric-impact-changed').textContent = s.changed || 0;
-      document.getElementById('metric-impact-direct').textContent = s.directly_affected || 0;
-      document.getElementById('metric-impact-indirect').textContent = s.indirectly_affected || 0;
-      document.getElementById('metric-impact-components').textContent = s.affected_components || 0;
-      document.getElementById('metric-impact-apis').textContent = s.affected_apis || 0;
-      document.getElementById('metric-impact-processes').textContent = s.affected_processes || 0;
-      document.getElementById('metric-impact-tests').textContent = s.affected_tests || 0;
+      setImpactMetricCardState('READY', s);
 
       if (metaSpan) {
-        metaSpan.innerHTML = `Analysis ID: <strong style="color:var(--text-primary);">${data.analysis_id}</strong> | Execution Time: <strong>${data.execution_time_ms} ms</strong> | Status: <strong style="color:#10b981;">COMPLETED</strong>`;
+        metaSpan.innerHTML = `Analysis ID: <strong style="color:var(--text-primary);">${data.analysis_id}</strong> | Execution Time: <strong>${data.execution_time_ms} ms</strong> | Status: <strong style="color:#10b981;">COMPLETED</strong> | Propagation Depth: <strong>${s.max_propagation_depth || 0}</strong>`;
       }
 
-      // 2. Render Changes into Diff Table
-      if (diffTbody) {
-        diffTbody.innerHTML = '';
-        if (!data.changes || data.changes.length === 0) {
-          diffTbody.innerHTML = '<tr><td colspan="5" class="td-empty">Zero structural changes detected between selected snapshots.</td></tr>';
-        } else {
-          data.changes.forEach(c => {
-            const tr = document.createElement('tr');
-            const statusClass = c.change_type === 'ADDED' ? 'diff-add' : (c.change_type === 'REMOVED' ? 'diff-del' : 'diff-mod');
-            tr.innerHTML = `
-              <td><span class="diff-tag ${statusClass}">${c.change_type}</span></td>
-              <td>
-                <a href="#" onclick="window.TwinApp.inspectNodeByName('${escapeHtml(c.qualified_name)}'); return false;" style="color:#38bdf8;text-decoration:none;font-weight:600;">
-                  ${escapeHtml(c.qualified_name)}
-                </a>
-              </td>
-              <td><span class="type-pill type-${c.artifact_type}">${c.artifact_type}</span></td>
-              <td class="text-mono" style="font-size:11px;">${escapeHtml(c.source_file || '')}${c.line_start ? `:${c.line_start}-${c.line_end}` : ''}</td>
-              <td style="font-size:11px;color:var(--text-secondary);">${escapeHtml(c.evidence?.[0] || c.detection_method)} (${c.is_symbol_level ? 'Symbol Level' : 'File Fallback'})</td>
-            `;
-            diffTbody.appendChild(tr);
-          });
-        }
+      // Enable 3D Animation button
+      if (anim3dBtn) {
+        anim3dBtn.disabled = false;
+        anim3dBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        anim3dBtn.classList.add('hover:bg-[#1E293B]', 'cursor-pointer');
+        anim3dBtn.title = 'View & Animate Verified Impact in 3D Architecture Twin';
       }
 
-      // 3. Render Causal Impact Paths
-      const pathsContainer = document.getElementById('impact-paths-tree');
-      const pathsCount = document.getElementById('impact-paths-count');
-      if (pathsCount) pathsCount.textContent = (data.paths || []).length;
+      // 2. Render Diff Table
+      renderImpactDiffTable(data.changes || []);
 
-      if (pathsContainer) {
-        pathsContainer.innerHTML = '';
-        if (!data.paths || data.paths.length === 0) {
-          pathsContainer.innerHTML = '<div style="color:var(--text-muted);padding:16px;text-align:center;">No causal propagation paths identified. Changes do not ripple outward.</div>';
-        } else {
-          data.paths.forEach((p, idx) => {
-            const card = document.createElement('div');
-            card.style.cssText = 'background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:10px 14px;';
-
-            let chainHtml = '';
-            for (let i = 0; i < p.nodes.length; i++) {
-              const nodeName = p.nodes[i];
-              const isRoot = (i === 0);
-              const isTarget = (i === p.nodes.length - 1);
-              const nodeBg = isRoot ? '#f59e0b22' : (isTarget ? '#ef444422' : 'var(--bg-secondary)');
-              const nodeColor = isRoot ? '#f59e0b' : (isTarget ? '#f87171' : '#38bdf8');
-
-              chainHtml += `
-                <span onclick="window.TwinApp.inspectNodeByName('${escapeHtml(nodeName)}')" style="cursor:pointer;background:${nodeBg};color:${nodeColor};padding:2px 8px;border-radius:4px;font-weight:600;font-size:11px;border:1px solid var(--border-color);">
-                  ${escapeHtml(nodeName)}
-                </span>
-              `;
-              if (i < p.relationships.length) {
-                const rel = p.relationships[i] || 'IMPACTS';
-                chainHtml += `<span style="color:#a78bfa;font-size:10px;font-weight:700;margin:0 4px;">--[${rel}]--></span>`;
-              }
-            }
-
-            card.innerHTML = `
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <span class="badge" style="background:#7c3aed22;color:#c084fc;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;">DEPTH ${p.depth}</span>
-                  <span class="badge" style="background:var(--bg-secondary);color:var(--text-secondary);font-size:10px;padding:2px 6px;border-radius:3px;">${p.terminal_type}</span>
-                </div>
-                <span style="font-size:11px;color:#10b981;font-weight:600;">${(p.confidence * 100).toFixed(0)}% Confidence</span>
-              </div>
-              <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:4px;">
-                ${chainHtml}
-              </div>
-            `;
-            pathsContainer.appendChild(card);
-          });
-        }
-      }
+      // 3. Render Causal Propagation Tree
+      renderCausalPropagationTree(data);
 
       // 4. Render Evidence & Findings Table
-      const findingsBody = document.getElementById('impact-findings-body');
-      const findingsCount = document.getElementById('impact-findings-count');
-      if (findingsCount) findingsCount.textContent = (data.findings || []).length;
-
-      if (findingsBody) {
-        findingsBody.innerHTML = '';
-        if (!data.findings || data.findings.length === 0) {
-          findingsBody.innerHTML = '<tr><td colspan="7" class="td-empty">Zero impact findings generated.</td></tr>';
-        } else {
-          data.findings.forEach(f => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-              <td><span class="badge" style="background:${f.impact_level === 1 ? '#ef444422' : '#ec489922'};color:${f.impact_level === 1 ? '#ef4444' : '#ec4899'};font-size:10px;padding:2px 6px;">Level ${f.impact_level}</span></td>
-              <td><a href="#" onclick="window.TwinApp.inspectNodeByName('${escapeHtml(f.source_qual_name)}'); return false;" style="color:#f59e0b;font-weight:600;text-decoration:none;">${escapeHtml(f.source_qual_name)}</a></td>
-              <td><span style="font-family:var(--font-mono);font-size:11px;color:#c084fc;font-weight:700;">${f.relationship_type}</span></td>
-              <td><a href="#" onclick="window.TwinApp.inspectNodeByName('${escapeHtml(f.target_qual_name)}'); return false;" style="color:#38bdf8;font-weight:600;text-decoration:none;">${escapeHtml(f.target_qual_name)}</a></td>
-              <td><span class="type-pill type-${f.target_type}">${f.target_type}</span></td>
-              <td style="color:#10b981;font-weight:600;">${(f.confidence * 100).toFixed(0)}%</td>
-              <td style="font-size:11px;color:var(--text-secondary);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(f.evidence.join(' \n'))}">
-                ${escapeHtml(f.evidence[f.evidence.length - 1] || f.detection_method)}
-              </td>
-            `;
-            findingsBody.appendChild(tr);
-          });
-        }
-      }
+      renderImpactFindingsTable(data.findings || []);
 
       // 5. Render Affected Categories Grid
-      const catGrid = document.getElementById('impact-categories-grid');
-      if (catGrid) {
-        catGrid.innerHTML = '';
-        const cats = data.affected_categories || {};
-        const catLabels = [
-          { key: 'affected_components', title: 'Affected Components', color: '#38bdf8' },
-          { key: 'affected_services', title: 'Affected Services', color: '#a78bfa' },
-          { key: 'affected_apis', title: 'Affected APIs', color: '#f472b6' },
-          { key: 'affected_processes', title: 'Affected Processes', color: '#818cf8' },
-          { key: 'affected_tests', title: 'Affected Tests', color: '#10b981' },
-          { key: 'affected_database_entities', title: 'Affected Database Entities', color: '#fb923c' },
-        ];
+      renderImpactCategoriesGrid(data.affected_categories || {});
 
-        catLabels.forEach(cat => {
-          const items = cats[cat.key] || [];
-          const card = document.createElement('div');
-          card.style.cssText = 'background:var(--bg-surface);border:1px solid var(--border-color);border-radius:6px;padding:12px;';
-          card.innerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;border-bottom:1px solid var(--border-subtle);padding-bottom:6px;">
-              <h4 style="font-size:12px;font-weight:700;color:${cat.color};text-transform:uppercase;">${cat.title}</h4>
-              <span class="badge" style="background:${cat.color}22;color:${cat.color};font-weight:700;font-size:10px;padding:1px 6px;border-radius:3px;">${items.length}</span>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;">
-              ${items.length > 0 ? items.map(name => `
-                <div onclick="window.TwinApp.inspectNodeByName('${escapeHtml(name)}')" style="cursor:pointer;font-family:var(--font-mono);font-size:11px;color:var(--text-primary);padding:3px 6px;background:var(--bg-secondary);border-radius:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(name)}">
-                  • ${escapeHtml(name)}
-                </div>
-              `).join('') : '<div style="color:var(--text-muted);font-size:11px;">None identified.</div>'}
-            </div>
-          `;
-          catGrid.appendChild(card);
-        });
-      }
-
-      // Automatically evaluate Phase 7 Risk Intelligence & Architecture Guardrails
+      // 6. Automatically evaluate Risk & Guardrails
       executeRiskAnalysis().catch(() => {});
 
     } catch (err) {
+      setImpactMetricCardState('ERROR');
+      if (anim3dBtn) {
+        anim3dBtn.disabled = true;
+        anim3dBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      }
       if (metaSpan) {
-        metaSpan.innerHTML = `<span style="color:#ef4444;">Error: ${escapeHtml(err.message)}</span>`;
+        metaSpan.innerHTML = `<span style="color:#ef4444; font-weight:600;">Error: ${escapeHtml(err.message)}</span>`;
       }
       if (diffTbody) {
         diffTbody.innerHTML = `<tr><td colspan="5" class="td-empty" style="color:#ef4444;">Analysis failed: ${escapeHtml(err.message)}</td></tr>`;
+      }
+      if (tree) {
+        tree.innerHTML = `<div class="p-6 text-center text-xs text-[#EF4444] bg-[#FEF2F2] rounded-xl border border-dashed border-[#FECACA]">Analysis failed: ${escapeHtml(err.message)}</div>`;
+      }
+    } finally {
+      if (runBtn) {
+        runBtn.disabled = false;
+        runBtn.classList.remove('opacity-70');
+        runBtn.innerHTML = '<span class="material-symbols-outlined text-[15px]">bolt</span><span>Execute Impact</span>';
       }
     }
   }
 
   async function executeRiskAnalysis() {
-    const baseSelect = document.getElementById('diff-base-select');
-    const targetSelect = document.getElementById('diff-target-select');
+    const baseSelect = document.getElementById('impact-base-select') || document.getElementById('diff-base-select');
+    const targetSelect = document.getElementById('impact-target-select') || document.getElementById('diff-target-select');
     const depthInput = document.getElementById('impact-depth-input');
     const emptyState = document.getElementById('risk-analysis-empty-state');
     const content = document.getElementById('risk-analysis-content');
     const btn = document.getElementById('btn-run-risk-action');
 
     if (!baseSelect || !targetSelect) return;
-    const baseId = baseSelect.value;
-    const targetId = targetSelect.value;
+    const baseOpt = baseSelect.selectedOptions[0];
+    const targetOpt = targetSelect.selectedOptions[0];
+    const baseId = baseOpt?.dataset.snapshotId || baseSelect.value;
+    const targetId = targetOpt?.dataset.snapshotId || targetSelect.value;
+    const baseSha = baseOpt?.dataset.sha || baseId;
+    const targetSha = targetOpt?.dataset.sha || targetId;
     const maxDepth = depthInput ? parseInt(depthInput.value, 10) || 5 : 5;
 
-    if (!baseId || !targetId) {
+    if (!baseId || !targetId || baseSha === targetSha) {
       return;
     }
 
@@ -3853,15 +4814,34 @@
               statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">UNKNOWN</span>';
             }
 
+            const evidenceHtml = (g.evidence && g.evidence.length > 0)
+              ? `<div class="mt-2 space-y-1 bg-[#F8FAFC] p-2.5 rounded border border-[#E2E8F0]">
+                  <div class="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">Evidence &amp; Defect Details (${g.evidence.length})</div>
+                  <ul class="text-[11px] font-mono text-[#334155] space-y-0.5 list-disc list-inside">
+                    ${g.evidence.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
+                  </ul>
+                </div>`
+              : '';
+
+            const affectedHtml = (g.affected_entities && g.affected_entities.length > 0)
+              ? `<div class="mt-1 flex flex-wrap gap-1">
+                  ${g.affected_entities.slice(0, 8).map(ent => `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">${escapeHtml(ent)}</span>`).join('')}
+                  ${g.affected_entities.length > 8 ? `<span class="text-[10px] text-[#64748B] self-center">+${g.affected_entities.length - 8} more</span>` : ''}
+                </div>`
+              : '';
+
             gCard.innerHTML = `
-              <div class="space-y-0.5">
-                <div class="flex items-center gap-2">
-                  <span class="text-xs font-bold text-[#0F172A]">[${escapeHtml(g.rule_id)}] ${escapeHtml(g.rule_name)}</span>
+              <div class="space-y-1 w-full">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-[#0F172A]">[${escapeHtml(g.rule_id)}] ${escapeHtml(g.rule_name)}</span>
+                    <span class="text-[10px] text-[#64748B] font-mono">${escapeHtml(g.guardrail_type)}</span>
+                  </div>
                   ${statusBadge}
-                  <span class="text-[10px] text-[#64748B] font-mono">${escapeHtml(g.guardrail_type)}</span>
                 </div>
                 <p class="text-xs text-[#475569]">${escapeHtml(g.explanation)}</p>
-                ${(g.evidence && g.evidence.length > 0) ? `<div class="text-[11px] text-[#64748B] font-mono mt-1">${escapeHtml(g.evidence[0])}</div>` : ''}
+                ${affectedHtml}
+                ${evidenceHtml}
               </div>
             `;
             guardrailsList.appendChild(gCard);
@@ -3976,17 +4956,30 @@
 
       if (banner) {
         banner.style.display = 'flex';
+        let modeBadge = '';
+        if (data.diff_mode === 'FILE_DIFF_ONLY') {
+          modeBadge = '<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">Git Revision File Delta</span>';
+        }
         banner.innerHTML = `
           <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">+${added} Added</span>
           <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-[#FFF1F2] text-[#BE123C] border border-[#FECDD3]">-${removed} Removed</span>
           <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]">~${modified} Modified</span>
-          <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">${summary.total_changes || 0} Total Changed Artifacts</span>
+          <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">${summary.total_changes || changes.length} Total Changed Artifacts</span>
+          ${modeBadge}
         `;
       }
 
       tbody.innerHTML = '';
       if (changes.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-[#64748B]">Zero structural differences detected between the selected snapshots.</td></tr>';
+        if (data.status === 'IDENTICAL_COMMITS') {
+          tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-xs font-medium text-[#F59E0B] bg-[#FFFBEB] border border-dashed border-[#FDE68A]">Identical revisions selected for Baseline and Target. Please select distinct commits to evaluate changes.</td></tr>';
+        } else if (data.status === 'VERIFIED_ZERO_CHANGES') {
+          tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-xs font-medium text-[#059669] bg-[#ECFDF5] border border-dashed border-[#A7F3D0]">✓ Verified Zero Changes: Both the Git tree and structural AST symbols are identical between these two revisions.</td></tr>';
+        } else if (data.status === 'REVISION_RESOLUTION_FAILED') {
+          tbody.innerHTML = `<tr<td colspan="5" class="p-6 text-center text-xs font-medium text-[#EF4444] bg-[#FEF2F2] border border-dashed border-[#FECDD3]">⚠ ${escapeHtml(data.message || 'Could not resolve the selected Git revisions or snapshots.')}</td></tr>`;
+        } else {
+          tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-[#64748B]">Zero structural differences detected between the selected revisions.</td></tr>';
+        }
         return;
       }
 
@@ -3995,13 +4988,17 @@
         tr.className = 'hover:bg-[#F8FAFC] transition-colors';
         const cType = n.change_type || 'MODIFIED';
         const tagClass = cType === 'ADDED' ? 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]' : (cType === 'REMOVED' ? 'bg-[#FFF1F2] text-[#BE123C] border-[#FECDD3]' : 'bg-[#FFFBEB] text-[#B45309] border-[#FDE68A]');
+        const artName = n.artifact_name || n.symbol_name || n.qualified_name || n.artifact_id;
+        const filePath = n.source_file || n.file_path || '';
+        const artType = n.artifact_type || (n.is_symbol_level ? 'SYMBOL' : 'FILE');
+        const detailText = (n.evidence && n.evidence.length > 0) ? n.evidence[0] : (n.details || (cType === 'ADDED' ? 'Added in target revision.' : (cType === 'REMOVED' ? 'Removed in target revision.' : 'Modified in revision delta.')));
 
         tr.innerHTML = `
           <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${tagClass}">${cType}</span></td>
-          <td class="p-3.5 font-bold text-xs text-[#0F172A]">${escapeHtml(n.artifact_name || n.artifact_id)}</td>
-          <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-[#EEF2FF] text-[#4F46E5] border border-[#C7D2FE]">${n.artifact_type}</span></td>
-          <td class="p-3.5 font-mono text-xs text-[#64748B]">${escapeHtml(n.file_path || '')}${n.line_number ? `:${n.line_number}` : ''}</td>
-          <td class="p-3.5 text-xs text-[#475569]">${escapeHtml(n.details || (cType === 'ADDED' ? 'New artifact discovered in target snapshot.' : (cType === 'REMOVED' ? 'Artifact absent in target snapshot.' : 'Signature or logic modified.')))}</td>
+          <td class="p-3.5 font-bold text-xs text-[#0F172A]">${escapeHtml(artName)}</td>
+          <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-[#EEF2FF] text-[#4F46E5] border border-[#C7D2FE]">${artType}</span></td>
+          <td class="p-3.5 font-mono text-xs text-[#64748B]">${escapeHtml(filePath)}${n.line_start ? `:${n.line_start}` : ''}</td>
+          <td class="p-3.5 text-xs text-[#475569]">${escapeHtml(detailText)}</td>
         `;
         tbody.appendChild(tr);
       });
@@ -4365,17 +5362,21 @@
     const rawEdges = (data.edges || []).filter(e => activeRels.size === 0 || activeRels.has(e.type));
 
     const existingPos = new Map();
-    state.nodes.forEach(n => existingPos.set(n.id, { x: n.x, y: n.y, vx: n.vx, vy: n.vy }));
+    state.nodes.forEach(n => {
+      if (isFinite(n.x) && isFinite(n.y)) {
+        existingPos.set(n.id, { x: n.x, y: n.y, vx: n.vx || 0, vy: n.vy || 0 });
+      }
+    });
 
-    // Prepare Nodes
+    // Golden-spiral / multi-ring spatial distribution for stable initial layout
     state.nodes = rawNodes.map((n, idx) => {
       const prev = existingPos.get(n.id);
-      const angle = (idx / (rawNodes.length || 1)) * 2 * Math.PI;
-      const radius = 180 + Math.random() * 120;
+      const phi = idx * 2.39996;
+      const r = Math.min(380, 50 + Math.sqrt(idx) * 32);
       return {
         ...n,
-        x: prev ? prev.x : Math.cos(angle) * radius,
-        y: prev ? prev.y : Math.sin(angle) * radius,
+        x: prev ? prev.x : Math.cos(phi) * r,
+        y: prev ? prev.y : Math.sin(phi) * r,
         vx: prev ? prev.vx : 0,
         vy: prev ? prev.vy : 0,
         radius: getNodeRadius(n.type, n.in_degree),
@@ -4418,37 +5419,48 @@
     const isolatedCountEl = document.getElementById('isolated-count');
     if (isolatedCountEl) isolatedCountEl.textContent = isolatedCount;
 
+    const nodesBadge = document.getElementById('graph-nodes-badge');
+    if (nodesBadge) nodesBadge.textContent = state.nodes.length;
+
+    const statusText = document.getElementById('graph-status-text');
+    if (statusText) {
+      statusText.textContent = `Living System Synchronized • ${state.nodes.length} Nodes, ${state.edges.length} Connections`;
+    }
+
     if (state.hideIsolated) {
       state.nodes = state.nodes.filter(n => !n.is_isolated);
       state.nodeMap.clear();
       state.nodes.forEach(n => state.nodeMap.set(n.id, n));
     }
 
-    // If selected node still present, inspect it
+    // Restore inspection if valid
     if (state.selectedNodeId && state.nodeMap.has(state.selectedNodeId)) {
       inspectNode(state.nodeMap.get(state.selectedNodeId));
-    } else if (state.nodes.length > 0 && !state.selectedNodeId) {
-      inspectNode(state.nodes[0]);
     }
 
-    startPhysics();
-    setTimeout(fitToScreen, 120);
+    if (state.viewDimension === '3d' && window.Twin3D && window.Twin3D.active) {
+      window.Twin3D.buildScene(data);
+    } else {
+      startPhysics();
+      setTimeout(fitToScreen, 100);
+    }
   }
 
   function getNodeRadius(type, inDegree) {
     const base = {
       PACKAGE: 22,
+      SERVICE: 20,
       MODULE: 18,
+      DATABASE: 18,
+      DATABASE_TABLE: 16,
       CLASS: 15,
-      SERVICE: 16,
-      API_ENDPOINT: 14,
-      METHOD: 10,
-      FUNCTION: 10,
-      TEST_CASE: 11,
-      DATABASE_TABLE: 14,
-      EXTERNAL_DEPENDENCY: 9,
-    }[type] || 12;
-    return Math.min(32, base + Math.min(inDegree || 0, 8) * 1.2);
+      API_ENDPOINT: 15,
+      FUNCTION: 11,
+      METHOD: 11,
+      TEST_CASE: 12,
+      EXTERNAL_DEPENDENCY: 10,
+    }[type] || 13;
+    return Math.min(30, base + Math.min(inDegree || 0, 8) * 1.2);
   }
 
   function updateStats(data) {
@@ -4460,33 +5472,35 @@
     const driftCount = (data.edges || []).filter(e => e.is_drift).length;
     if (statDrifts) statDrifts.textContent = driftCount;
 
+    const nodesBadge = document.getElementById('graph-nodes-badge');
+    if (nodesBadge) nodesBadge.textContent = (data.nodes || []).length;
+
     if (data.branch_name) {
       const bEl = document.getElementById('branch-name');
       if (bEl) bEl.textContent = data.branch_name;
     }
 
-    const banner = document.getElementById('graph-status-banner');
-    if (banner) {
+    const statusText = document.getElementById('graph-status-text');
+    if (statusText) {
       if (state.impactMode) {
-        banner.style.display = 'block';
-        banner.textContent = '⚡ CHANGE IMPACT MODE: Propagating blast radius from root component.';
-      } else if (state.currentArchSubtab === 'drift' && driftCount > 0) {
-        banner.style.display = 'block';
-        banner.textContent = `⚠️ ARCHITECTURE DRIFT: ${driftCount} active boundary violation(s) highlighted.`;
+        statusText.textContent = '⚡ Change Impact Mode: Tracing Forward Blast Radius';
+      } else if (driftCount > 0) {
+        statusText.textContent = `⚠️ Architecture Drift: ${driftCount} Boundary Violation(s) Highlighted`;
       } else {
-        banner.style.display = 'none';
+        statusText.textContent = `Living System Synchronized • ${(data.nodes || []).length} Nodes, ${(data.edges || []).length} Connections`;
       }
     }
   }
 
+  let physicsIterations = 0;
   function startPhysics() {
     if (state.animFrameId) cancelAnimationFrame(state.animFrameId);
-    let iterations = 0;
+    physicsIterations = 0;
 
     function step() {
-      if (state.physicsEnabled && iterations < 350) {
+      if (state.physicsEnabled && physicsIterations < 220) {
         tickPhysics();
-        iterations++;
+        physicsIterations++;
       }
       render();
       state.animFrameId = requestAnimationFrame(step);
@@ -4497,20 +5511,23 @@
   function tickPhysics() {
     const nodes = state.nodes;
     const edges = state.edges;
-    const kRepel = 1200;
-    const kAttract = 0.04;
-    const damp = 0.88;
+    const nLen = nodes.length;
+    if (nLen === 0) return;
 
-    // 1. Repulsion between all pairs
-    for (let i = 0; i < nodes.length; i++) {
+    const kRepel = nLen > 120 ? 800 : 1200;
+    const kAttract = 0.032;
+    const damp = 0.86;
+
+    // 1. Repulsion between node pairs
+    for (let i = 0; i < nLen; i++) {
       const a = nodes[i];
-      for (let j = i + 1; j < nodes.length; j++) {
+      for (let j = i + 1; j < nLen; j++) {
         const b = nodes[j];
         const dx = b.x - a.x;
         const dy = b.y - a.y;
-        const distSq = dx * dx + dy * dy + 100;
+        const distSq = dx * dx + dy * dy + 120;
         const dist = Math.sqrt(distSq);
-        const force = kRepel / distSq;
+        const force = Math.min(14, kRepel / distSq);
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
 
@@ -4535,9 +5552,9 @@
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const targetDist = 90;
+      const targetDist = 110;
       const delta = dist - targetDist;
-      const force = delta * kAttract;
+      const force = Math.max(-12, Math.min(12, delta * kAttract));
       const fx = (dx / dist) * force;
       const fy = (dy / dist) * force;
 
@@ -4551,20 +5568,20 @@
       }
     }
 
-    // 3. Center gravity & update position
-    for (let i = 0; i < nodes.length; i++) {
+    // 3. Center gravity & velocity dampening
+    for (let i = 0; i < nLen; i++) {
       const n = nodes[i];
       if (n === state.draggedNode) continue;
-      n.vx -= n.x * 0.003;
-      n.vy -= n.y * 0.003;
+      n.vx -= n.x * 0.005;
+      n.vy -= n.y * 0.005;
       n.vx *= damp;
       n.vy *= damp;
-      n.x += n.vx;
-      n.y += n.vy;
+      n.x += Math.max(-12, Math.min(12, n.vx));
+      n.y += Math.max(-12, Math.min(12, n.vy));
     }
   }
 
-  // --- Rendering (Canvas + Spotlight) ---
+  // --- Rendering: MiroFish Spatial Graph (Clean White Canvas) ---
   function render() {
     if (!state.ctx) return;
     const ctx = state.ctx;
@@ -4579,110 +5596,162 @@
     if (hasSpotlight) {
       activeNeighborhood.add(state.selectedNodeId);
       const neighbors = state.adjList.get(state.selectedNodeId);
-      if (neighbors) neighbors.forEach(n => activeNeighborhood.add(n));
+      if (neighbors) neighbors.forEach(nid => activeNeighborhood.add(nid));
     }
 
-    // Draw Edges
+    // 1. Draw Edges
     state.edges.forEach(e => {
       const a = e.sourceNode;
       const b = e.targetNode;
       if (!a || !b) return;
 
-      const isConnected = !hasSpotlight || (activeNeighborhood.has(a.id) && activeNeighborhood.has(b.id));
+      const isConnected = !hasSpotlight || (a.id === state.selectedNodeId || b.id === state.selectedNodeId);
+      const isSelectedEdge = e.id === state.selectedEdgeId;
+
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
 
-      if (e.id === state.selectedEdgeId) {
-        ctx.strokeStyle = '#f59e0b';
-        ctx.lineWidth = 3.5;
+      if (isSelectedEdge) {
+        ctx.strokeStyle = '#D97706';
+        ctx.lineWidth = 3.0;
         ctx.setLineDash([]);
       } else if (e.is_drift) {
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([4, 4]);
-      } else if (e.diff_status === 'NEW') {
-        ctx.strokeStyle = '#10b981';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#DC2626';
+        ctx.lineWidth = 2.2;
+        ctx.setLineDash([5, 4]);
+      } else if (hasSpotlight && (a.id === state.selectedNodeId || b.id === state.selectedNodeId)) {
+        // Highlighted relationship connected to selected node (Vivid Rose)
+        ctx.strokeStyle = '#E11D48';
+        ctx.lineWidth = 2.4;
         ctx.setLineDash([]);
-      } else if (e.diff_status === 'REMOVED') {
-        ctx.strokeStyle = '#f43f5e';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([2, 4]);
+      } else if (hasSpotlight) {
+        // Dimmed relationship
+        ctx.strokeStyle = 'rgba(203, 213, 225, 0.35)';
+        ctx.lineWidth = 0.6;
+        ctx.setLineDash([]);
       } else {
-        ctx.strokeStyle = isConnected ? 'rgba(100, 116, 139, 0.65)' : 'rgba(203, 213, 225, 0.25)';
-        ctx.lineWidth = isConnected ? 1.4 : 0.8;
+        // Normal state: refined, crisp connection lines on white surface
+        ctx.strokeStyle = 'rgba(100, 116, 139, 0.45)';
+        ctx.lineWidth = 1.0;
         ctx.setLineDash([]);
       }
 
       ctx.stroke();
       ctx.setLineDash([]);
 
-      if (isConnected) {
-        drawArrow(ctx, a.x, a.y, b.x, b.y, b.radius + 4, e.is_drift ? '#ef4444' : 'rgba(100, 116, 139, 0.8)');
+      // Draw directional arrow on active connections
+      if (isConnected || !hasSpotlight) {
+        const arrowColor = (hasSpotlight && (a.id === state.selectedNodeId || b.id === state.selectedNodeId))
+          ? '#E11D48'
+          : (e.is_drift ? '#DC2626' : 'rgba(100, 116, 139, 0.70)');
+        drawArrow(ctx, a.x, a.y, b.x, b.y, b.radius + 3, arrowColor);
+      }
+
+      // Draw Edge Label Pill if toggled on or if connected to selected node
+      if (state.showEdgeLabels || (hasSpotlight && (a.id === state.selectedNodeId || b.id === state.selectedNodeId))) {
+        drawEdgeBadge(ctx, (a.x + b.x) / 2, (a.y + b.y) / 2, e.type);
       }
     });
 
-    // Draw Nodes
+    // 2. Draw Nodes
     state.nodes.forEach(n => {
       const isSelected = n.id === state.selectedNodeId;
+      const isHovered = state.hoveredNode && state.hoveredNode.id === n.id;
       const isDimmed = hasSpotlight && !activeNeighborhood.has(n.id);
       const isImpacted = n.is_impacted;
 
       ctx.save();
-      ctx.globalAlpha = isDimmed ? 0.15 : 1.0;
+      ctx.globalAlpha = isDimmed ? 0.16 : 1.0;
 
-      // Halo for Selected or Impacted nodes
+      // Radiant Halos
       if (isSelected) {
+        // Outer radiant glow
         ctx.beginPath();
-        ctx.arc(n.x, n.y, n.radius + 6, 0, 2 * Math.PI);
-        ctx.fillStyle = 'rgba(0, 113, 227, 0.18)';
+        ctx.arc(n.x, n.y, n.radius + 8, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(225, 29, 72, 0.16)';
         ctx.fill();
         ctx.lineWidth = 2;
-        ctx.strokeStyle = '#0071e3';
+        ctx.strokeStyle = '#E11D48';
+        ctx.stroke();
+
+        // Inner halo
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.radius + 2, 0, 2 * Math.PI);
+        ctx.lineWidth = 1.8;
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.stroke();
+      } else if (isHovered) {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.radius + 6, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(2, 132, 199, 0.18)';
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = '#0284C7';
         ctx.stroke();
       } else if (isImpacted) {
         ctx.beginPath();
-        ctx.arc(n.x, n.y, n.radius + 5, 0, 2 * Math.PI);
-        ctx.fillStyle = 'rgba(245, 158, 11, 0.2)';
+        ctx.arc(n.x, n.y, n.radius + 6, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(217, 119, 6, 0.18)';
         ctx.fill();
         ctx.lineWidth = 1.8;
-        ctx.strokeStyle = '#f59e0b';
+        ctx.strokeStyle = '#D97706';
         ctx.stroke();
       }
 
-      // Main Node Circle
+      // Main Node Body
       ctx.beginPath();
       ctx.arc(n.x, n.y, n.radius, 0, 2 * Math.PI);
       const color = state.colors[n.type] || state.colors.DEFAULT;
       ctx.fillStyle = color;
       ctx.fill();
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = isSelected ? '#0071e3' : 'rgba(15, 23, 42, 0.15)';
+      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = isSelected ? '#FFFFFF' : 'rgba(255, 255, 255, 0.85)';
       ctx.stroke();
 
       // Diff Status Indicators
       if (n.diff_status === 'ADDED') {
-        drawBadge(ctx, n.x + n.radius - 2, n.y - n.radius + 2, '+', '#10b981');
+        drawBadge(ctx, n.x + n.radius - 2, n.y - n.radius + 2, '+', '#059669');
       } else if (n.diff_status === 'REMOVED') {
-        drawBadge(ctx, n.x + n.radius - 2, n.y - n.radius + 2, '-', '#ef4444');
+        drawBadge(ctx, n.x + n.radius - 2, n.y - n.radius + 2, '-', '#DC2626');
       } else if (n.diff_status === 'MODIFIED') {
-        drawBadge(ctx, n.x + n.radius - 2, n.y - n.radius + 2, '~', '#f59e0b');
+        drawBadge(ctx, n.x + n.radius - 2, n.y - n.radius + 2, '~', '#D97706');
       }
 
-      // Node Label
+      // Node Label with Crisp White Backdrop Pill
       if (!isDimmed || state.transform.k > 1.2) {
-        ctx.fillStyle = isSelected ? '#0071e3' : '#0f172a';
-        ctx.font = `${isSelected ? '600 ' : '500 '}${Math.max(10, 11 / state.transform.k)}px 'Inter', sans-serif`;
+        const rawName = n.name || n.label || 'Node';
+        const labelText = (rawName.length > 15 && !isSelected && !isHovered && state.transform.k < 1.3)
+          ? rawName.substring(0, 13) + '..'
+          : rawName;
+
+        ctx.font = `${isSelected ? '700' : '600'} 10px 'Inter', sans-serif`;
+        const textMetrics = ctx.measureText(labelText);
+        const tw = textMetrics.width;
+        const th = 15;
+        const lx = n.x - tw / 2 - 4;
+        const ly = n.y + n.radius + 6;
+
+        // Label Backdrop
+        ctx.beginPath();
+        ctx.roundRect(lx, ly, tw + 8, th, 4);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+        ctx.fill();
+        ctx.strokeStyle = isSelected ? '#E11D48' : 'rgba(203, 213, 225, 0.85)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Label Text
+        ctx.fillStyle = isSelected ? '#E11D48' : '#0F172A';
         ctx.textAlign = 'center';
-        ctx.fillText(n.name, n.x, n.y + n.radius + 12);
+        ctx.textBaseline = 'middle';
+        ctx.fillText(labelText, n.x, ly + th / 2);
       }
 
       ctx.restore();
     });
 
     ctx.restore();
-    renderMinimap();
   }
 
   function drawArrow(ctx, fromX, fromY, toX, toY, offset, color) {
@@ -4690,7 +5759,7 @@
     const dy = toY - fromY;
     const angle = Math.atan2(dy, dx);
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < offset + 10) return;
+    if (dist < offset + 8) return;
 
     const targetX = toX - Math.cos(angle) * offset;
     const targetY = toY - Math.sin(angle) * offset;
@@ -4709,168 +5778,211 @@
     ctx.arc(x, y, 7, 0, 2 * Math.PI);
     ctx.fillStyle = bg;
     ctx.fill();
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 9px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(char, x, y);
   }
 
-  function renderMinimap() {
-    const mmCanvas = document.getElementById('minimap-canvas');
-    if (!mmCanvas) return;
-    const mmCtx = mmCanvas.getContext('2d');
-    mmCtx.clearRect(0, 0, mmCanvas.width, mmCanvas.height);
+  function drawEdgeBadge(ctx, x, y, text) {
+    if (!text) return;
+    const label = String(text).toUpperCase();
+    ctx.font = 'bold 8px monospace';
+    const tw = ctx.measureText(label).width;
+    const pw = tw + 8;
+    const ph = 14;
 
-    if (state.nodes.length === 0) return;
+    ctx.beginPath();
+    ctx.roundRect(x - pw / 2, y - ph / 2, pw, ph, 3);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.55)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
 
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    state.nodes.forEach(n => {
-      minX = Math.min(minX, n.x);
-      maxX = Math.max(maxX, n.x);
-      minY = Math.min(minY, n.y);
-      maxY = Math.max(maxY, n.y);
-    });
-
-    const pad = 80;
-    const gW = Math.max(10, maxX - minX + pad * 2);
-    const gH = Math.max(10, maxY - minY + pad * 2);
-    const scale = Math.min(mmCanvas.width / gW, mmCanvas.height / gH);
-
-    mmCtx.save();
-    mmCtx.translate(mmCanvas.width / 2, mmCanvas.height / 2);
-    mmCtx.scale(scale, scale);
-    mmCtx.translate(-(minX + maxX) / 2, -(minY + maxY) / 2);
-
-    state.nodes.forEach(n => {
-      mmCtx.beginPath();
-      mmCtx.arc(n.x, n.y, 4, 0, 2 * Math.PI);
-      mmCtx.fillStyle = state.colors[n.type] || '#94a3b8';
-      mmCtx.fill();
-    });
-
-    const vpLeft = (-state.transform.x) / state.transform.k;
-    const vpTop = (-state.transform.y) / state.transform.k;
-    const vpW = state.width / state.transform.k;
-    const vpH = state.height / state.transform.k;
-
-    mmCtx.strokeStyle = '#06b6d4';
-    mmCtx.lineWidth = 2 / scale;
-    mmCtx.strokeRect(vpLeft, vpTop, vpW, vpH);
-
-    mmCtx.restore();
+    ctx.fillStyle = '#334155';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, x, y);
   }
 
-  // --- Inspector Panels ---
+  // --- Inspector Panel (MiroFish Slide-Out Drawer) ---
   function inspectNode(node) {
     state.selectedNodeId = node.id;
-    const focusPill = document.getElementById('focus-info-pill');
-    const focusName = document.getElementById('focus-name');
-    const resetFocusBtn = document.getElementById('reset-focus-btn');
-    if (focusPill) focusPill.style.display = 'inline';
-    if (focusName) focusName.textContent = node.name;
-    if (resetFocusBtn) resetFocusBtn.style.display = 'inline-flex';
+    const drawer = document.getElementById('node-detail-panel');
+    if (drawer) drawer.classList.add('open');
+
+    const typeBadge = document.getElementById('inspector-type-badge');
+    if (typeBadge) {
+      typeBadge.textContent = node.type;
+      const col = state.colors[node.type] || '#0284C7';
+      typeBadge.style.color = col;
+      typeBadge.style.borderColor = `${col}55`;
+      typeBadge.style.background = `${col}15`;
+    }
 
     const panel = document.getElementById('inspector-content');
     if (!panel) return;
+
     const incoming = state.edges.filter(e => e.target === node.id);
     const outgoing = state.edges.filter(e => e.source === node.id);
     const relatedTests = incoming.concat(outgoing).filter(e => e.type === 'TESTS' || e.sourceNode?.type === 'TEST_CASE');
 
+    let callersHtml = '';
+    if (incoming.length > 0) {
+      callersHtml = incoming.slice(0, 8).map(e => {
+        const sName = e.sourceNode?.name || e.source;
+        return `<button class="chip-nav px-2 py-1 rounded bg-[#F1F5F9] hover:bg-[#E2E8F0] border border-[#CBD5E1] text-[11px] text-[#0071E3] font-medium truncate max-w-[170px] transition-colors" data-node="${escapeHtml(e.source)}">${escapeHtml(sName)}</button>`;
+      }).join('');
+    } else {
+      const inDeg = Number(node.in_degree || 0);
+      const outDeg = Number(node.out_degree || outgoing.length || 0);
+      if (inDeg > 0) {
+        callersHtml = `<span class="text-[#64748B] text-[11px] italic" title="${inDeg} inbound relationship(s) in Twin graph; expand zoom level or inspect details to view collapsed member callers">${inDeg} callers at granular level</span>`;
+      } else if (outDeg > 0) {
+        callersHtml = `<span class="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-medium">Root Entry Point / Top-level Component</span>`;
+      } else {
+        callersHtml = `<span class="text-[#64748B] text-[11px]">No inbound callers (Isolated entity)</span>`;
+      }
+    }
+
+    const calleesHtml = outgoing.length > 0
+      ? outgoing.slice(0, 8).map(e => {
+          const tName = e.targetNode?.name || e.target;
+          return `<button class="chip-nav px-2 py-1 rounded bg-[#F1F5F9] hover:bg-[#E2E8F0] border border-[#CBD5E1] text-[11px] text-[#059669] font-medium truncate max-w-[170px] transition-colors" data-node="${escapeHtml(e.target)}">${escapeHtml(tName)}</button>`;
+        }).join('')
+      : '<span class="text-[#64748B] text-[11px]">No outbound calls</span>';
+
     panel.innerHTML = `
-      <div class="inspector-badge-row">
-        <span class="inspector-badge" style="background:${state.colors[node.type]}22; color:${state.colors[node.type]}">${node.type}</span>
-        <span class="inspector-badge layer-badge">${node.logical_layer || 'CORE'}</span>
-        ${node.diff_status && node.diff_status !== 'UNCHANGED' ? `<span class="inspector-badge" style="background:#10b98122; color:#10b981">${node.diff_status}</span>` : ''}
+      <div class="space-y-1">
+        <div class="text-[10px] uppercase font-bold text-[#64748B] tracking-wider">Identity</div>
+        <div class="text-sm font-bold text-[#0F172A] break-words">${escapeHtml(node.name)}</div>
+        <div class="text-[11px] font-mono text-[#64748B] break-all">${escapeHtml(node.qualified_name || node.id)}</div>
       </div>
 
-      <div class="inspector-section">
-        <h4 class="sec-title">Identity & Source Location</h4>
-        <table class="prop-table">
-          <tr><td class="prop-key">Name:</td><td class="prop-val">${escapeHtml(node.name)}</td></tr>
-          <tr><td class="prop-key">Qualified:</td><td class="prop-val">${escapeHtml(node.qualified_name || node.name)}</td></tr>
-          <tr><td class="prop-key">Language:</td><td class="prop-val">${node.language || 'Python'}</td></tr>
-          <tr><td class="prop-key">File:</td><td class="prop-val">${escapeHtml(node.file || 'unknown')}</td></tr>
-          <tr><td class="prop-key">Lines:</td><td class="prop-val">${node.line_start || 1} - ${node.line_end || 1}</td></tr>
-          <tr><td class="prop-key">Confidence:</td><td class="prop-val">${((node.confidence || 1.0) * 100).toFixed(0)}%</td></tr>
-        </table>
+      <div class="space-y-1.5 pt-2 border-t border-[#E2E8F0]">
+        <div class="text-[10px] uppercase font-bold text-[#64748B] tracking-wider">Source Location</div>
+        <div class="p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] font-mono text-[11px] text-[#334155] break-all">
+          ${escapeHtml(node.file || 'unknown')}:${node.line_start || 1}
+        </div>
       </div>
 
-      ${node.is_impacted ? `
-        <div class="impact-hero-card">
-          <div style="font-size:11px; font-weight:700; color:var(--accent-amber)">IMPACT BLAST RADIUS PROPAGATION</div>
-          <div class="impact-score-num">Depth ${node.impact_depth}</div>
-          <ul class="impact-list">
-            ${(node.impact_reasons || []).map(r => `<li>• ${escapeHtml(r)}</li>`).join('')}
-          </ul>
+      <div class="grid grid-cols-2 gap-2 pt-2 border-t border-[#E2E8F0]">
+        <div class="p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+          <div class="text-[10px] text-[#64748B]">Logical Tier</div>
+          <div class="text-xs font-semibold text-[#0F172A]">${node.logical_layer || 'CORE'}</div>
+        </div>
+        <div class="p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+          <div class="text-[10px] text-[#64748B]">Confidence</div>
+          <div class="text-xs font-semibold text-[#059669]">${((node.confidence || 1.0) * 100).toFixed(0)}% AST</div>
+        </div>
+      </div>
+
+      <div class="space-y-2 pt-2 border-t border-[#E2E8F0]">
+        <div class="flex items-center justify-between text-[11px]">
+          <span class="text-[#475569] font-semibold">Inbound Callers (${incoming.length})</span>
+        </div>
+        <div class="flex flex-wrap gap-1.5">${callersHtml}</div>
+      </div>
+
+      <div class="space-y-2 pt-2 border-t border-[#E2E8F0]">
+        <div class="flex items-center justify-between text-[11px]">
+          <span class="text-[#475569] font-semibold">Outbound Calls (${outgoing.length})</span>
+        </div>
+        <div class="flex flex-wrap gap-1.5">${calleesHtml}</div>
+      </div>
+
+      ${relatedTests.length > 0 ? `
+        <div class="space-y-1.5 pt-2 border-t border-[#E2E8F0]">
+          <span class="text-[#475569] font-semibold text-[11px]">Associated Tests (${relatedTests.length})</span>
+          <div class="text-[11px] font-mono text-[#D97706] space-y-0.5">
+            ${relatedTests.slice(0, 3).map(t => `<div>🧪 ${escapeHtml(t.sourceNode?.name || t.targetNode?.name)}</div>`).join('')}
+          </div>
         </div>
       ` : ''}
 
-      <div class="inspector-section">
-        <h4 class="sec-title">Dependencies (${incoming.length} in / ${outgoing.length} out)</h4>
-        <table class="prop-table">
-          <tr><td class="prop-key">Callers:</td><td class="prop-val">${incoming.map(e => e.sourceNode?.name).join(', ') || 'None'}</td></tr>
-          <tr><td class="prop-key">Calls/Uses:</td><td class="prop-val">${outgoing.map(e => e.targetNode?.name).join(', ') || 'None'}</td></tr>
-        </table>
-      </div>
-
-      <div class="inspector-section">
-        <h4 class="sec-title">Validated Tests (${relatedTests.length})</h4>
-        <div style="font-size:11px; font-family:var(--font-mono); color:var(--text-secondary)">
-          ${relatedTests.length > 0 ? relatedTests.map(t => `<div>🧪 ${escapeHtml(t.sourceNode?.name || t.targetNode?.name)}</div>`).join('') : '<div style="color:var(--text-muted)">No direct test mapping attached.</div>'}
-        </div>
-      </div>
-
-      <div class="inspector-section">
-        <h4 class="sec-title">Verified Evidence (Digital Twin)</h4>
-        <div class="code-snippet-box">${escapeHtml(node.location || `${node.file}:${node.line_start || 1}`)}</div>
-      </div>
-
-      <div style="margin-top:16px;">
-        <button id="btn-run-impact" class="primary-btn" style="width:100%; background:var(--accent-amber)">Run Change Impact Analysis</button>
+      <div class="pt-3 border-t border-[#E2E8F0] space-y-2">
+        <button id="btn-focus-this-node" class="w-full py-2 px-3 rounded-xl bg-[#F8FAFC] hover:bg-[#F1F5F9] text-xs font-semibold text-[#0071E3] border border-[#0071E3]/40 transition-all flex items-center justify-center gap-1.5">
+          <span class="material-symbols-outlined text-[15px]">center_focus_strong</span>
+          <span>Center on Node</span>
+        </button>
+        <button id="btn-run-impact-drawer" class="w-full py-2 px-3 rounded-xl bg-[#F59E0B] hover:bg-[#D97706] text-xs font-semibold text-white shadow-xs transition-all flex items-center justify-center gap-1.5">
+          <span class="material-symbols-outlined text-[15px]">bolt</span>
+          <span>Trace Blast Radius</span>
+        </button>
       </div>
     `;
 
-    document.getElementById('btn-run-impact')?.addEventListener('click', () => {
-      triggerImpactAnalysis(node.id);
+    panel.querySelectorAll('.chip-nav').forEach(btn => {
+      btn.onclick = () => focusOnNode(btn.dataset.node);
     });
+
+    const focusBtn = document.getElementById('btn-focus-this-node');
+    if (focusBtn) {
+      focusBtn.onclick = () => focusOnNode(node.id);
+    }
+
+    const impactBtn = document.getElementById('btn-run-impact-drawer');
+    if (impactBtn) {
+      impactBtn.onclick = () => triggerImpactAnalysis(node.id);
+    }
+
+    render();
   }
 
   function inspectEdge(edge) {
     state.selectedEdgeId = edge.id;
+    const drawer = document.getElementById('node-detail-panel');
+    if (drawer) drawer.classList.add('open');
+
+    const typeBadge = document.getElementById('inspector-type-badge');
+    if (typeBadge) {
+      typeBadge.textContent = edge.type;
+      typeBadge.style.color = '#D97706';
+      typeBadge.style.borderColor = '#D9770655';
+      typeBadge.style.background = '#D9770615';
+    }
+
     const panel = document.getElementById('inspector-content');
     if (!panel) return;
+
     panel.innerHTML = `
-      <div class="inspector-badge-row">
-        <span class="inspector-badge" style="background:#6366f122; color:#6366f1">${edge.type}</span>
-        ${edge.is_drift ? `<span class="inspector-badge" style="background:#ef444422; color:#ef4444">DRIFT VIOLATION</span>` : ''}
+      <div class="space-y-1">
+        <div class="text-[10px] uppercase font-bold text-[#64748B] tracking-wider">Relationship Contract</div>
+        <div class="text-sm font-bold text-[#0F172A]">${edge.type}</div>
+      </div>
+
+      <div class="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
+        <div class="text-xs flex items-center gap-2">
+          <span class="text-[#0284C7] font-bold">Source:</span>
+          <span class="text-[#0F172A]">${escapeHtml(edge.sourceNode?.name || edge.source)}</span>
+        </div>
+        <div class="text-xs flex items-center gap-2">
+          <span class="text-[#059669] font-bold">Target:</span>
+          <span class="text-[#0F172A]">${escapeHtml(edge.targetNode?.name || edge.target)}</span>
+        </div>
       </div>
 
       ${edge.is_drift ? `
-        <div class="drift-alert-box">
-          <div class="drift-alert-title">⚠️ ${escapeHtml(edge.drift_details?.category || 'LAYER_VIOLATION')} (${edge.drift_details?.severity || 'HIGH'})</div>
-          <div style="font-size:11px; color:#cbd5e1; margin-bottom:6px;">${escapeHtml(edge.drift_details?.expected_rule || 'Boundary violation')}</div>
-          <div class="code-snippet-box" style="color:#ef4444">${escapeHtml(edge.drift_details?.actual_evidence || '')}</div>
+        <div class="p-3 rounded-xl bg-[#FEF2F2] border border-[#FCA5A5] space-y-1 text-xs">
+          <div class="font-bold text-[#DC2626] flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[16px]">warning</span>
+            <span>Architecture Boundary Violation</span>
+          </div>
+          <div class="text-[#991B1B]">${escapeHtml(edge.drift_details?.expected_rule || 'Unauthorized cross-tier call')}</div>
         </div>
       ` : ''}
 
-      <div class="inspector-section">
-        <h4 class="sec-title">Relationship Path</h4>
-        <table class="prop-table">
-          <tr><td class="prop-key">Source:</td><td class="prop-val">${escapeHtml(edge.sourceNode?.name || edge.source)}</td></tr>
-          <tr><td class="prop-key">Target:</td><td class="prop-val">${escapeHtml(edge.targetNode?.name || edge.target)}</td></tr>
-          <tr><td class="prop-key">Semantic:</td><td class="prop-val">${edge.type}</td></tr>
-          <tr><td class="prop-key">Detection:</td><td class="prop-val">${edge.detection_method || 'ast_call_expression'}</td></tr>
-          <tr><td class="prop-key">Confidence:</td><td class="prop-val">${((edge.confidence || 1.0) * 100).toFixed(0)}%</td></tr>
-        </table>
-      </div>
-
-      <div class="inspector-section">
-        <h4 class="sec-title">Source Evidence</h4>
-        <div style="font-size:11px; color:var(--text-muted)">Location: ${escapeHtml(edge.evidence?.file || '')}:${edge.evidence?.line || 1}</div>
-        <div class="code-snippet-box">${escapeHtml(edge.evidence?.snippet || '')}</div>
+      <div class="space-y-1.5 pt-2 border-t border-[#E2E8F0]">
+        <div class="text-[10px] uppercase font-bold text-[#64748B] tracking-wider">Detection Evidence</div>
+        <div class="p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] font-mono text-[11px] text-[#334155] break-all">
+          ${escapeHtml(edge.detection_method || 'ast_call_expression')}
+        </div>
       </div>
     `;
+
+    render();
   }
 
   function triggerImpactAnalysis(rootArtifactId) {
@@ -4878,6 +5990,22 @@
     state.impactRootId = rootArtifactId;
     const impactBtn = document.getElementById('impact-mode-btn');
     if (impactBtn) impactBtn.classList.add('active');
+
+    const node = state.nodeMap.get(rootArtifactId);
+    const nodeName = node ? (node.name || node.label || rootArtifactId) : rootArtifactId;
+    const inDegree = node ? (node.in_degree || 0) : 0;
+
+    if (inDegree === 0) {
+      showNotification(`⚡ Blast Radius: '${nodeName}' has 0 inbound callers (isolated entity). Blast radius confirmed zero.`, 'info');
+    } else {
+      showNotification(`⚡ Tracing Blast Radius for '${nodeName}': ${inDegree} direct upstream caller(s) identified. Computing propagation...`, 'info');
+    }
+
+    if (state.viewDimension === '3d' && window.Twin3D && window.Twin3D.active) {
+      window.Twin3D.focusNode(rootArtifactId);
+      window.Twin3D.highlightConnectedEdges(rootArtifactId);
+    }
+
     loadGraph();
   }
 
@@ -4889,9 +6017,50 @@
       return;
     }
     state.selectedNodeId = node.id;
-    state.transform.x = state.width / 2 - node.x * state.transform.k;
-    state.transform.y = state.height / 2 - node.y * state.transform.k;
+    if (state.viewDimension === '3d' && window.Twin3D && window.Twin3D.active) {
+      window.Twin3D.focusNode(nodeId);
+      inspectNode(node);
+      return;
+    }
+    const w = state.width || 1000;
+    const h = state.height || 700;
+    state.transform.k = Math.max(1.1, Math.min(2.0, state.transform.k));
+    state.transform.x = w / 2 - node.x * state.transform.k;
+    state.transform.y = h / 2 - node.y * state.transform.k;
     inspectNode(node);
+  }
+
+  function performGraphSearch(query) {
+    if (!query) return;
+    const q = query.trim().toLowerCase();
+
+    switchPrimaryView('architecture');
+    switchArchSubtab('graph');
+
+    const searchInput = document.getElementById('graph-search-input');
+    if (searchInput) searchInput.value = query;
+
+    const matched = (state.nodes || []).find(n => {
+      const label = (n.label || '').toLowerCase();
+      const name = (n.name || '').toLowerCase();
+      const qual = (n.qualified_name || '').toLowerCase();
+      const id = (n.id || '').toLowerCase();
+      return label === q || name === q || qual.includes(q) || id.includes(q);
+    });
+
+    if (matched) {
+      focusOnNode(matched.id);
+      showNotification(`Focused on node: ${matched.label || matched.name}`, 'info');
+    } else {
+      state.focusNodeId = query.trim();
+      loadGraph().then(() => {
+        if (state.nodes && state.nodes.length > 0) {
+          showNotification(`Displaying architecture graph for: ${query}`, 'info');
+        } else {
+          showNotification(`No nodes found matching "${query}" in this snapshot.`, 'warning');
+        }
+      });
+    }
   }
 
   function switchSidebarTab(tabName) {
@@ -4904,11 +6073,18 @@
   }
 
   function zoomBy(factor) {
-    state.transform.k *= factor;
+    const w = state.width || 1000;
+    const h = state.height || 700;
+    const newK = Math.max(0.15, Math.min(4.0, state.transform.k * factor));
+    const kRatio = newK / state.transform.k;
+    state.transform.x = w / 2 - (w / 2 - state.transform.x) * kRatio;
+    state.transform.y = h / 2 - (h / 2 - state.transform.y) * kRatio;
+    state.transform.k = newK;
+    render();
   }
 
   function fitToScreen() {
-    if (state.nodes.length === 0) return;
+    if (!state.nodes || state.nodes.length === 0) return;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     state.nodes.forEach(n => {
       minX = Math.min(minX, n.x);
@@ -4917,14 +6093,17 @@
       maxY = Math.max(maxY, n.y);
     });
 
-    const pad = 60;
-    const gW = Math.max(50, maxX - minX + pad * 2);
-    const gH = Math.max(50, maxY - minY + pad * 2);
-    const scale = Math.min(state.width / gW, state.height / gH, 1.8);
+    const pad = 80;
+    const gW = Math.max(80, maxX - minX + pad * 2);
+    const gH = Math.max(80, maxY - minY + pad * 2);
+    const w = state.width || 1000;
+    const h = state.height || 700;
+    const scale = Math.max(0.2, Math.min(w / gW, h / gH, 1.4));
 
     state.transform.k = scale;
-    state.transform.x = state.width / 2 - ((minX + maxX) / 2) * scale;
-    state.transform.y = state.height / 2 - ((minY + maxY) / 2) * scale;
+    state.transform.x = w / 2 - ((minX + maxX) / 2) * scale;
+    state.transform.y = h / 2 - ((minY + maxY) / 2) * scale;
+    render();
   }
 
   function distToSegment(px, py, x1, y1, x2, y2) {
@@ -4937,32 +6116,1467 @@
     return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
   }
 
+  // =========================================================================
+  // 14.5. THREE.JS 3D SOFTWARE ARCHITECTURE TWIN & ANIMATION SUBSYSTEM
+  // =========================================================================
+  const Twin3D = {
+    active: false,
+    initialized: false,
+    container: null,
+    scene: null,
+    camera: null,
+    renderer: null,
+    controls: null,
+    animFrameId: null,
+    resizeObserver: null,
+
+    // Scene Graph Groups
+    nodesGroup: null,
+    edgesGroup: null,
+    labelsGroup: null,
+    helpersGroup: null,
+    particlesGroup: null,
+    beaconMesh: null,
+    selectedHalo: null,
+    hoverSprite: null,
+
+    // Entity Map: nodeId -> THREE.Mesh
+    nodeMeshes: new Map(),
+    nodeDataMap: new Map(),
+    edgeLines: [],
+
+    // Raycaster & Pointer
+    raycaster: null,
+    pointer: null,
+    hoveredMesh: null,
+
+    // Smooth Camera Animation
+    cameraLerp: null,
+
+    // Simulation & Impact State
+    simMode: null,
+    simData: null,
+    simState: 'IDLE',
+    simStepIndex: 0,
+    simTotalSteps: 0,
+    simSpeed: 1.0,
+    simTimer: null,
+    simStages: [],
+    reducedMotion: false,
+    waveParticles: [],
+
+    init() {
+      if (this.initialized) return true;
+      if (typeof THREE === 'undefined') {
+        console.warn('Three.js is not yet available in window.');
+        return false;
+      }
+
+      this.container = document.getElementById('twin-3d-container');
+      if (!this.container) return false;
+
+      const rect = this.container.getBoundingClientRect();
+      const width = Math.max(300, rect.width || this.container.clientWidth || window.innerWidth);
+      const height = Math.max(300, rect.height || this.container.clientHeight || 700);
+
+      // 1. Spatial Dark Environment Scene with Linear Soft Depth Fog
+      this.scene = new THREE.Scene();
+      this.scene.background = new THREE.Color(0x090D16);
+      this.scene.fog = new THREE.Fog(0x090D16, 900, 4200);
+
+      // 2. Perspective Camera
+      this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 10000);
+      this.camera.position.set(0, 450, 900);
+
+      // 3. WebGL Renderer
+      this.renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: false,
+        powerPreference: 'high-performance',
+      });
+      this.renderer.setSize(width, height);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.toneMappingExposure = 1.25;
+
+      this.container.innerHTML = '';
+      this.container.appendChild(this.renderer.domElement);
+
+      // 4. OrbitControls
+      if (typeof THREE.OrbitControls !== 'undefined') {
+        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.08;
+        this.controls.screenSpacePanning = true;
+        this.controls.minDistance = 60;
+        this.controls.maxDistance = 4500;
+        this.controls.target.set(0, 0, 0);
+      }
+
+      // 5. Lighting Setup: Vivid architectural studio
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+      this.scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+      dirLight.position.set(500, 900, 600);
+      this.scene.add(dirLight);
+
+      const fillLight = new THREE.DirectionalLight(0x38BDF8, 0.55);
+      fillLight.position.set(-500, 300, -500);
+      this.scene.add(fillLight);
+
+      const pointLight = new THREE.PointLight(0xA855F7, 0.7, 1600);
+      pointLight.position.set(0, 200, 0);
+      this.scene.add(pointLight);
+
+      // 6. Scene Hierarchy Groups
+      this.helpersGroup = new THREE.Group();
+      this.edgesGroup = new THREE.Group();
+      this.nodesGroup = new THREE.Group();
+      this.labelsGroup = new THREE.Group();
+      this.particlesGroup = new THREE.Group();
+
+      this.scene.add(this.helpersGroup);
+      this.scene.add(this.edgesGroup);
+      this.scene.add(this.nodesGroup);
+      this.scene.add(this.labelsGroup);
+      this.scene.add(this.particlesGroup);
+
+      this.setupTierHelpers();
+
+      // 7. Raycaster & Pointer Interaction
+      this.raycaster = new THREE.Raycaster();
+      this.pointer = new THREE.Vector2();
+
+      this.setupInteractionListeners();
+      this.setupHUDListeners();
+
+      // 8. Auto-Resize Observer
+      if (window.ResizeObserver && !this.resizeObserver) {
+        this.resizeObserver = new ResizeObserver(() => {
+          if (this.active) {
+            this.onResize();
+          }
+        });
+        this.resizeObserver.observe(this.container);
+      }
+
+      this.initialized = true;
+      window.Twin3D = this;
+      return true;
+    },
+
+    setupTierHelpers() {
+      this.helpersGroup.clear();
+
+      // Base Studio Spatial Grid
+      const baseGrid = new THREE.GridHelper(1800, 36, 0x334155, 0x1E293B);
+      baseGrid.position.y = -280;
+      this.helpersGroup.add(baseGrid);
+
+      // Architectural Tiers: APIs / Routes (Top), Services / Logic (Middle), Data / Storage (Bottom)
+      const tierDefs = [
+        { y: 180, color: 0xE11D48, radius: 520 },
+        { y: 0, color: 0x0284C7, radius: 580 },
+        { y: -180, color: 0xD97706, radius: 540 },
+      ];
+
+      tierDefs.forEach(tier => {
+        const ringGeo = new THREE.RingGeometry(tier.radius - 2, tier.radius + 2, 64);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: tier.color,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.22,
+        });
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.rotation.x = Math.PI / 2;
+        ringMesh.position.y = tier.y;
+        this.helpersGroup.add(ringMesh);
+      });
+    },
+
+    // High-DPI Text Billboard Sprite Factory
+    createLabelSprite(text, type, colorHex, isProminent = false) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const fontSize = isProminent ? 26 : 21;
+      canvas.width = 512;
+      canvas.height = 128;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.font = `600 ${fontSize}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
+      const textMetrics = ctx.measureText(text);
+      const paddingX = 22;
+      const pillWidth = Math.min(canvas.width - 24, textMetrics.width + paddingX * 2);
+      const pillHeight = 44;
+      const x = (canvas.width - pillWidth) / 2;
+      const y = (canvas.height - pillHeight) / 2;
+      const radius = 10;
+
+      // Draw glassmorphic badge pill background
+      ctx.beginPath();
+      ctx.roundRect(x, y, pillWidth, pillHeight, radius);
+      ctx.fillStyle = isProminent ? 'rgba(15, 23, 42, 0.92)' : 'rgba(15, 23, 42, 0.85)';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = isProminent ? '#38BDF8' : 'rgba(100, 116, 139, 0.65)';
+      ctx.stroke();
+
+      // Text with clean crisp contrast
+      ctx.fillStyle = '#F8FAFC';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.minFilter = THREE.LinearFilter;
+      const spriteMat = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false,
+      });
+      const sprite = new THREE.Sprite(spriteMat);
+      const scaleX = isProminent ? 88 : 72;
+      const scaleY = isProminent ? 22 : 18;
+      sprite.scale.set(scaleX, scaleY, 1);
+      return sprite;
+    },
+
+    setupInteractionListeners() {
+      const dom = this.renderer.domElement;
+      const tooltip = document.getElementById('twin-3d-tooltip');
+
+      dom.addEventListener('pointermove', (e) => {
+        const rect = dom.getBoundingClientRect();
+        this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        if (this.nodesGroup && this.raycaster && this.camera) {
+          this.raycaster.setFromCamera(this.pointer, this.camera);
+          const intersects = this.raycaster.intersectObjects(this.nodesGroup.children, false);
+
+          if (intersects.length > 0) {
+            const hit = intersects[0].object;
+            dom.style.cursor = 'pointer';
+
+            if (this.hoveredMesh !== hit) {
+              this.unhover();
+              this.hoveredMesh = hit;
+              if (hit.material && hit.material.emissive) {
+                hit.userData.prevEmissive = hit.material.emissive.getHex();
+                hit.userData.prevIntensity = hit.material.emissiveIntensity;
+                hit.material.emissive.setHex(0x38BDF8);
+                hit.material.emissiveIntensity = 0.8;
+              }
+
+              // Show dynamic hover sprite if node does not already have an anchor label
+              const nodeData = hit.userData?.nodeData;
+              if (nodeData && !nodeData.labelSprite) {
+                if (this.hoverSprite) {
+                  this.scene.remove(this.hoverSprite);
+                  if (this.hoverSprite.material?.map) this.hoverSprite.material.map.dispose();
+                  if (this.hoverSprite.material) this.hoverSprite.material.dispose();
+                  this.hoverSprite = null;
+                }
+                const labelText = nodeData.name || nodeData.label || nodeData.id;
+                this.hoverSprite = this.createLabelSprite(labelText, nodeData.type, 0x38BDF8, true);
+                this.hoverSprite.position.set(hit.position.x, hit.position.y + (hit.userData?.radius || 10) + 16, hit.position.z);
+                this.scene.add(this.hoverSprite);
+              }
+            }
+
+            if (tooltip && hit.userData?.nodeData) {
+              const node = hit.userData.nodeData;
+              tooltip.style.display = 'block';
+              tooltip.style.left = `${Math.min(window.innerWidth - 240, e.clientX + 14)}px`;
+              tooltip.style.top = `${Math.min(window.innerHeight - 100, e.clientY + 14)}px`;
+              document.getElementById('twin-3d-tooltip-badge').textContent = node.type || 'ENTITY';
+              document.getElementById('twin-3d-tooltip-title').textContent = node.name || node.label || node.id;
+              document.getElementById('twin-3d-tooltip-path').textContent = node.file || node.qualified_name || '';
+
+              const provEl = document.getElementById('twin-3d-tooltip-provenance');
+              if (provEl) {
+                const prov = node.provenance || (node.is_simulated ? 'SIMULATED' : (node.is_derived ? 'DERIVED' : 'OBSERVED'));
+                provEl.textContent = prov;
+              }
+            }
+          } else {
+            dom.style.cursor = 'grab';
+            this.unhover();
+            if (tooltip) tooltip.style.display = 'none';
+          }
+        }
+      });
+
+      dom.addEventListener('click', (e) => {
+        if (!this.nodesGroup || !this.raycaster || !this.camera) return;
+        const rect = dom.getBoundingClientRect();
+        this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        this.raycaster.setFromCamera(this.pointer, this.camera);
+        const intersects = this.raycaster.intersectObjects(this.nodesGroup.children, false);
+
+        if (intersects.length > 0) {
+          const hit = intersects[0].object;
+          if (hit.userData?.nodeData) {
+            const node = hit.userData.nodeData;
+            this.selectNode(node.id, true);
+          }
+        }
+      });
+    },
+
+    unhover() {
+      if (this.hoveredMesh) {
+        if (this.hoveredMesh.material && this.hoveredMesh.userData?.prevEmissive !== undefined) {
+          this.hoveredMesh.material.emissive.setHex(this.hoveredMesh.userData.prevEmissive);
+          this.hoveredMesh.material.emissiveIntensity = this.hoveredMesh.userData.prevIntensity || 0;
+        }
+        this.hoveredMesh = null;
+      }
+      if (this.hoverSprite) {
+        this.scene.remove(this.hoverSprite);
+        if (this.hoverSprite.material?.map) this.hoverSprite.material.map.dispose();
+        if (this.hoverSprite.material) this.hoverSprite.material.dispose();
+        this.hoverSprite = null;
+      }
+    },
+
+    selectNode(nodeId, openInspector = true) {
+      const node = state.nodeMap.get(nodeId) || this.nodeDataMap.get(nodeId);
+      if (!node) return;
+
+      state.selectedNodeId = nodeId;
+      this.highlightSelectedHalo(nodeId);
+      this.highlightConnectedEdges(nodeId);
+
+      if (openInspector) {
+        inspectNode(node);
+      }
+    },
+
+    highlightSelectedHalo(nodeId) {
+      this.clearSelectedHalo();
+
+      const mesh = this.nodeMeshes.get(nodeId);
+      if (!mesh) return;
+
+      const r = (mesh.userData?.radius || 10) * 1.65;
+      const haloGeo = new THREE.RingGeometry(r - 1.0, r + 1.8, 32);
+      const haloMat = new THREE.MeshBasicMaterial({
+        color: 0x38BDF8,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.88,
+      });
+      this.selectedHalo = new THREE.Mesh(haloGeo, haloMat);
+      this.selectedHalo.position.copy(mesh.position);
+      this.selectedHalo.lookAt(this.camera.position);
+      this.scene.add(this.selectedHalo);
+    },
+
+    clearSelectedHalo() {
+      if (this.selectedHalo) {
+        this.scene.remove(this.selectedHalo);
+        if (this.selectedHalo.geometry) this.selectedHalo.geometry.dispose();
+        if (this.selectedHalo.material) this.selectedHalo.material.dispose();
+        this.selectedHalo = null;
+      }
+    },
+
+    highlightConnectedEdges(nodeId) {
+      if (!this.edgesGroup || this.edgeLines.length === 0) return;
+      const connectedEdges = this.edgeLines.filter(e => e.sourceId === nodeId || e.targetId === nodeId);
+      if (connectedEdges.length === 0) return;
+
+      // Spawn subtle pulse along connected edges
+      connectedEdges.slice(0, 8).forEach(e => {
+        this.spawnWaveParticle(e.p1, e.p2);
+      });
+    },
+
+    setupHUDListeners() {
+      document.getElementById('btn-3d-reset-cam')?.addEventListener('click', () => this.resetCamera());
+      document.getElementById('btn-3d-fit-graph')?.addEventListener('click', () => this.fitGraph(false));
+      document.getElementById('btn-3d-toggle-tiers')?.addEventListener('click', () => {
+        this.helpersGroup.visible = !this.helpersGroup.visible;
+      });
+
+      // Dimension Toggle Buttons (2D vs 3D)
+      document.getElementById('view-mode-2d')?.addEventListener('click', () => this.toggleViewMode('2d'));
+      document.getElementById('view-mode-3d')?.addEventListener('click', () => this.toggleViewMode('3d'));
+
+      // Playback Toolbar Transport
+      document.getElementById('sim-3d-play-pause-btn')?.addEventListener('click', () => this.togglePlayback());
+      document.getElementById('sim-3d-step-btn')?.addEventListener('click', () => this.stepForward());
+      document.getElementById('sim-3d-reset-btn')?.addEventListener('click', () => this.resetSimulationAnimation());
+      document.getElementById('sim-3d-focus-btn')?.addEventListener('click', () => {
+        if (this.simStages && this.simStages[this.simStepIndex]?.mutantNode) {
+          this.focusNode(this.simStages[this.simStepIndex].mutantNode.id);
+        } else if (state.lastSimulationResult) {
+          const target = (state.lastSimulationResult.structured_scenario?.target_entities || [])[0]
+            || (state.lastSimulationResult.proposed_changes || [])[0]?.target;
+          if (target) {
+            let mNode = null;
+            this.nodeDataMap.forEach((n, id) => {
+              if (!mNode && (id === target || n.name === target || (n.qualified_name && n.qualified_name.includes(target)))) {
+                mNode = n;
+              }
+            });
+            if (mNode) this.focusNode(mNode.id);
+          }
+        }
+      });
+      document.getElementById('sim-3d-speed-select')?.addEventListener('change', (e) => {
+        this.simSpeed = parseFloat(e.target.value) || 1.0;
+      });
+      document.getElementById('sim-3d-reduced-motion')?.addEventListener('change', (e) => {
+        this.reducedMotion = e.target.checked;
+      });
+      document.getElementById('sim-3d-baseline-btn')?.addEventListener('click', () => this.closePlaybackBar());
+
+      // Buttons to animate from other views
+      document.getElementById('btn-sim-visualize-3d')?.addEventListener('click', () => {
+        if (state.lastSimulationResult) {
+          switchPrimaryView('architecture');
+          this.toggleViewMode('3d');
+          this.animateWhatIfSimulation(state.lastSimulationResult);
+        } else {
+          showNotification('Run a simulation first to animate in 3D.', 'info');
+        }
+      });
+
+      document.getElementById('btn-impact-visualize-3d')?.addEventListener('click', () => {
+        const btn = document.getElementById('btn-impact-visualize-3d');
+        if (btn && btn.disabled) return;
+        if (typeof currentImpactAnalysisResult !== 'undefined' && currentImpactAnalysisResult) {
+          switchPrimaryView('architecture');
+          this.toggleViewMode('3d');
+          this.animateChangeImpact(currentImpactAnalysisResult);
+        }
+      });
+    },
+
+    toggleViewMode(mode) {
+      state.viewDimension = mode;
+      const btn2D = document.getElementById('view-mode-2d');
+      const btn3D = document.getElementById('view-mode-3d');
+      const canvas2D = document.getElementById('twin-canvas');
+      const container3D = document.getElementById('twin-3d-container');
+      const hud3D = document.getElementById('twin-3d-hud');
+      const legendBadge = document.getElementById('legend-space-badge');
+      const legendCard = document.getElementById('graph-legend-card');
+      const statusPill = document.getElementById('graph-status-pill');
+
+      if (mode === '3d') {
+        this.active = true;
+        if (btn3D) {
+          btn3D.classList.add('bg-white', 'text-[#0F172A]', 'shadow-xs', 'font-semibold');
+          btn3D.classList.remove('text-[#64748B]');
+        }
+        if (btn2D) {
+          btn2D.classList.remove('bg-white', 'text-[#0F172A]', 'shadow-xs', 'font-semibold');
+          btn2D.classList.add('text-[#64748B]');
+        }
+        if (canvas2D) canvas2D.style.display = 'none';
+        if (container3D) container3D.classList.remove('hidden');
+        if (hud3D) hud3D.classList.remove('hidden');
+        if (legendBadge) legendBadge.textContent = 'Three.js 3D';
+
+        // Adapt legend card & status pill to 3D dark glassmorphic theme
+        if (legendCard) {
+          legendCard.classList.remove('bg-white/95', 'border-[#E2E8F0]');
+          legendCard.classList.add('bg-[#0F172A]/90', 'border-slate-700/80', 'text-slate-200');
+        }
+        if (statusPill) {
+          statusPill.classList.remove('bg-white/95', 'border-[#E2E8F0]', 'text-[#475569]');
+          statusPill.classList.add('bg-[#0F172A]/90', 'border-slate-700/80', 'text-slate-200');
+        }
+
+        this.init();
+        this.onResize();
+        this.buildScene(state.rawGraph);
+        this.fitGraph(true);
+        this.startRenderLoop();
+        requestAnimationFrame(() => {
+          this.onResize();
+          this.fitGraph(true);
+        });
+      } else {
+        this.active = false;
+        if (btn2D) {
+          btn2D.classList.add('bg-white', 'text-[#0F172A]', 'shadow-xs', 'font-semibold');
+          btn2D.classList.remove('text-[#64748B]');
+        }
+        if (btn3D) {
+          btn3D.classList.remove('bg-white', 'text-[#0F172A]', 'shadow-xs', 'font-semibold');
+          btn3D.classList.add('text-[#64748B]');
+        }
+        if (canvas2D) canvas2D.style.display = 'block';
+        if (container3D) container3D.classList.add('hidden');
+        if (hud3D) hud3D.classList.add('hidden');
+        document.getElementById('sim-3d-playback-bar')?.classList.add('hidden');
+        if (legendBadge) legendBadge.textContent = 'MiroFish 2D';
+
+        // Restore light theme for 2D
+        if (legendCard) {
+          legendCard.classList.remove('bg-[#0F172A]/90', 'border-slate-700/80', 'text-slate-200');
+          legendCard.classList.add('bg-white/95', 'border-[#E2E8F0]');
+        }
+        if (statusPill) {
+          statusPill.classList.remove('bg-[#0F172A]/90', 'border-slate-700/80', 'text-slate-200');
+          statusPill.classList.add('bg-white/95', 'border-[#E2E8F0]', 'text-[#475569]');
+        }
+
+        this.stopRenderLoop();
+        resizeCanvas();
+        render();
+      }
+    },
+
+    onResize() {
+      if (!this.renderer || !this.camera || !this.container) return;
+      const rect = this.container.getBoundingClientRect();
+      const isFull = this.container.parentElement?.classList.contains('graph-fullscreen-mode');
+      const w = Math.max(300, isFull ? window.innerWidth : (rect.width || this.container.clientWidth || 1000));
+      const h = Math.max(300, isFull ? window.innerHeight : (rect.height || this.container.clientHeight || 700));
+
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(w, h);
+    },
+
+    buildScene(graphData) {
+      if (!this.initialized) {
+        if (!this.init()) return;
+      }
+
+      this.clearScene();
+
+      let rawNodes = (graphData && graphData.nodes && graphData.nodes.length > 0) ? graphData.nodes : null;
+      let rawEdges = (graphData && graphData.edges && graphData.edges.length > 0) ? graphData.edges : null;
+
+      if (!rawNodes || rawNodes.length === 0) {
+        if (state.rawGraph && state.rawGraph.nodes && state.rawGraph.nodes.length > 0) {
+          rawNodes = state.rawGraph.nodes;
+          rawEdges = state.rawGraph.edges;
+        } else if (state.nodes && state.nodes.length > 0) {
+          rawNodes = state.nodes;
+          rawEdges = state.edges;
+        }
+      }
+
+      if (!rawNodes || rawNodes.length === 0) {
+        if (state.currentRepoId) {
+          loadGraph();
+        }
+        return;
+      }
+
+      rawEdges = rawEdges || [];
+
+      // Group nodes by package/module deterministically
+      const clusterMap = new Map();
+      rawNodes.forEach(node => {
+        let pkg = 'core';
+        if (node.package) pkg = node.package;
+        else if (node.file) {
+          const parts = node.file.split('/');
+          pkg = parts.length > 1 ? parts[0] : 'root';
+        }
+        if (!clusterMap.has(pkg)) clusterMap.set(pkg, []);
+        clusterMap.get(pkg).push(node);
+      });
+
+      // Sort cluster keys alphabetically for 100% deterministic spatial anchors
+      const sortedPkgs = Array.from(clusterMap.keys()).sort();
+      const clusterCount = sortedPkgs.length;
+
+      // Layout nodes into 3D Space
+      sortedPkgs.forEach((pkg, clusterIdx) => {
+        const clusterNodes = clusterMap.get(pkg);
+        const anchorAngle = clusterCount > 1 ? (clusterIdx * (2 * Math.PI / clusterCount)) : 0;
+        const anchorDist = clusterCount > 1 ? (240 + (clusterIdx % 2) * 60) : 0;
+        const anchorX = Math.cos(anchorAngle) * anchorDist;
+        const anchorZ = Math.sin(anchorAngle) * anchorDist;
+
+        // Landmark text sprite for package cluster
+        if (clusterCount > 1 || clusterNodes.length > 8) {
+          const pkgSprite = this.createLabelSprite(pkg.toUpperCase(), 'PACKAGE', 0x38BDF8, true);
+          pkgSprite.position.set(anchorX, 230, anchorZ);
+          this.labelsGroup.add(pkgSprite);
+        }
+
+        clusterNodes.forEach((node, nodeIdx) => {
+          // Architectural Tier (Y-axis)
+          let tierY = 0;
+          const type = (node.type || '').toUpperCase();
+          if (type.includes('API') || type.includes('ROUTE') || type.includes('ENDPOINT')) {
+            tierY = 180;
+          } else if (type.includes('DATABASE') || type.includes('TABLE') || type.includes('SQL')) {
+            tierY = -180;
+          } else if (type.includes('TEST')) {
+            tierY = -260;
+          } else if (type.includes('EXTERNAL')) {
+            tierY = -260;
+          } else {
+            tierY = 0; // Services, classes, modules
+          }
+
+          // Golden Spiral Dispersion within Package Cluster (X/Z plane)
+          const phi = nodeIdx * 2.39996;
+          const r = 25 + Math.sqrt(nodeIdx) * 32;
+          const posX = anchorX + Math.cos(phi) * r;
+          const posZ = anchorZ + Math.sin(phi) * r;
+          const posY = tierY + (nodeIdx % 3 - 1) * 14;
+
+          node.x3d = posX;
+          node.y3d = posY;
+          node.z3d = posZ;
+
+          // Node Sphere Mesh
+          const radius = this.getNodeRadius3D(type, node.in_degree);
+          node.radius3d = radius;
+          let colorHex = this.getNodeColorHex(type);
+          if (node.diff_status === 'ADDED') {
+            colorHex = 0x10B981; // Emerald green
+          } else if (node.diff_status === 'REMOVED') {
+            colorHex = 0xEF4444; // Rose red
+          } else if (node.diff_status === 'MODIFIED') {
+            colorHex = 0xF59E0B; // Amber warning
+          } else if (node.is_impacted) {
+            colorHex = 0xF97316; // Radiant blast orange
+          }
+
+          const geo = new THREE.SphereGeometry(radius, 20, 20);
+          const mat = new THREE.MeshStandardMaterial({
+            color: colorHex,
+            roughness: 0.32,
+            metalness: 0.22,
+            emissive: colorHex,
+            emissiveIntensity: 0.16,
+          });
+
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.position.set(posX, posY, posZ);
+          mesh.userData = {
+            nodeId: node.id,
+            nodeData: node,
+            radius: radius,
+            origColor: colorHex,
+          };
+
+          this.nodesGroup.add(mesh);
+          this.nodeMeshes.set(node.id, mesh);
+          this.nodeDataMap.set(node.id, node);
+        });
+      });
+
+      // Add prominent billboard labels for top landmark nodes (highest degrees or central entities)
+      const prominentNodes = [...rawNodes]
+        .sort((a, b) => (b.in_degree || 0) - (a.in_degree || 0))
+        .slice(0, 10);
+      const prominentIds = new Set(prominentNodes.map(n => n.id));
+
+      rawNodes.forEach(node => {
+        if (prominentIds.has(node.id) && node.x3d !== undefined) {
+          const sprite = this.createLabelSprite(node.name || node.label || node.id, node.type, this.getNodeColorHex((node.type || '').toUpperCase()), false);
+          sprite.position.set(node.x3d, node.y3d + (node.radius3d || 10) + 14, node.z3d);
+          this.labelsGroup.add(sprite);
+          node.labelSprite = sprite;
+        }
+      });
+
+      // Render Relationship Lines
+      const linePositions = [];
+      const lineColors = [];
+      const edgeColorNormal = new THREE.Color(0x64748B);
+      const edgeColorDrift = new THREE.Color(0xEF4444);
+
+      rawEdges.forEach(edge => {
+        const srcMesh = this.nodeMeshes.get(edge.source);
+        const tgtMesh = this.nodeMeshes.get(edge.target);
+        if (!srcMesh || !tgtMesh) return;
+
+        const p1 = srcMesh.position;
+        const p2 = tgtMesh.position;
+
+        linePositions.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+        const col = edge.is_drift ? edgeColorDrift : edgeColorNormal;
+        lineColors.push(col.r, col.g, col.b, col.r, col.g, col.b);
+
+        this.edgeLines.push({
+          sourceId: edge.source,
+          targetId: edge.target,
+          edgeData: edge,
+          p1: p1.clone(),
+          p2: p2.clone(),
+        });
+      });
+
+      if (linePositions.length > 0) {
+        const lineGeo = new THREE.BufferGeometry();
+        lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+        lineGeo.setAttribute('color', new THREE.Float32BufferAttribute(lineColors, 3));
+
+        const lineMat = new THREE.LineBasicMaterial({
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.55,
+        });
+
+        const linesMesh = new THREE.LineSegments(lineGeo, lineMat);
+        this.edgesGroup.add(linesMesh);
+      }
+
+      // If a node was previously selected, restore its halo
+      if (state.selectedNodeId && this.nodeMeshes.has(state.selectedNodeId)) {
+        this.highlightSelectedHalo(state.selectedNodeId);
+      }
+
+      this.fitGraph(true);
+    },
+
+    getNodeRadius3D(type, inDegree) {
+      const base = {
+        PACKAGE: 16,
+        SERVICE: 14,
+        MODULE: 13,
+        DATABASE: 13,
+        DATABASE_TABLE: 12,
+        CLASS: 11,
+        API_ENDPOINT: 11,
+        FUNCTION: 8.5,
+        METHOD: 8.5,
+        TEST_CASE: 9.5,
+        EXTERNAL_DEPENDENCY: 8,
+      }[type] || 10;
+      return Math.min(24, base + Math.min(inDegree || 0, 6) * 0.9);
+    },
+
+    getNodeColorHex(type) {
+      const map = {
+        PACKAGE: 0x2563EB,
+        MODULE: 0x059669,
+        CLASS: 0x0284C7,
+        SERVICE: 0x7C3AED,
+        API_ENDPOINT: 0xE11D48,
+        FUNCTION: 0xDB2777,
+        METHOD: 0x6366F1,
+        DATABASE_TABLE: 0xD97706,
+        DATABASE: 0xEA580C,
+        TEST_CASE: 0x8B5CF6,
+        EXTERNAL_DEPENDENCY: 0x64748B,
+      };
+      return map[type] || 0x64748B;
+    },
+
+    clearScene() {
+      // Clean up node meshes
+      this.nodeMeshes.forEach(mesh => {
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) mesh.material.dispose();
+      });
+      this.nodeMeshes.clear();
+      this.nodeDataMap.clear();
+      this.nodesGroup.clear();
+
+      // Clean up billboard labels
+      this.labelsGroup.children.forEach(child => {
+        if (child.material?.map) child.material.map.dispose();
+        if (child.material) child.material.dispose();
+      });
+      this.labelsGroup.clear();
+
+      // Clean up edge meshes
+      this.edgesGroup.children.forEach(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+      });
+      this.edgesGroup.clear();
+      this.edgeLines = [];
+
+      // Clean up particles & hover
+      this.clearParticles();
+      this.unhover();
+      this.clearSelectedHalo();
+
+      if (this.beaconMesh) {
+        this.scene.remove(this.beaconMesh);
+        this.beaconMesh = null;
+      }
+    },
+
+    clearParticles() {
+      this.particlesGroup.children.forEach(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+      });
+      this.particlesGroup.clear();
+      this.waveParticles = [];
+    },
+
+    focusNode(nodeId) {
+      const mesh = this.nodeMeshes.get(nodeId);
+      if (!mesh) return;
+
+      this.highlightSelectedHalo(nodeId);
+
+      const target = mesh.position.clone();
+      const pos = target.clone().add(new THREE.Vector3(0, 60, 220));
+
+      this.animateCameraTo(pos, target, 750);
+    },
+
+    fitGraph(immediate = false) {
+      if (this.nodeMeshes.size === 0) return;
+
+      const box = new THREE.Box3();
+      this.nodeMeshes.forEach(mesh => box.expandByPoint(mesh.position));
+
+      const sphere = box.getBoundingSphere(new THREE.Sphere());
+      const radius = Math.max(180, sphere.radius);
+      const fov = (this.camera.fov * Math.PI) / 180;
+      let dist = radius / Math.sin(fov / 2);
+      dist = Math.max(300, Math.min(dist * 1.1, 2600));
+
+      const center = sphere.center;
+      const targetPos = new THREE.Vector3(center.x, center.y + dist * 0.45, center.z + dist * 0.95);
+
+      if (immediate) {
+        this.camera.position.copy(targetPos);
+        if (this.controls) {
+          this.controls.target.copy(center);
+          this.controls.update();
+        } else {
+          this.camera.lookAt(center);
+        }
+        this.cameraLerp = null;
+      } else {
+        this.animateCameraTo(targetPos, center, 750);
+      }
+    },
+
+    resetCamera() {
+      const targetPos = new THREE.Vector3(0, 450, 900);
+      const targetLookAt = new THREE.Vector3(0, 0, 0);
+      this.animateCameraTo(targetPos, targetLookAt, 750);
+    },
+
+    animateCameraTo(targetPos, targetLookAt, duration = 750) {
+      if (this.reducedMotion) {
+        this.camera.position.copy(targetPos);
+        if (this.controls) {
+          this.controls.target.copy(targetLookAt);
+          this.controls.update();
+        } else {
+          this.camera.lookAt(targetLookAt);
+        }
+        this.cameraLerp = null;
+        return;
+      }
+
+      this.cameraLerp = {
+        startPos: this.camera.position.clone(),
+        targetPos: targetPos.clone(),
+        startTarget: this.controls ? this.controls.target.clone() : new THREE.Vector3(),
+        targetLookAt: targetLookAt.clone(),
+        startTime: performance.now(),
+        duration: duration,
+      };
+    },
+
+    startRenderLoop() {
+      if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
+      const tick = () => {
+        if (!this.active) return;
+        this.renderTick();
+        this.animFrameId = requestAnimationFrame(tick);
+      };
+      this.animFrameId = requestAnimationFrame(tick);
+    },
+
+    stopRenderLoop() {
+      if (this.animFrameId) {
+        cancelAnimationFrame(this.animFrameId);
+        this.animFrameId = null;
+      }
+    },
+
+    renderTick() {
+      if (!this.renderer || !this.scene || !this.camera) return;
+
+      // Smooth camera interpolation
+      if (this.cameraLerp) {
+        const elapsed = performance.now() - this.cameraLerp.startTime;
+        const progress = Math.min(1, elapsed / this.cameraLerp.duration);
+        // Smooth cubic ease-in-out curve
+        const ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+        this.camera.position.lerpVectors(this.cameraLerp.startPos, this.cameraLerp.targetPos, ease);
+        if (this.controls) {
+          this.controls.target.lerpVectors(this.cameraLerp.startTarget, this.cameraLerp.targetLookAt, ease);
+          this.controls.update();
+        }
+        if (progress >= 1) {
+          this.cameraLerp = null;
+        }
+      } else if (this.controls) {
+        this.controls.update();
+      }
+
+      // Animate selected halo to billboard towards camera
+      if (this.selectedHalo) {
+        this.selectedHalo.lookAt(this.camera.position);
+      }
+
+      // Animate pulsing beacon for mutation / injection
+      if (this.beaconMesh) {
+        const time = Date.now() * 0.003;
+        const scale = 1.0 + Math.sin(time) * 0.25;
+        this.beaconMesh.scale.set(scale, scale, scale);
+        this.beaconMesh.lookAt(this.camera.position);
+      }
+
+      // Animate propagation particles along edges
+      this.waveParticles.forEach(p => {
+        p.progress += 0.015 * this.simSpeed;
+        if (p.progress > 1) p.progress = 0;
+        p.mesh.position.lerpVectors(p.start, p.end, p.progress);
+      });
+
+      this.renderer.render(this.scene, this.camera);
+    },
+
+    // --- 3D What-If Simulation Pipeline ---
+    animateWhatIfSimulation(data) {
+      this.simMode = 'WHAT_IF';
+      this.simData = data;
+      this.simStepIndex = 0;
+      this.simState = 'PLAYING';
+
+      const bar = document.getElementById('sim-3d-playback-bar');
+      const label = document.getElementById('sim-3d-mode-label');
+      const playIcon = document.getElementById('sim-3d-play-icon');
+
+      if (bar) bar.classList.remove('hidden');
+      if (label) label.textContent = 'Evidence-Backed What-If Simulation';
+      if (playIcon) playIcon.textContent = 'pause';
+
+      // 1. Identify mutant node from scenario
+      const changes = data.proposed_changes || [];
+      const structTargets = data.structured_scenario?.target_entities || [];
+      const findingsTargets = (data.findings || []).flatMap(f => f.affected_entity_ids || []);
+      const firstTarget = structTargets[0] || changes[0]?.target || (data.impact?.changed_artifacts || [])[0] || findingsTargets[0] || '';
+      let mutantNode = null;
+
+      if (firstTarget) {
+        const ftLower = firstTarget.toLowerCase();
+        this.nodeDataMap.forEach((node, id) => {
+          if (!mutantNode) {
+            const nIdLower = id.toLowerCase();
+            const nNameLower = (node.name || '').toLowerCase();
+            const nQualLower = (node.qualified_name || '').toLowerCase();
+            if (nIdLower === ftLower || nNameLower === ftLower || nQualLower === ftLower || nQualLower.includes(ftLower) || ftLower.includes(nNameLower)) {
+              mutantNode = node;
+            }
+          }
+        });
+      }
+
+      // 2. Extract multi-hop propagation paths & impact sets
+      const paths = data.impact?.propagation_paths || [];
+      const affectedComponents = new Set(data.impact?.affected_components || []);
+      const affectedTests = new Set(data.tests?.directly_affected_tests || []);
+
+      const isCapacityOrUnsupported = data.status === 'UNSUPPORTED' ||
+        (data.structured_scenario?.analysis_objective && data.structured_scenario.analysis_objective.includes('CAPACITY')) ||
+        (data.engine_routing?.roles_executed || []).some(r => r.status === 'NOT_EVALUATED' && r.role.includes('Reliability'));
+
+      const isZeroImpact = (!data.impact?.affected_components || data.impact.affected_components.length === 0) &&
+                           (!data.impact?.affected_apis || data.impact.affected_apis.length === 0) &&
+                           (!data.tests?.directly_affected_tests || data.tests.directly_affected_tests.length === 0) &&
+                           paths.length === 0;
+
+      this.simStages = [];
+
+      if (isCapacityOrUnsupported) {
+        this.simStages.push({
+          phase: 'BASELINE',
+          label: 'Phase 1: Baseline Architecture Synchronized',
+          mutantNode: mutantNode,
+          highlightNodes: mutantNode ? [mutantNode.id] : [],
+          activeEdges: [],
+        });
+        this.simStages.push({
+          phase: 'INJECTION',
+          label: `Phase 2: Capacity / Workload Scenario Injected on ${mutantNode?.name || firstTarget || 'Target'}`,
+          mutantNode: mutantNode,
+          highlightNodes: mutantNode ? [mutantNode.id] : [],
+          activeEdges: [],
+        });
+        this.simStages.push({
+          phase: 'UNSUPPORTED',
+          label: 'Phase 3: Capacity Prediction Unsupported (Live Telemetry Required - Marked NOT_EVALUATED)',
+          mutantNode: mutantNode,
+          highlightNodes: mutantNode ? [mutantNode.id] : [],
+          activeEdges: [],
+        });
+        this.simStages.push({
+          phase: 'COMPLETED',
+          label: 'Phase 4: Simulation Completed • Zero False Claims Made',
+          mutantNode: mutantNode,
+          highlightNodes: mutantNode ? [mutantNode.id] : [],
+          activeEdges: [],
+        });
+      } else if (isZeroImpact) {
+        this.simStages.push({
+          phase: 'BASELINE',
+          label: 'Phase 1: Baseline Architecture Synchronized',
+          mutantNode: mutantNode,
+          highlightNodes: mutantNode ? [mutantNode.id] : [],
+          activeEdges: [],
+        });
+        this.simStages.push({
+          phase: 'INJECTION',
+          label: `Phase 2: Virtual Mutation Injected on Isolated Entity: ${mutantNode?.name || firstTarget || 'Target'}`,
+          mutantNode: mutantNode,
+          highlightNodes: mutantNode ? [mutantNode.id] : [],
+          activeEdges: [],
+        });
+        this.simStages.push({
+          phase: 'ZERO_IMPACT',
+          label: 'Phase 3: Verified Zero Blast Radius • 0 Downstream Dependents Affected',
+          mutantNode: mutantNode,
+          highlightNodes: mutantNode ? [mutantNode.id] : [],
+          activeEdges: [],
+        });
+        this.simStages.push({
+          phase: 'COMPLETED',
+          label: 'Phase 4: Simulation Completed • Zero Regressions Predicted',
+          mutantNode: mutantNode,
+          highlightNodes: mutantNode ? [mutantNode.id] : [],
+          activeEdges: [],
+        });
+      } else {
+        this.simStages.push({
+          phase: 'BASELINE',
+          label: 'Phase 1: Baseline Architecture Synchronized',
+          mutantNode: mutantNode,
+          highlightNodes: mutantNode ? [mutantNode.id] : [],
+          activeEdges: [],
+        });
+
+        this.simStages.push({
+          phase: 'INJECTION',
+          label: `Phase 2: Virtual Mutation Injected on ${mutantNode?.name || firstTarget}`,
+          mutantNode: mutantNode,
+          highlightNodes: mutantNode ? [mutantNode.id] : [],
+          activeEdges: [],
+        });
+
+        const compArray = Array.from(affectedComponents);
+        const directNodes = compArray.slice(0, 3);
+        const indirectNodes = compArray.slice(3);
+
+        if (directNodes.length > 0) {
+          this.simStages.push({
+            phase: 'DIRECT',
+            label: `Phase 3: Direct Blast Radius (${directNodes.length} immediate dependents)`,
+            mutantNode: mutantNode,
+            highlightNodes: directNodes,
+            activeEdges: paths.length > 0 ? (paths[0]?.hops || []) : [],
+          });
+        }
+
+        if (indirectNodes.length > 0) {
+          this.simStages.push({
+            phase: 'INDIRECT',
+            label: `Phase 4: Transitive Multi-Hop Blast Radius (${indirectNodes.length} indirect dependents)`,
+            mutantNode: mutantNode,
+            highlightNodes: indirectNodes,
+            activeEdges: paths.length > 1 ? (paths[1]?.hops || []) : [],
+          });
+        }
+
+        if (affectedTests.size > 0) {
+          this.simStages.push({
+            phase: 'TESTS',
+            label: `Phase 5: Impacted Test Verification Suites (${affectedTests.size} test cases)`,
+            mutantNode: mutantNode,
+            highlightNodes: Array.from(affectedTests),
+            activeEdges: [],
+          });
+        }
+
+        this.simStages.push({
+          phase: 'COMPLETED',
+          label: 'Phase 6: Simulation Complete • Click Nodes to Inspect Evidence',
+          mutantNode: mutantNode,
+          highlightNodes: compArray.concat(Array.from(affectedTests)),
+          activeEdges: [],
+        });
+      }
+
+      this.simTotalSteps = this.simStages.length;
+
+      if (this.reducedMotion) {
+        this.simStepIndex = this.simTotalSteps - 1;
+        this.applyStage(this.simStages[this.simStepIndex]);
+        this.simState = 'COMPLETED';
+        if (playIcon) playIcon.textContent = 'replay';
+        return;
+      }
+
+      this.applyStage(this.simStages[0]);
+      this.startPlaybackTimer();
+    },
+
+    // --- 3D Change Impact Pipeline ---
+    animateChangeImpact(data) {
+      this.simMode = 'CHANGE_IMPACT';
+      this.simData = data;
+      this.simStepIndex = 0;
+      this.simState = 'PLAYING';
+
+      const bar = document.getElementById('sim-3d-playback-bar');
+      const label = document.getElementById('sim-3d-mode-label');
+      const playIcon = document.getElementById('sim-3d-play-icon');
+
+      if (bar) bar.classList.remove('hidden');
+      if (label) label.textContent = 'Verified Change Impact Propagation';
+      if (playIcon) playIcon.textContent = 'pause';
+
+      const changes = data.changes || [];
+      const changedIds = changes.map(c => c.artifact_id || c.qualified_name);
+      const directAffected = data.impact_tree?.direct || [];
+      const indirectAffected = data.impact_tree?.indirect || [];
+      const tests = data.impact_tree?.tests || [];
+
+      this.simStages = [
+        {
+          phase: 'CHANGES',
+          label: `Phase 1: Commit Changes (${changes.length} entities)`,
+          highlightNodes: changedIds,
+          changes: changes,
+        },
+        {
+          phase: 'DIRECT',
+          label: `Phase 2: Direct Structural Dependencies (${directAffected.length} components)`,
+          highlightNodes: directAffected.map(d => d.id || d.artifact_id),
+        },
+        {
+          phase: 'INDIRECT',
+          label: `Phase 3: Multi-Hop Transitive Blast Radius (${indirectAffected.length} components)`,
+          highlightNodes: indirectAffected.map(d => d.id || d.artifact_id),
+        },
+        {
+          phase: 'TESTS',
+          label: `Phase 4: Impacted Verification Suites (${tests.length} tests)`,
+          highlightNodes: tests.map(t => t.id || t.artifact_id),
+        },
+        {
+          phase: 'COMPLETED',
+          label: 'Phase 5: Change Impact Complete • Inspect Verified Causal Paths',
+          highlightNodes: changedIds.concat(directAffected.map(d => d.id || d.artifact_id)),
+        }
+      ];
+
+      this.simTotalSteps = this.simStages.length;
+
+      if (this.reducedMotion) {
+        this.simStepIndex = this.simTotalSteps - 1;
+        this.applyStage(this.simStages[this.simStepIndex]);
+        this.simState = 'COMPLETED';
+        if (playIcon) playIcon.textContent = 'replay';
+        return;
+      }
+
+      this.applyStage(this.simStages[0]);
+      this.startPlaybackTimer();
+    },
+
+    applyStage(stage) {
+      if (!stage) return;
+      const statusText = document.getElementById('sim-3d-status-text');
+      if (statusText) statusText.textContent = stage.label;
+
+      // Handle Mutant Node Beacon
+      if (stage.mutantNode) {
+        const mesh = this.nodeMeshes.get(stage.mutantNode.id);
+        if (mesh) {
+          if (!this.beaconMesh) {
+            const beaconGeo = new THREE.RingGeometry(18, 22, 32);
+            const beaconMat = new THREE.MeshBasicMaterial({
+              color: 0xEC4899,
+              side: THREE.DoubleSide,
+              transparent: true,
+              opacity: 0.85,
+            });
+            this.beaconMesh = new THREE.Mesh(beaconGeo, beaconMat);
+            this.scene.add(this.beaconMesh);
+          }
+          this.beaconMesh.position.copy(mesh.position);
+          this.beaconMesh.visible = true;
+
+          if (stage.phase === 'INJECTION') {
+            this.focusNode(stage.mutantNode.id);
+          }
+        }
+      }
+
+      // Handle Change status styling
+      if (stage.changes) {
+        stage.changes.forEach(c => {
+          let mesh = this.nodeMeshes.get(c.artifact_id);
+          if (!mesh) {
+            this.nodeDataMap.forEach((n, id) => {
+              if (n.qualified_name === c.qualified_name) mesh = this.nodeMeshes.get(id);
+            });
+          }
+          if (mesh && mesh.material) {
+            if (c.change_type === 'ADDED') {
+              mesh.material.color.setHex(0x10B981);
+              mesh.material.emissive.setHex(0x10B981);
+              mesh.material.emissiveIntensity = 0.5;
+            } else if (c.change_type === 'REMOVED') {
+              mesh.material.color.setHex(0xEF4444);
+              mesh.material.emissive.setHex(0xEF4444);
+              mesh.material.emissiveIntensity = 0.5;
+            } else {
+              mesh.material.color.setHex(0x0284C7);
+              mesh.material.emissive.setHex(0x0284C7);
+              mesh.material.emissiveIntensity = 0.5;
+            }
+          }
+        });
+      }
+
+      // Handle highlighted downstream nodes
+      if (stage.highlightNodes && stage.highlightNodes.length > 0) {
+        const targetColor = stage.phase === 'TESTS' ? 0x8B5CF6 : (stage.phase === 'INDIRECT' ? 0xDC2626 : 0xD97706);
+        stage.highlightNodes.forEach(nid => {
+          let mesh = this.nodeMeshes.get(nid);
+          if (!mesh) {
+            this.nodeDataMap.forEach((n, id) => {
+              if (n.name === nid || n.qualified_name === nid) mesh = this.nodeMeshes.get(id);
+            });
+          }
+          if (mesh && mesh.material) {
+            mesh.material.color.setHex(targetColor);
+            mesh.material.emissive.setHex(targetColor);
+            mesh.material.emissiveIntensity = 0.45;
+          }
+        });
+      }
+
+      // Trigger wave particles along active edges
+      if (stage.activeEdges && stage.activeEdges.length > 0) {
+        stage.activeEdges.forEach(edge => {
+          const srcId = edge.source || edge.source_artifact_id;
+          const tgtId = edge.target || edge.target_artifact_id;
+          const srcMesh = this.nodeMeshes.get(srcId);
+          const tgtMesh = this.nodeMeshes.get(tgtId);
+          if (srcMesh && tgtMesh) {
+            this.spawnWaveParticle(srcMesh.position, tgtMesh.position);
+          }
+        });
+      }
+    },
+
+    spawnWaveParticle(startPos, endPos) {
+      const geo = new THREE.SphereGeometry(3.5, 12, 12);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xFDE047,
+        transparent: true,
+        opacity: 0.9,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(startPos);
+      this.particlesGroup.add(mesh);
+
+      this.waveParticles.push({
+        mesh: mesh,
+        start: startPos.clone(),
+        end: endPos.clone(),
+        progress: 0,
+      });
+
+      if (this.waveParticles.length > 30) {
+        const oldest = this.waveParticles.shift();
+        this.particlesGroup.remove(oldest.mesh);
+        oldest.mesh.geometry.dispose();
+        oldest.mesh.material.dispose();
+      }
+    },
+
+    startPlaybackTimer() {
+      if (this.simTimer) clearTimeout(this.simTimer);
+      const delay = Math.max(400, 1400 / this.simSpeed);
+      this.simTimer = setTimeout(() => {
+        if (this.simState === 'PLAYING') {
+          this.stepForward();
+        }
+      }, delay);
+    },
+
+    stepForward() {
+      if (this.simStepIndex < this.simTotalSteps - 1) {
+        this.simStepIndex++;
+        this.applyStage(this.simStages[this.simStepIndex]);
+        if (this.simStepIndex === this.simTotalSteps - 1) {
+          this.simState = 'COMPLETED';
+          const icon = document.getElementById('sim-3d-play-icon');
+          if (icon) icon.textContent = 'replay';
+        } else if (this.simState === 'PLAYING') {
+          this.startPlaybackTimer();
+        }
+      } else {
+        this.simState = 'COMPLETED';
+        const icon = document.getElementById('sim-3d-play-icon');
+        if (icon) icon.textContent = 'replay';
+      }
+    },
+
+    togglePlayback() {
+      const icon = document.getElementById('sim-3d-play-icon');
+      if (this.simState === 'PLAYING') {
+        this.simState = 'PAUSED';
+        if (this.simTimer) clearTimeout(this.simTimer);
+        if (icon) icon.textContent = 'play_arrow';
+      } else if (this.simState === 'PAUSED') {
+        this.simState = 'PLAYING';
+        if (icon) icon.textContent = 'pause';
+        this.startPlaybackTimer();
+      } else if (this.simState === 'COMPLETED') {
+        this.resetSimulationAnimation();
+        this.simState = 'PLAYING';
+        if (icon) icon.textContent = 'pause';
+        this.startPlaybackTimer();
+      }
+    },
+
+    resetSimulationAnimation() {
+      if (this.simTimer) clearTimeout(this.simTimer);
+      this.simStepIndex = 0;
+      this.simState = 'PAUSED';
+
+      const icon = document.getElementById('sim-3d-play-icon');
+      if (icon) icon.textContent = 'play_arrow';
+
+      // Restore original colors
+      this.nodeMeshes.forEach(mesh => {
+        if (mesh.userData?.origColor) {
+          mesh.material.color.setHex(mesh.userData.origColor);
+          mesh.material.emissive.setHex(0x000000);
+          mesh.material.emissiveIntensity = 0;
+        }
+      });
+
+      this.clearParticles();
+      if (this.beaconMesh) this.beaconMesh.visible = false;
+
+      if (this.simStages.length > 0) {
+        this.applyStage(this.simStages[0]);
+      }
+    },
+
+    closePlaybackBar() {
+      if (this.simTimer) clearTimeout(this.simTimer);
+      document.getElementById('sim-3d-playback-bar')?.classList.add('hidden');
+      this.resetSimulationAnimation();
+      this.simMode = null;
+    },
+
+    dispose() {
+      this.stopRenderLoop();
+      this.clearScene();
+      if (this.controls) {
+        this.controls.dispose();
+        this.controls = null;
+      }
+      if (this.resizeObserver) {
+        this.resizeObserver.disconnect();
+        this.resizeObserver = null;
+      }
+      if (this.renderer) {
+        this.renderer.dispose();
+      }
+      this.initialized = false;
+    }
+  };
+
+  // --- Fullscreen Toggle Logic ---
+  function toggleGraphFullscreen() {
+    const container = document.getElementById('graph-workspace-container');
+    if (!container) return;
+    const isFull = container.classList.toggle('graph-fullscreen-mode');
+    const icon = document.getElementById('fullscreen-icon');
+    if (icon) {
+      icon.textContent = isFull ? 'fullscreen_exit' : 'fullscreen';
+    }
+    if (isFull) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    setTimeout(() => {
+      resizeCanvas();
+      fitToScreen();
+    }, 60);
+  }
+
   // --- Event Listeners Initialization ---
   function initEventListeners() {
     const canvas = state.canvas;
     if (!canvas) return;
 
-    // Controls
+    // Initialize 3D Spatial Canvas Listeners (Dimension toggle, HUD, Simulation playback)
+    Twin3D.setupHUDListeners();
+
+    // MiroFish Floating Toolbar Controls
     document.getElementById('zoom-in-btn')?.addEventListener('click', () => zoomBy(1.25));
     document.getElementById('zoom-out-btn')?.addEventListener('click', () => zoomBy(0.8));
-    document.getElementById('fit-screen-btn')?.addEventListener('click', fitToScreen);
     document.getElementById('btn-fit-view')?.addEventListener('click', fitToScreen);
+    document.getElementById('fit-screen-btn')?.addEventListener('click', fitToScreen);
+    document.getElementById('btn-refresh-graph')?.addEventListener('click', () => loadGraph());
+    document.getElementById('btn-fullscreen-graph')?.addEventListener('click', toggleGraphFullscreen);
+
+    // Escape key exits fullscreen
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const container = document.getElementById('graph-workspace-container');
+        if (container && container.classList.contains('graph-fullscreen-mode')) {
+          toggleGraphFullscreen();
+        }
+      }
+    });
+
+    const toggleEdgeLabelsBtn = document.getElementById('toggle-edge-labels-btn');
+    if (toggleEdgeLabelsBtn) {
+      toggleEdgeLabelsBtn.addEventListener('click', () => {
+        state.showEdgeLabels = !state.showEdgeLabels;
+        toggleEdgeLabelsBtn.classList.toggle('text-[#0071E3]', state.showEdgeLabels);
+        toggleEdgeLabelsBtn.classList.toggle('border-[#0071E3]', state.showEdgeLabels);
+        render();
+      });
+    }
+
     const onToggleIsolated = () => {
       state.hideIsolated = !state.hideIsolated;
-      document.getElementById('toggle-isolated-btn')?.classList.toggle('active', state.hideIsolated);
-      document.getElementById('btn-toggle-isolated')?.classList.toggle('active', state.hideIsolated);
+      document.getElementById('toggle-isolated-btn')?.classList.toggle('text-[#0071E3]', state.hideIsolated);
+      document.getElementById('btn-toggle-isolated')?.classList.toggle('text-[#0071E3]', state.hideIsolated);
       processGraphData(state.rawGraph);
     };
     document.getElementById('toggle-isolated-btn')?.addEventListener('click', onToggleIsolated);
     document.getElementById('btn-toggle-isolated')?.addEventListener('click', onToggleIsolated);
-    document.getElementById('toggle-physics-btn')?.addEventListener('click', () => {
-      state.physicsEnabled = !state.physicsEnabled;
-      document.getElementById('toggle-physics-btn')?.classList.toggle('active', state.physicsEnabled);
-    });
 
     document.getElementById('impact-mode-btn')?.addEventListener('click', () => {
       state.impactMode = !state.impactMode;
-      document.getElementById('impact-mode-btn')?.classList.toggle('active', state.impactMode);
+      document.getElementById('impact-mode-btn')?.classList.toggle('bg-[#FEF3C7]', state.impactMode);
       if (!state.impactMode) {
         state.impactRootId = null;
       } else if (state.selectedNodeId) {
@@ -4971,94 +7585,49 @@
       loadGraph();
     });
 
-    document.getElementById('reset-focus-btn')?.addEventListener('click', () => {
-      state.selectedNodeId = null;
-      state.focusNodeId = null;
-      state.impactMode = false;
-      document.getElementById('impact-mode-btn')?.classList.remove('active');
-      const focusPill = document.getElementById('focus-info-pill');
-      const resetBtn = document.getElementById('reset-focus-btn');
-      if (focusPill) focusPill.style.display = 'none';
-      if (resetBtn) resetBtn.style.display = 'none';
-      loadGraph();
-    });
-
-    // Filter Buttons
-    document.getElementById('reset-filters-btn')?.addEventListener('click', () => {
-      document.querySelectorAll('#type-filter-grid input').forEach(cb => cb.checked = true);
-      document.querySelectorAll('#rel-filter-grid input').forEach(cb => cb.checked = true);
-      const testsCb = document.getElementById('toggle-tests');
-      const extCb = document.getElementById('toggle-external');
-      if (testsCb) testsCb.checked = true;
-      if (extCb) extCb.checked = false;
-      loadGraph();
-    });
-
-    document.querySelectorAll('#type-filter-grid input, #rel-filter-grid input').forEach(cb => {
-      cb.addEventListener('change', () => loadGraph());
-    });
-
-    // Close Inspector
+    // Close Inspector Drawer
     document.getElementById('close-inspector-btn')?.addEventListener('click', () => {
-      const sbRight = document.getElementById('sidebar-right');
-      if (sbRight) sbRight.style.display = 'none';
+      document.getElementById('node-detail-panel')?.classList.remove('open');
+      state.selectedNodeId = null;
+      state.selectedEdgeId = null;
+      if (window.Twin3D && window.Twin3D.active) {
+        window.Twin3D.clearSelectedHalo();
+      }
+      render();
     });
 
-    // Search Input for File Tree
-    const searchInput = document.getElementById('tree-search-input');
-    const clearSearchBtn = document.getElementById('clear-search-btn');
-
-    if (searchInput) {
-      searchInput.addEventListener('input', (e) => {
-        const q = e.target.value.trim().toLowerCase();
-        document.querySelectorAll('#file-tree-container .tree-item').forEach(item => {
-          if (!q) {
-            item.style.display = 'flex';
-          } else {
-            const txt = item.textContent.toLowerCase();
-            item.style.display = txt.includes(q) ? 'flex' : 'none';
-          }
-        });
-
-        if (q) {
-          const match = state.nodes.find(n =>
-            (n.name && n.name.toLowerCase().includes(q)) ||
-            (n.qualified_name && n.qualified_name.toLowerCase().includes(q)) ||
-            (n.file && n.file.toLowerCase().includes(q))
-          );
-          if (match) {
-            state.selectedNodeId = match.id;
-            inspectNode(match);
-          }
+    // Search input within white canvas toolbar
+    const graphSearchInput = document.getElementById('graph-search-input');
+    if (graphSearchInput) {
+      graphSearchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          performGraphSearch(graphSearchInput.value);
         }
       });
     }
 
-    if (clearSearchBtn) {
-      clearSearchBtn.addEventListener('click', () => {
-        if (searchInput) {
-          searchInput.value = '';
-          document.querySelectorAll('#file-tree-container .tree-item').forEach(item => item.style.display = 'flex');
-          searchInput.focus();
-        }
-      });
-    }
-
-    // Canvas Pan & Zoom
+    // Canvas Pan & Zoom (Mouse Wheel & Drag)
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
-      const mouseX = e.clientX - canvas.getBoundingClientRect().left;
-      const mouseY = e.clientY - canvas.getBoundingClientRect().top;
+      const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
 
-      state.transform.x = mouseX - (mouseX - state.transform.x) * zoomFactor;
-      state.transform.y = mouseY - (mouseY - state.transform.y) * zoomFactor;
-      state.transform.k *= zoomFactor;
-    });
+      const newK = Math.max(0.15, Math.min(4.0, state.transform.k * zoomFactor));
+      const factor = newK / state.transform.k;
+
+      state.transform.x = mouseX - (mouseX - state.transform.x) * factor;
+      state.transform.y = mouseY - (mouseY - state.transform.y) * factor;
+      state.transform.k = newK;
+      render();
+    }, { passive: false });
 
     canvas.addEventListener('mousedown', (e) => {
-      const mouseX = (e.clientX - canvas.getBoundingClientRect().left - state.transform.x) / state.transform.k;
-      const mouseY = (e.clientY - canvas.getBoundingClientRect().top - state.transform.y) / state.transform.k;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = (e.clientX - rect.left - state.transform.x) / state.transform.k;
+      const mouseY = (e.clientY - rect.top - state.transform.y) / state.transform.k;
 
       // Check node hit
       const hitNode = state.nodes.find(n => {
@@ -5070,8 +7639,6 @@
       if (hitNode) {
         state.draggedNode = hitNode;
         state.selectedEdgeId = null;
-        const sbRight = document.getElementById('sidebar-right');
-        if (sbRight) sbRight.style.display = 'flex';
         inspectNode(hitNode);
       } else {
         // Check edge hit
@@ -5084,28 +7651,51 @@
         if (hitEdge) {
           state.selectedEdgeId = hitEdge.id;
           state.selectedNodeId = null;
-          const sbRight = document.getElementById('sidebar-right');
-          if (sbRight) sbRight.style.display = 'flex';
           inspectEdge(hitEdge);
         } else {
           state.isDraggingCanvas = true;
           state.dragStart.x = e.clientX - state.transform.x;
           state.dragStart.y = e.clientY - state.transform.y;
+          // Deselect node on clicking empty canvas
+          if (state.selectedNodeId || state.selectedEdgeId) {
+            state.selectedNodeId = null;
+            state.selectedEdgeId = null;
+            document.getElementById('node-detail-panel')?.classList.remove('open');
+            render();
+          }
         }
       }
     });
 
     window.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
       if (state.draggedNode) {
-        const mouseX = (e.clientX - canvas.getBoundingClientRect().left - state.transform.x) / state.transform.k;
-        const mouseY = (e.clientY - canvas.getBoundingClientRect().top - state.transform.y) / state.transform.k;
+        const mouseX = (e.clientX - rect.left - state.transform.x) / state.transform.k;
+        const mouseY = (e.clientY - rect.top - state.transform.y) / state.transform.k;
         state.draggedNode.x = mouseX;
         state.draggedNode.y = mouseY;
         state.draggedNode.vx = 0;
         state.draggedNode.vy = 0;
+        physicsIterations = Math.max(0, 220 - 40); // wake physics briefly
       } else if (state.isDraggingCanvas) {
         state.transform.x = e.clientX - state.dragStart.x;
         state.transform.y = e.clientY - state.dragStart.y;
+        render();
+      } else if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        // Hover detection
+        const mouseX = (e.clientX - rect.left - state.transform.x) / state.transform.k;
+        const mouseY = (e.clientY - rect.top - state.transform.y) / state.transform.k;
+        const hit = state.nodes.find(n => {
+          const dx = n.x - mouseX;
+          const dy = n.y - mouseY;
+          return dx * dx + dy * dy <= n.radius * n.radius;
+        });
+
+        if (hit !== state.hoveredNode) {
+          state.hoveredNode = hit || null;
+          canvas.style.cursor = hit ? 'pointer' : 'grab';
+          render();
+        }
       }
     });
 
@@ -5768,8 +8358,10 @@
   // PHASE 8: WHAT-IF / SCENARIO SIMULATION WORKSPACE
   // ====================================================================
   let currentSimulationType = 'MODIFY_SYMBOL';
+  let candidateSearchTimer = null;
 
   function initSimulationHandlers() {
+    // Mutation type override buttons
     const typeButtons = document.querySelectorAll('.sim-type-btn');
     typeButtons.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -5782,15 +8374,206 @@
       });
     });
 
-    const runBtn = document.getElementById('btn-run-simulation');
-    if (runBtn) {
-      runBtn.addEventListener('click', runSimulationAction);
+    // Natural-language quick prompt chips
+    document.querySelectorAll('.sim-chip-btn').forEach(btn => {
+      btn.onclick = () => {
+        const q = btn.dataset.query;
+        const nlInput = document.getElementById('input-sim-nl-query');
+        if (nlInput) {
+          nlInput.value = q;
+          planScenarioFromNL(q);
+        }
+      };
+    });
+
+    // Plan & Disambiguate button
+    document.getElementById('btn-plan-simulation')?.addEventListener('click', () => {
+      const q = document.getElementById('input-sim-nl-query')?.value?.trim();
+      if (q) {
+        planScenarioFromNL(q);
+      } else {
+        showNotification('Please enter a scenario question first (e.g. "What if we remove ...?")', 'warning');
+      }
+    });
+
+    // Clear resolved target button
+    document.getElementById('sim-clear-target-btn')?.addEventListener('click', () => {
+      state.simResolvedTarget = null;
+      document.getElementById('sim-resolved-target-badge')?.classList.add('hidden');
+      const targetInput = document.getElementById('input-sim-target');
+      if (targetInput) targetInput.value = '';
+      showNotification('Target entity selection cleared.', 'info');
+    });
+
+    // Autocomplete / candidate search for target entity input
+    const targetInput = document.getElementById('input-sim-target');
+    if (targetInput) {
+      targetInput.addEventListener('input', (e) => {
+        const val = e.target.value.trim();
+        if (candidateSearchTimer) clearTimeout(candidateSearchTimer);
+        if (val.length >= 2 && state.currentRepoId) {
+          candidateSearchTimer = setTimeout(() => searchTargetCandidates(val), 300);
+        }
+      });
     }
 
+    // Run Orchestrated Simulation button
+    const runBtn = document.getElementById('btn-run-simulation');
+    if (runBtn) {
+      runBtn.addEventListener('click', executeOrchestratedSimulation);
+    }
+
+    // Reset Form button
     const resetBtn = document.getElementById('btn-new-simulation-reset');
     if (resetBtn) {
       resetBtn.addEventListener('click', resetSimulationForm);
     }
+
+    // Download 13-Section Engineering Report button
+    const downloadReportBtn = document.getElementById('btn-sim-download-report');
+    if (downloadReportBtn) {
+      downloadReportBtn.addEventListener('click', downloadScenarioReport);
+    }
+  }
+
+  async function searchTargetCandidates(query) {
+    if (!state.currentRepoId) return;
+    try {
+      const baseSnap = state.currentSnapshotId || '';
+      const res = await fetch(`/repositories/${state.currentRepoId}/scenarios/target-candidates?q=${encodeURIComponent(query)}&base_snapshot_id=${encodeURIComponent(baseSnap)}`);
+      if (res.ok) {
+        const candidates = await res.json();
+        if (candidates.length > 0) {
+          renderCandidateList(candidates, 'Select matching entity from knowledge graph:');
+        }
+      }
+    } catch (err) {
+      console.warn('Candidate search error:', err);
+    }
+  }
+
+  async function planScenarioFromNL(queryText) {
+    if (!state.currentRepoId) {
+      showNotification('Please connect or select a repository first.', 'warning');
+      return;
+    }
+
+    const planBtn = document.getElementById('btn-plan-simulation');
+    const originalText = planBtn ? planBtn.innerHTML : '';
+    if (planBtn) {
+      planBtn.disabled = true;
+      planBtn.innerHTML = '<span class="material-symbols-outlined text-[15px] animate-spin">sync</span><span>Resolving Targets...</span>';
+    }
+
+    try {
+      const res = await fetch(`/repositories/${state.currentRepoId}/scenarios/natural-language`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: queryText,
+          base_snapshot_id: state.currentSnapshotId || '',
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Could not plan scenario');
+      }
+
+      const plan = await res.json();
+      handleScenarioPlanResult(plan);
+    } catch (err) {
+      showNotification('Scenario Planning: ' + err.message, 'error');
+    } finally {
+      if (planBtn) {
+        planBtn.disabled = false;
+        planBtn.innerHTML = originalText;
+      }
+    }
+  }
+
+  function handleScenarioPlanResult(plan) {
+    const card = document.getElementById('sim-ambiguity-card');
+    const badge = document.getElementById('sim-resolved-target-badge');
+    const badgeName = document.getElementById('sim-resolved-target-name');
+    const targetInput = document.getElementById('input-sim-target');
+
+    const resolvedTarget = plan.target_entity || (plan.target_entities && plan.target_entities.length > 0 ? plan.target_entities[0] : null);
+
+    if (plan.status === 'AMBIGUOUS' && (plan.candidate_entities || []).length > 0) {
+      renderCandidateList(plan.candidate_entities, plan.ambiguity_explanation || 'Multiple matching entities found. Select target:');
+    } else if (resolvedTarget) {
+      state.simResolvedTarget = resolvedTarget;
+
+      if (card) card.classList.add('hidden');
+      if (badge && badgeName) {
+        badge.classList.remove('hidden');
+        badgeName.textContent = resolvedTarget;
+      }
+      if (targetInput) targetInput.value = resolvedTarget;
+
+      // Sync inferred mutation type
+      if (plan.inferred_mutation_type) {
+        currentSimulationType = plan.inferred_mutation_type;
+        const typeButtons = document.querySelectorAll('.sim-type-btn');
+        typeButtons.forEach(b => {
+          if (b.dataset.type === plan.inferred_mutation_type) {
+            b.className = 'sim-type-btn active px-2.5 py-2 text-left rounded-lg border text-xs font-medium transition-all border-[#0071e3] bg-[#EFF6FF] text-[#0071e3]';
+          } else {
+            b.className = 'sim-type-btn px-2.5 py-2 text-left rounded-lg border text-xs font-medium transition-all border-[#E2E8F0] bg-[#F8FAFC] text-[#475569] hover:bg-[#F1F5F9]';
+          }
+        });
+        updateSimulationFormFields();
+      }
+
+      showNotification(`Target resolved: '${resolvedTarget}' (${plan.analysis_objective || 'Ready'})`, 'success');
+    } else {
+      if (card) card.classList.add('hidden');
+      if (badge) badge.classList.add('hidden');
+      const msg = plan.ambiguity_explanation || (plan.can_execute === false ? 'No matching target entity found in Twin snapshot.' : `Scenario planned: ${plan.analysis_objective || 'Ready'}`);
+      showNotification(msg, plan.can_execute === false ? 'warning' : 'info');
+    }
+  }
+
+  function renderCandidateList(candidates, title) {
+    const card = document.getElementById('sim-ambiguity-card');
+    const list = document.getElementById('sim-candidate-list');
+    if (!card || !list) return;
+
+    card.classList.remove('hidden');
+    const titleElem = card.querySelector('div.text-\\[10px\\]');
+    if (titleElem && title) titleElem.textContent = title;
+
+    list.innerHTML = candidates.slice(0, 10).map(c => `
+      <button class="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-[#CBD5E1] hover:border-[#0071E3] hover:bg-[#EFF6FF] flex items-center justify-between gap-2 transition-colors sim-candidate-btn" data-target="${escapeHtml(c.name || c.id)}">
+        <div class="min-w-0">
+          <div class="text-xs font-bold text-[#0F172A] truncate">${escapeHtml(c.name || c.id)}</div>
+          <div class="text-[10px] text-[#64748B] font-mono truncate">${escapeHtml(c.location || c.qualified_name || '')}</div>
+        </div>
+        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-[#F1F5F9] text-[#475569] shrink-0 border border-[#E2E8F0]">
+          ${c.artifact_type || 'ARTIFACT'}
+        </span>
+      </button>
+    `).join('');
+
+    list.querySelectorAll('.sim-candidate-btn').forEach(btn => {
+      btn.onclick = () => {
+        const targetVal = btn.dataset.target;
+        state.simResolvedTarget = targetVal;
+
+        card.classList.add('hidden');
+        const badge = document.getElementById('sim-resolved-target-badge');
+        const badgeName = document.getElementById('sim-resolved-target-name');
+        if (badge && badgeName) {
+          badge.classList.remove('hidden');
+          badgeName.textContent = targetVal;
+        }
+        const targetInput = document.getElementById('input-sim-target');
+        if (targetInput) targetInput.value = targetVal;
+
+        showNotification(`Selected entity: '${targetVal}'`, 'info');
+      };
+    });
   }
 
   function updateSimulationFormFields() {
@@ -5818,28 +8601,38 @@
   }
 
   function resetSimulationForm() {
+    const nlInput = document.getElementById('input-sim-nl-query');
     const nameInput = document.getElementById('input-sim-name');
     const targetInput = document.getElementById('input-sim-target');
     const sourceInput = document.getElementById('input-sim-source');
     const descInput = document.getElementById('input-sim-desc');
     const errBox = document.getElementById('sim-error-box');
+    const ambiguityCard = document.getElementById('sim-ambiguity-card');
+    const badge = document.getElementById('sim-resolved-target-badge');
 
+    if (nlInput) nlInput.value = '';
     if (nameInput) nameInput.value = '';
     if (targetInput) targetInput.value = '';
     if (sourceInput) sourceInput.value = '';
     if (descInput) descInput.value = '';
     if (errBox) errBox.style.display = 'none';
+    if (ambiguityCard) ambiguityCard.classList.add('hidden');
+    if (badge) badge.classList.add('hidden');
+
+    state.simResolvedTarget = null;
 
     const resultsCard = document.getElementById('sim-results-card');
     const placeholder = document.getElementById('sim-placeholder-card');
     if (resultsCard) resultsCard.style.display = 'none';
     if (placeholder) placeholder.style.display = 'block';
+
+    showNotification('What-If simulation form reset to baseline.', 'info');
   }
 
   async function loadSimulationView() {
     const badge = document.getElementById('sim-active-base-snap');
-    const snapId = state.currentSnapshotId || (state.snapshots && state.snapshots[0]?.id) || 'default';
-    if (badge) badge.textContent = `Base Snapshot: ${snapId.substring(0, 10)}`;
+    const snapId = state.currentSnapshotId || '';
+    if (badge) badge.textContent = snapId ? `Base Snapshot: ${snapId.substring(0, 10)}` : 'No Snapshot Selected';
 
     if (!state.currentRepoId) return;
 
@@ -5890,90 +8683,75 @@
       const res = await fetch(`/repositories/${state.currentRepoId}/scenarios/${scenarioId}/analyze`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
-        renderSimulationResult(data);
+        renderOrchestratedScenarioResult(data);
       }
     } catch (err) {
       showNotification('Error simulating scenario: ' + err.message, 'error');
     }
   }
 
-  async function runSimulationAction() {
+  async function executeOrchestratedSimulation() {
     if (!state.currentRepoId) {
       showNotification('Please connect or select a repository first.', 'warning');
       return;
     }
 
-    const nameInput = document.getElementById('input-sim-name');
-    const targetInput = document.getElementById('input-sim-target');
-    const sourceInput = document.getElementById('input-sim-source');
-    const relSelect = document.getElementById('select-sim-reltype');
-    const descInput = document.getElementById('input-sim-desc');
+    const nlQuery = document.getElementById('input-sim-nl-query')?.value?.trim();
+    const manualTarget = document.getElementById('input-sim-target')?.value?.trim();
+    const targetToUse = state.simResolvedTarget || manualTarget;
+
     const errBox = document.getElementById('sim-error-box');
     const runBtn = document.getElementById('btn-run-simulation');
     const runBtnText = document.getElementById('btn-run-simulation-text');
 
-    const targetVal = targetInput ? targetInput.value.trim() : '';
-    if (!targetVal) {
+    if (!nlQuery && !targetToUse) {
       if (errBox) {
         errBox.style.display = 'block';
-        errBox.textContent = 'Please specify a target entity or symbol.';
+        errBox.textContent = 'Please enter a scenario question (e.g. "What happens if we remove ...?") or specify a target entity.';
       }
       return;
     }
 
-    const sourceVal = sourceInput ? sourceInput.value.trim() : '';
-    const nameVal = nameInput && nameInput.value.trim() ? nameInput.value.trim() : `What-If: ${currentSimulationType} on ${targetVal}`;
-    const descVal = descInput ? descInput.value.trim() : '';
-    const relVal = relSelect ? relSelect.value : 'DEPENDS_ON';
-    const baseSnap = state.currentSnapshotId || (state.snapshots && state.snapshots[0]?.id) || 'default';
-
     if (errBox) errBox.style.display = 'none';
     if (runBtn) runBtn.disabled = true;
-    if (runBtnText) runBtnText.textContent = 'Simulating Virtual Twin...';
+    if (runBtnText) runBtnText.textContent = 'Orchestrating Multi-Agent Analysis...';
 
-    const proposedChanges = [
-      {
-        mutation_id: `mut_${Date.now()}`,
-        mutation_type: currentSimulationType,
-        target: targetVal,
-        source: sourceVal || null,
-        relationship_type: relVal,
-        description: descVal || null,
-      }
-    ];
+    const baseSnap = state.currentSnapshotId || '';
 
     try {
-      const res = await fetch(`/repositories/${state.currentRepoId}/simulate`, {
+      const res = await fetch(`/repositories/${state.currentRepoId}/scenarios/orchestrate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: nameVal,
-          description: descVal,
+          query: nlQuery || `What if we perform ${currentSimulationType} on ${targetToUse}?`,
           base_snapshot_id: baseSnap,
-          proposed_changes: proposedChanges,
+          target_override: targetToUse || null,
+          mutation_type_override: currentSimulationType || null,
         })
       });
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(errData.detail || 'Simulation execution failed.');
+        throw new Error(errData.detail || 'Orchestrated simulation failed.');
       }
 
       const resultData = await res.json();
-      renderSimulationResult(resultData);
+      renderOrchestratedScenarioResult(resultData);
       loadSimulationView(); // refresh scenario history
     } catch (err) {
       if (errBox) {
         errBox.style.display = 'block';
         errBox.textContent = err.message;
       }
+      showNotification('Simulation error: ' + err.message, 'error');
     } finally {
       if (runBtn) runBtn.disabled = false;
       if (runBtnText) runBtnText.textContent = 'Run Deterministic Simulation';
     }
   }
 
-  function renderSimulationResult(data) {
+  function renderOrchestratedScenarioResult(data) {
+    state.lastSimulationResult = data;
     const resultsCard = document.getElementById('sim-results-card');
     const placeholder = document.getElementById('sim-placeholder-card');
     if (placeholder) placeholder.style.display = 'none';
@@ -5983,19 +8761,26 @@
     const nameElem = document.getElementById('sim-res-name');
     const subElem = document.getElementById('sim-res-sub');
     const timeElem = document.getElementById('sim-res-time');
+    const questionElem = document.getElementById('sim-res-question');
     const whyElem = document.getElementById('sim-res-explanation');
 
-    if (nameElem) nameElem.textContent = data.name || 'Scenario Result';
-    if (subElem) subElem.textContent = `${(data.proposed_changes || []).length} mutations touching ${data.impact.changed_artifacts.length} virtual entities`;
+    const originalQ = data.structured_scenario?.original_question || data.original_question || 'Hypothetical Scenario';
+    const title = data.name || data.structured_scenario?.title || 'Scenario Result';
+    const mutationsCount = (data.proposed_changes || []).length;
+    const affectedCount = (data.impact?.affected_components || []).length;
+
+    if (nameElem) nameElem.innerHTML = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] mr-1.5 uppercase">SIMULATED</span> ${escapeHtml(title)}`;
+    if (subElem) subElem.textContent = `${mutationsCount} mutation(s) • ${affectedCount} affected component(s) (Isolated Virtual Twin — 0 commits mutated)`;
     if (timeElem) timeElem.textContent = `${data.execution_time_ms || 0}ms`;
-    if (whyElem) whyElem.textContent = data.risk?.explanation || 'Simulation completed.';
+    if (questionElem) questionElem.textContent = `"${escapeHtml(originalQ)}"`;
+    if (whyElem) whyElem.textContent = data.risk?.explanation || 'Scenario analysis complete.';
 
     // 4 Bento metrics
-    const totalImpactNodes = (data.impact.affected_components || []).length + (data.impact.affected_apis || []).length;
+    const totalImpactNodes = (data.impact?.affected_components || []).length + (data.impact?.affected_apis || []).length;
     const impactElem = document.getElementById('sim-metric-impact');
     const depthElem = document.getElementById('sim-metric-depth');
     if (impactElem) impactElem.textContent = `${totalImpactNodes} nodes`;
-    if (depthElem) depthElem.textContent = `Max depth: ${data.impact.max_propagation_depth || 0}`;
+    if (depthElem) depthElem.textContent = `Max depth: ${data.impact?.max_propagation_depth ?? 0}`;
 
     const newViolationsCount = (data.comparison?.new_guardrail_violations || []).length;
     const guardrailElem = document.getElementById('sim-metric-guardrails');
@@ -6019,13 +8804,111 @@
         riskElem.className = 'text-lg font-bold text-[#10B981] mt-0.5';
       }
     }
-    if (riskScore) riskScore.textContent = `Score: ${data.risk?.overall_score || 0} / 100 (${data.risk?.confidence_level || 'HIGH'})`;
+    if (riskScore) riskScore.textContent = `Score: ${data.risk?.overall_score ?? 0} / 100 (${data.risk?.confidence_level || 'HIGH'})`;
 
     const totalTests = (data.tests?.directly_affected_tests || []).length + (data.tests?.indirectly_affected_tests || []).length;
     const testElem = document.getElementById('sim-metric-tests');
     const testUnknown = document.getElementById('sim-metric-tests-unknown');
     if (testElem) testElem.textContent = `${totalTests} tests`;
-    if (testUnknown) testUnknown.textContent = `${data.tests?.unknown_coverage_count || 0} unknown coverage`;
+    if (testUnknown) {
+      const unk = data.tests?.unknown_coverage_count ?? 0;
+      testUnknown.textContent = `${unk} unknown coverage`;
+      testUnknown.className = unk > 0 ? 'text-[11px] text-[#D97706] font-medium' : 'text-[11px] text-[#64748B]';
+    }
+
+    // Engine Routing Banner (Logical Multi-Agent Roles)
+    const routingList = document.getElementById('sim-engine-routing-list');
+    if (routingList) {
+      const roles = data.engine_routing?.roles_executed || [];
+      if (roles.length === 0) {
+        routingList.innerHTML = '<span class="text-[11px] text-[#64748B] italic">Deterministic What-If Engine executed.</span>';
+      } else {
+        routingList.innerHTML = roles.map(r => {
+          let pill = 'bg-[#DCFCE7] text-[#15803D] border-[#BBF7D0]';
+          if (r.status === 'NOT_EVALUATED') {
+            pill = 'bg-[#FEF3C7] text-[#92400E] border-[#FDE68A]';
+          } else if (r.status === 'SYNTHESIZED') {
+            pill = 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]';
+          }
+          return `
+            <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-medium ${pill}">
+              <span class="font-bold">${escapeHtml(r.role)}:</span>
+              <span class="opacity-80">${escapeHtml(r.engine)}</span>
+              <span class="text-[9px] uppercase font-bold tracking-wider opacity-60">(${r.status})</span>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // Audited Findings & Actionable Recommendations
+    const findingsList = document.getElementById('sim-findings-list');
+    if (findingsList) {
+      const findings = data.findings || [];
+      if (findings.length === 0) {
+        findingsList.innerHTML = '<div class="text-xs text-[#94A3B8] italic p-3 text-center">No risk or architecture findings identified for this scenario.</div>';
+      } else {
+        findingsList.innerHTML = findings.map(f => {
+          let sevClass = 'bg-[#F1F5F9] text-[#475569] border-[#E2E8F0]';
+          if (f.severity === 'CRITICAL' || f.severity === 'HIGH') {
+            sevClass = 'bg-[#FEE2E2] text-[#B91C1C] border-[#FECACA]';
+          } else if (f.severity === 'MEDIUM') {
+            sevClass = 'bg-[#FEF3C7] text-[#B45309] border-[#FDE68A]';
+          } else if (f.severity === 'LOW') {
+            sevClass = 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]';
+          }
+
+          let provPill = 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]';
+          if (f.provenance === 'OBSERVED_RUNTIME') {
+            provPill = 'bg-[#E0F2FE] text-[#0369A1] border-[#BAE6FD]';
+          } else if (f.provenance === 'HISTORICAL_INCIDENT') {
+            provPill = 'bg-[#FFE4E6] text-[#BE123C] border-[#FECDD3]';
+          } else if (f.provenance === 'UNKNOWN_EVIDENCE') {
+            provPill = 'bg-[#FEF3C7] text-[#92400E] border-[#FDE68A]';
+          }
+
+          const entitiesHtml = (f.affected_entity_ids || []).slice(0, 4).map(e => `
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-[#F8FAFC] border border-[#E2E8F0] text-[#334155]">${escapeHtml(e)}</span>
+          `).join('');
+
+          return `
+            <div class="p-3.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-2">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold font-mono border ${sevClass}">
+                    ${f.severity}
+                  </span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-white border border-[#CBD5E1] text-[#0F172A]">
+                    ${f.category}
+                  </span>
+                  <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${provPill}">
+                    ${f.provenance}
+                  </span>
+                </div>
+                <span class="text-[10px] font-mono font-bold text-[#64748B]">${f.finding_id}</span>
+              </div>
+
+              <div class="text-xs font-semibold text-[#0F172A] leading-relaxed">
+                ${escapeHtml(f.description)}
+              </div>
+
+              ${f.rationale ? `<div class="text-[11px] text-[#64748B] italic">${escapeHtml(f.rationale)}</div>` : ''}
+
+              ${entitiesHtml ? `<div class="flex items-center gap-1.5 flex-wrap pt-1">${entitiesHtml}</div>` : ''}
+
+              <div class="pt-2 border-t border-[#E2E8F0] space-y-1">
+                <div class="text-xs text-[#0F172A]">
+                  <span class="font-bold text-[#059669]">Recommended Action:</span> ${escapeHtml(f.recommended_action || 'Review downstream dependencies')}
+                </div>
+                <div class="text-[11px] text-[#64748B]">
+                  <span class="font-bold text-[#475569]">Verification:</span> ${escapeHtml(f.verification_steps || 'Execute unit and integration tests')}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
 
     // Comparison
     const addedElem = document.getElementById('sim-comp-added');
@@ -6106,6 +8989,45 @@
     }
   }
 
+  async function downloadScenarioReport() {
+    if (!state.lastSimulationResult) {
+      showNotification('Run a scenario simulation first before downloading a report.', 'warning');
+      return;
+    }
+
+    let markdown = state.lastSimulationResult.report_markdown;
+    const scenarioId = state.lastSimulationResult.scenario_id || `sim_${Date.now()}`;
+
+    if (!markdown && state.currentRepoId && state.lastSimulationResult.scenario_id) {
+      try {
+        const res = await fetch(`/repositories/${state.currentRepoId}/scenarios/${state.lastSimulationResult.scenario_id}/report`);
+        if (res.ok) {
+          const reportJson = await res.json();
+          markdown = reportJson.report_markdown;
+        }
+      } catch (err) {
+        console.warn('Could not fetch report markdown:', err);
+      }
+    }
+
+    if (!markdown) {
+      showNotification('Engineering report could not be generated for this scenario.', 'error');
+      return;
+    }
+
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `twincore_scenario_report_${scenarioId.substring(0, 8)}.md`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showNotification('Engineering report downloaded successfully.', 'success');
+  }
+
   function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -6155,8 +9077,9 @@
     loadDependenciesView,
     selectDependencyComponent,
     loadSimulationView,
-    runSimulationAction,
+    runSimulationAction: executeOrchestratedSimulation,
     inspectScenario,
+    Twin3D,
     openCommandPalette: () => window.openCommandPalette?.(),
   };
 

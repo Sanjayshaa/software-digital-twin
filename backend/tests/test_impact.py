@@ -692,10 +692,10 @@ class TestPhase4ImpactAPI:
         )
         assert res.status_code == 200
         data = res.json()
-        assert data["status"] == "completed"
+        assert data["status"] == "NOT_READY"
         assert data["summary"]["changed"] == 0
         assert data["summary"]["directly_affected"] == 0
-        assert "No changes detected" in data["message"]
+        assert "No change detected between selected snapshots" in data["message"]
 
     def test_api_invalid_snapshots(self, client: TestClient, impact_test_env):
         repo = impact_test_env["repo"]

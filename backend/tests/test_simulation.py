@@ -887,3 +887,172 @@ def test_scenario_25_critical_base_twin_immutability(db_session: Session, sim_en
     assert state_before_rels == state_after_rels, "BASE TWIN RELATIONSHIPS WERE ALTERED!"
     assert len(arts_before) == len(arts_after)
     assert len(rels_before) == len(rels_after)
+
+
+# ==============================================================================
+# 26. Natural Language Scenario Parser & Disambiguation
+# ==============================================================================
+def test_scenario_26_natural_language_parser_and_disambiguation(db_session: Session, sim_env):
+    """
+    Validates Phase 2: Natural-language query parsing and knowledge-graph disambiguation.
+    Converts unstructured developer queries into structured scenarios without hallucinating targets.
+    """
+    from app.services.simulation.orchestration import MultiAgentScenarioOrchestrator
+
+    orchestrator = MultiAgentScenarioOrchestrator()
+    repo_id = sim_env["repo"].id
+    snap_id = sim_env["snap"].id
+
+    # Test 1: Direct component removal
+    plan1 = orchestrator.plan_natural_language_scenario(
+        db=db_session,
+        repository_id=repo_id,
+        query="What happens if we remove PaymentService?",
+        base_snapshot_id=snap_id,
+    )
+    assert plan1["status"] in ("RESOLVED", "AMBIGUOUS")
+    assert plan1["analysis_objective"] == "COMPONENT_REMOVAL"
+    assert "PaymentService" in plan1["target_entities"] or len(plan1["candidate_entities"]) > 0
+
+    # Test 2: API contract modification
+    plan2 = orchestrator.plan_natural_language_scenario(
+        db=db_session,
+        repository_id=repo_id,
+        query="What if we modify /api/v1/orders contract?",
+        base_snapshot_id=snap_id,
+    )
+    assert plan2["analysis_objective"] == "API_CONTRACT_CHANGE"
+    assert plan2["inferred_mutation_type"] == "MODIFY_API"
+
+    # Test 3: Ambiguous query
+    plan3 = orchestrator.plan_natural_language_scenario(
+        db=db_session,
+        repository_id=repo_id,
+        query="What if we update Service?",
+        base_snapshot_id=snap_id,
+    )
+    assert plan3["status"] == "AMBIGUOUS"
+    assert len(plan3["candidate_entities"]) >= 1
+
+
+# ==============================================================================
+# 27. Evidence-Backed Multi-Agent Orchestration & Report
+# ==============================================================================
+def test_scenario_27_multi_agent_orchestration_workflow(db_session: Session, sim_env):
+    """
+    Validates Phase 4 & Phase 10: Multi-agent logical orchestration and 13-section report generation.
+    Checks that findings have stable IDs, provenance, and verification steps.
+    """
+    from app.services.simulation.orchestration import MultiAgentScenarioOrchestrator
+
+    orchestrator = MultiAgentScenarioOrchestrator()
+    repo_id = sim_env["repo"].id
+    snap_id = sim_env["snap"].id
+
+    result = orchestrator.orchestrate_scenario(
+        db=db_session,
+        repository_id=repo_id,
+        query="What happens if we modify app.services.PaymentService?",
+        base_snapshot_id=snap_id,
+    )
+
+    assert result["status"] == "COMPLETED"
+    assert "structured_scenario" in result
+    assert "engine_routing" in result
+    assert "findings" in result
+    assert len(result["findings"]) > 0
+
+    # Check finding contract
+    finding = result["findings"][0]
+    assert "finding_id" in finding
+    assert "severity" in finding
+    assert "provenance" in finding
+    assert "recommended_action" in finding
+    assert "verification_steps" in finding
+
+    # Check 13-section report
+    report_md = result.get("report_markdown", "")
+    assert "1. Executive Summary" in report_md
+    assert "2. Original User Question" in report_md
+    assert "7. Evidence-Backed Findings" in report_md
+    assert "13. Recommended Next Steps" in report_md
+
+
+# ==============================================================================
+# 28. Capacity & Workload Scenario Routing (Truthful NOT_EVALUATED)
+# ==============================================================================
+def test_scenario_28_capacity_and_unsupported_routing(db_session: Session, sim_env):
+    """
+    Validates Phase 3: Capacity and failure questions are truthfully routed.
+    Without continuous live load testing/telemetry, marks capacity as NOT_EVALUATED.
+    """
+    from app.services.simulation.orchestration import MultiAgentScenarioOrchestrator
+
+    orchestrator = MultiAgentScenarioOrchestrator()
+    repo_id = sim_env["repo"].id
+    snap_id = sim_env["snap"].id
+
+    result = orchestrator.orchestrate_scenario(
+        db=db_session,
+        repository_id=repo_id,
+        query="What if orders traffic increases 10x?",
+        base_snapshot_id=snap_id,
+        target_override="app.services.OrderService",
+    )
+
+    # Check engine routing banner
+    reliability_role = next((r for r in result["engine_routing"]["roles_executed"] if r["role"] == "Reliability Analyst"), None)
+    assert reliability_role is not None
+    assert reliability_role["status"] == "NOT_EVALUATED"
+
+    # Check finding for capacity limitation
+    cap_finding = next((f for f in result["findings"] if f["category"] == "CAPACITY_LIMITATION"), None)
+    assert cap_finding is not None
+    assert "Insufficient live telemetry" in cap_finding["description"]
+
+
+# ==============================================================================
+# 29. Zero Impact Scenario Handling
+# ==============================================================================
+def test_scenario_29_zero_impact_scenario(db_session: Session, sim_env):
+    """
+    Validates truthful zero impact confirmation when an isolated leaf entity is mutated.
+    """
+    # Create isolated leaf artifact with zero inbound callers
+    isolated = _create_art(db_session, sim_env["snap"].id, sim_env["repo"].id, "IsolatedUtil", "app.utils.IsolatedUtil", "MODULE", "app/utils/isolated.py:1")
+    db_session.commit()
+
+    from app.services.simulation.orchestration import MultiAgentScenarioOrchestrator
+
+    orchestrator = MultiAgentScenarioOrchestrator()
+    result = orchestrator.orchestrate_scenario(
+        db=db_session,
+        repository_id=sim_env["repo"].id,
+        query="What if we modify IsolatedUtil?",
+        base_snapshot_id=sim_env["snap"].id,
+        target_override="app.utils.IsolatedUtil",
+    )
+
+    assert result["status"] == "COMPLETED"
+    assert len(result["impact"]["affected_components"]) == 0
+    zero_finding = next((f for f in result["findings"] if f["finding_id"] == "FIND-ZERO-005"), None)
+    assert zero_finding is not None
+    assert "0 downstream dependents" in zero_finding["description"]
+
+
+# ==============================================================================
+# 30. Target Candidates Discovery Endpoint
+# ==============================================================================
+def test_scenario_30_target_candidates_discovery(db_session: Session, sim_env):
+    """
+    Validates REST API candidate discovery from real knowledge graph.
+    """
+    repo_id = sim_env["repo"].id
+    snap_id = sim_env["snap"].id
+
+    resp = client.get(f"/repositories/{repo_id}/scenarios/target-candidates?q=Payment&base_snapshot_id={snap_id}")
+    assert resp.status_code == 200
+    candidates = resp.json()
+    assert len(candidates) >= 1
+    assert any("PaymentService" in c["name"] for c in candidates)
+

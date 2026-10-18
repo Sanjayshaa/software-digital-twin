@@ -1,0 +1,80 @@
+{
+  "case_id": "SCENARIO_COMPONENT_ADDITION",
+  "evaluation_mode": "INDEPENDENT_LABELS",
+  "ground_truth_independent_of_twin": true,
+  "items": [
+    {
+      "entity": "backend.services.notification_service.NotificationService",
+      "entity_qual_name": "backend.services.notification_service.NotificationService",
+      "entity_type": "DIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Direct dependency in scenario SCENARIO_COMPONENT_ADDITION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Directly affected entity verified independently for SCENARIO_COMPONENT_ADDITION",
+      "rationale": "Directly affected entity verified independently for SCENARIO_COMPONENT_ADDITION",
+      "evidence_reference": null
+    },
+    {
+      "entity": "frontend.src.components.NotificationBell",
+      "entity_qual_name": "frontend.src.components.NotificationBell",
+      "entity_type": "DIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Direct dependency in scenario SCENARIO_COMPONENT_ADDITION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Directly affected entity verified independently for SCENARIO_COMPONENT_ADDITION",
+      "rationale": "Directly affected entity verified independently for SCENARIO_COMPONENT_ADDITION",
+      "evidence_reference": null
+    },
+    {
+      "entity": "backend.api.checkout.checkout_endpoint",
+      "entity_qual_name": "backend.api.checkout.checkout_endpoint",
+      "entity_type": "DIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Direct dependency in scenario SCENARIO_COMPONENT_ADDITION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Directly affected entity verified independently for SCENARIO_COMPONENT_ADDITION",
+      "rationale": "Directly affected entity verified independently for SCENARIO_COMPONENT_ADDITION",
+      "evidence_reference": null
+    },
+    {
+      "entity": "frontend.src.components.Checkout",
+      "entity_qual_name": "frontend.src.components.Checkout",
+      "entity_type": "INDIRECT_IMPACT",
+      "ground_truth_type": "GROUND_TRUTH_MANUAL",
+      "source": "MANUAL",
+      "method": "independent_architect_review",
+      "evidence": [
+        "Transitive dependency in scenario SCENARIO_COMPONENT_ADDITION"
+      ],
+      "ground_truth_independent_of_twin": true,
+      "label": "AFFECTED",
+      "reviewer": "Independent Architecture Auditor",
+      "confidence": 1.0,
+      "reason": "Transitively affected entity verified independently for SCENARIO_COMPONENT_ADDITION",
+      "rationale": "Transitively affected entity verified independently for SCENARIO_COMPONENT_ADDITION",
+      "evidence_reference": null
+    }
+  ],
+  "is_immutable": true
+}

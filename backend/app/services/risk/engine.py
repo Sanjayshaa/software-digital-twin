@@ -777,11 +777,27 @@ class RiskIntelligenceEngine:
         Derives transparent RiskCategory from explicit deterministic rules and weighted composite score.
         """
         if changes_count == 0:
-            return RiskCategory.LOW, 0.0
+            violations = [g for g in guardrail_results if g.status == GuardrailStatus.VIOLATION]
+            warnings = [g for g in guardrail_results if g.status == GuardrailStatus.WARN]
+            if any(g.severity == GuardrailSeverity.CRITICAL for g in violations):
+                return RiskCategory.CRITICAL, 85.0
+            elif violations:
+                return RiskCategory.HIGH, 65.0
+            elif warnings:
+                return RiskCategory.MODERATE, 40.0
+            return RiskCategory.LOW, 10.0
 
         active_factors = [f for f in risk_factors if f.status != "NOT_APPLICABLE"]
         if not active_factors:
-            return RiskCategory.LOW, 0.0
+            violations = [g for g in guardrail_results if g.status == GuardrailStatus.VIOLATION]
+            warnings = [g for g in guardrail_results if g.status == GuardrailStatus.WARN]
+            if any(g.severity == GuardrailSeverity.CRITICAL for g in violations):
+                return RiskCategory.CRITICAL, 85.0
+            elif violations:
+                return RiskCategory.HIGH, 65.0
+            elif warnings:
+                return RiskCategory.MODERATE, 40.0
+            return RiskCategory.LOW, 10.0
 
         total_weight = sum(f.weight for f in active_factors)
         weighted_score = sum(f.score * f.weight for f in active_factors) / total_weight if total_weight > 0 else 0.0
@@ -868,14 +884,22 @@ class RiskIntelligenceEngine:
             reasons.append(f"significant factors ({', '.join(f.name.lower() for f in high_drivers)})")
         elif medium_drivers:
             reasons.append(f"moderate factors ({', '.join(f.name.lower() for f in medium_drivers)})")
+        elif changes_count == 0:
+            reasons.append("structural architectural baseline analysis")
         else:
             reasons.append("isolated scope and zero detected architectural drift")
 
         # Mention architecture violations specifically
         violations = [g for g in guardrail_results if g.status == GuardrailStatus.VIOLATION]
+        warnings = [g for g in guardrail_results if g.status == GuardrailStatus.WARN]
         if violations:
             reasons.append(f"{len(violations)} architecture guardrail violation(s)")
-            recommendations.append("Resolve architectural boundary violations before merging into release branch.")
+            for v in violations:
+                recommendations.append(f"Violation [{v.rule_name}]: {v.explanation}")
+        if warnings:
+            reasons.append(f"{len(warnings)} architectural advisory warning(s)")
+            for w in warnings:
+                recommendations.append(f"Warning [{w.rule_name}]: {w.explanation}")
 
         # Mention test impact
         f_test = next((f for f in risk_factors if f.factor_id == RiskFactorType.TEST_IMPACT), None)
