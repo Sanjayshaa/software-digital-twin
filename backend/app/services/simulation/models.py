@@ -148,7 +148,8 @@ class ScenarioAnalysisResult(BaseModel):
 
 class CreateScenarioRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=5000)
     base_snapshot_id: str = Field(..., description="Snapshot ID against which simulation runs")
-    proposed_changes: List[Dict[str, Any]] = Field(default_factory=list)
-    expires_in_hours: Optional[int] = Field(default=24, description="TTL for temporary scenario")
+    proposed_changes: List[Dict[str, Any]] = Field(default_factory=list, max_length=100)
+    expires_in_hours: Optional[int] = Field(default=24, ge=1, le=720, description="TTL for temporary scenario (1-720 hours)")
+

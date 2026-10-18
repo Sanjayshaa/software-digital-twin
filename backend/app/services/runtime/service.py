@@ -71,7 +71,13 @@ class RuntimeEvidenceService:
                     redacted_count += 1
 
                 # 2. Extract Service Name
-                service_name = raw_event.service_name or raw_event.service or sanitized_attrs.get("service")
+                service_name = (
+                    raw_event.service_name
+                    or raw_event.service
+                    or getattr(raw_event, "component_name", None)
+                    or sanitized_attrs.get("service")
+                    or sanitized_attrs.get("component_name")
+                )
 
                 # 3. Entity Correlation
                 art_id, confidence, method = entity_correlator.correlate(

@@ -1,5 +1,6 @@
+import bisect
 import tree_sitter
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from app.services.analysis.parsers.base import ParserAdapter, ParserResult, SyntaxNode
 
 # Tree-sitter language imports
@@ -9,22 +10,45 @@ import tree_sitter_javascript
 import tree_sitter_typescript
 
 
-def _convert_ts_node(node: tree_sitter.Node, source_bytes: bytes) -> SyntaxNode:
-    """Recursively converts a native Tree-sitter node to a decoupled SyntaxNode."""
+def _convert_ts_node(
+    node: tree_sitter.Node,
+    source_bytes: bytes,
+    line_starts: Optional[List[int]] = None,
+) -> SyntaxNode:
+    """
+    Decoupled converter from native Tree-sitter node to SyntaxNode.
+    Uses pure-Python byte-offset bisect for line/col calculation and slices
+    source_bytes directly to prevent C extension memory corruption and Bus errors
+    under high-volume node allocation during garbage collection.
+    """
+    if line_starts is None:
+        line_starts = [0] + [i + 1 for i, b in enumerate(source_bytes) if b == 10]
+
+    sb = node.start_byte
+    eb = node.end_byte
+
+    s_idx = bisect.bisect_right(line_starts, sb) - 1
+    s_line = s_idx + 1
+    s_col = sb - line_starts[s_idx]
+
+    e_idx = bisect.bisect_right(line_starts, eb) - 1
+    e_line = e_idx + 1
+    e_col = eb - line_starts[e_idx]
+
     try:
-        text = node.text.decode("utf-8", errors="ignore") if node.text else ""
+        text = source_bytes[sb:eb].decode("utf-8", errors="ignore")
     except Exception:
         text = ""
 
-    children = [_convert_ts_node(c, source_bytes) for c in node.children]
+    children = [_convert_ts_node(c, source_bytes, line_starts) for c in node.children]
 
     return SyntaxNode(
         node_type=node.type,
         text=text,
-        start_line=node.start_point.row + 1,
-        start_col=node.start_point.column,
-        end_line=node.end_point.row + 1,
-        end_col=node.end_point.column,
+        start_line=s_line,
+        start_col=s_col,
+        end_line=e_line,
+        end_col=e_col,
         children=children,
         is_named=node.is_named,
     )
@@ -64,7 +88,8 @@ class TreeSitterAdapter(ParserAdapter):
     def parse_source(self, source_bytes: bytes, file_path: str = "") -> ParserResult:
         try:
             tree = self._parser.parse(source_bytes)
-            root_syntax_node = _convert_ts_node(tree.root_node, source_bytes)
+            line_starts = [0] + [i + 1 for i, b in enumerate(source_bytes) if b == 10]
+            root_syntax_node = _convert_ts_node(tree.root_node, source_bytes, line_starts)
             decoded_source = source_bytes.decode("utf-8", errors="ignore")
 
             errors = []

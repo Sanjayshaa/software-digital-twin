@@ -94,17 +94,22 @@ class RiskIntelligenceEngine:
         all_relevant_ids = changed_artifact_ids | impacted_artifact_ids
 
         # 2. Reuse or Compute Phase 6 Test Impact
+        test_impact_error: Optional[str] = None
         if precomputed_test_impact:
             test_res = precomputed_test_impact
         else:
-            test_cfg = TestImpactConfig(max_depth=cfg.max_impact_depth)
-            test_res = self.test_engine.compute_test_impact(
-                db=db,
-                repository_id=repository_id,
-                base_snapshot_id=base_snapshot_id,
-                target_snapshot_id=target_snapshot_id,
-                config=test_cfg,
-            )
+            try:
+                test_cfg = TestImpactConfig(max_depth=cfg.max_impact_depth)
+                test_res = self.test_engine.compute_test_impact(
+                    db=db,
+                    repository_id=repository_id,
+                    base_snapshot_id=base_snapshot_id,
+                    target_snapshot_id=target_snapshot_id,
+                    config=test_cfg,
+                )
+            except Exception as e:
+                test_res = None
+                test_impact_error = str(e)
 
         # 3. Evaluate Architecture Guardrails
         if precomputed_guardrails is not None:
@@ -168,7 +173,7 @@ class RiskIntelligenceEngine:
         risk_factors.append(f_depth)
 
         # Factor 3: TEST_IMPACT
-        f_test, test_unknowns = self._compute_test_impact_factor(test_res)
+        f_test, test_unknowns = self._compute_test_impact_factor(test_res, test_impact_error)
         risk_factors.append(f_test)
         unknown_signals.extend(test_unknowns)
 
@@ -337,9 +342,33 @@ class RiskIntelligenceEngine:
     # -------------------------------------------------------------------------
     # FACTOR 3: TEST IMPACT
     # -------------------------------------------------------------------------
-    def _compute_test_impact_factor(self, test_res: TestImpactResult) -> Tuple[RiskFactorItem, List[str]]:
-        summ = test_res.summary
+    def _compute_test_impact_factor(
+        self,
+        test_res: Optional[TestImpactResult],
+        test_impact_error: Optional[str] = None,
+    ) -> Tuple[RiskFactorItem, List[str]]:
         unknowns = []
+
+        if test_res is None:
+            err_msg = test_impact_error or "Test impact computation failed"
+            unknown_msg = f"Evidence gap: Test impact analysis failed ({err_msg}). Test coverage cannot be verified."
+            unknowns.append(unknown_msg)
+            return RiskFactorItem(
+                factor_id=RiskFactorType.TEST_IMPACT,
+                name="Test Impact & Coverage",
+                score=50.0,
+                weight=1.2,
+                severity="MEDIUM",
+                status="FAILED",
+                evidence=[
+                    unknown_msg,
+                    "Regression blast radius is unverified because test impact engine did not complete successfully.",
+                ],
+                details={"total_mapped": 0, "potentially_affected": 0, "unknown_coverage": 0, "analysis_failed": True},
+                description="Reflects the potential regression risk based on affected tests and coverage completeness.",
+            ), unknowns
+
+        summ = test_res.summary
 
         if summ.total_tests_mapped == 0:
             unknown_msg = "Test coverage unknown: Zero test suites or cases mapped for repository."
@@ -779,7 +808,7 @@ class RiskIntelligenceEngine:
     def _derive_confidence(
         self,
         unknown_signals: List[str],
-        test_res: TestImpactResult,
+        test_res: Optional[TestImpactResult],
         runtime_events: List[RuntimeEvent],
     ) -> Tuple[ConfidenceLevel, float]:
         """
@@ -788,8 +817,10 @@ class RiskIntelligenceEngine:
         """
         score = 1.0
 
-        # Penalty for missing tests
-        if test_res.summary.total_tests_mapped == 0:
+        # Penalty for missing tests or test impact failure
+        if test_res is None:
+            score -= 0.40
+        elif test_res.summary.total_tests_mapped == 0:
             score -= 0.35
         elif test_res.summary.unknown_coverage_count > 0:
             score -= min(0.30, test_res.summary.unknown_coverage_count * 0.10)

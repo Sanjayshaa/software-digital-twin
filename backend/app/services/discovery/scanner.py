@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import List, Dict, Set, Optional
 from pydantic import BaseModel, Field
 
@@ -26,6 +27,20 @@ DEFAULT_IGNORE_DIRS: Set[str] = {
 
 # Maximum size in bytes to inspect line-by-line (2 MB)
 MAX_INSPECTION_FILE_SIZE = 2 * 1024 * 1024
+# Maximum total files to scan to prevent resource exhaustion bombs
+MAX_TOTAL_FILES = 50_000
+# Maximum directory nesting depth
+MAX_SCAN_DEPTH = 30
+# Maximum file size permitted for scanning (50 MB)
+MAX_SINGLE_FILE_SIZE = 50 * 1024 * 1024
+# Maximum total repository bytes to scan (500 MB cumulative)
+MAX_TOTAL_REPO_BYTES = 500 * 1024 * 1024
+# Maximum path length permitted
+MAX_PATH_LENGTH = 1024
+# Maximum symlink count before pruning
+MAX_SYMLINKS_COUNT = 1000
+# Maximum scan duration before truncation (120 seconds)
+MAX_SCAN_DURATION_SECONDS = 120
 
 
 class ScannedFile(BaseModel):
@@ -42,12 +57,16 @@ class FileInventory(BaseModel):
     root_path: str
     total_files: int = 0
     total_lines: int = 0
+    total_bytes: int = 0
+    is_truncated: bool = False
+    truncation_reason: Optional[str] = None
     files: List[ScannedFile] = Field(default_factory=list)
     files_by_name: Dict[str, List[ScannedFile]] = Field(default_factory=dict)
     files_by_ext: Dict[str, List[ScannedFile]] = Field(default_factory=dict)
     manifest_files: List[ScannedFile] = Field(default_factory=list)
     docker_files: List[ScannedFile] = Field(default_factory=list)
     ci_cd_files: List[ScannedFile] = Field(default_factory=list)
+
 
 
 def is_binary_string(bytes_sample: bytes) -> bool:
@@ -82,21 +101,65 @@ class RepositoryScanner:
         self.ignore_dirs = ignore_dirs or DEFAULT_IGNORE_DIRS
 
     def scan(self, repo_path: str) -> FileInventory:
+        import time
+        start_time = time.time()
+
         abs_root = os.path.abspath(repo_path)
         if not os.path.exists(abs_root) or not os.path.isdir(abs_root):
             raise ValueError(f"Repository path does not exist or is not a directory: {repo_path}")
 
-        inventory = FileInventory(root_path=abs_root)
+        abs_root_path = Path(abs_root).resolve()
+        inventory = FileInventory(root_path=str(abs_root_path))
+        symlink_count = 0
 
-        for root, dirs, files in os.walk(abs_root, topdown=True):
-            # Prune ignored directories in-place
-            dirs[:] = [d for d in dirs if d not in self.ignore_dirs and not d.startswith(".")]
+        for root, dirs, files in os.walk(abs_root, topdown=True, followlinks=False):
+            # Check maximum scan duration
+            if time.time() - start_time > MAX_SCAN_DURATION_SECONDS:
+                inventory.is_truncated = True
+                inventory.truncation_reason = "MAX_SCAN_DURATION_EXCEEDED"
+                dirs.clear()
+                break
+
+            # Enforce max directory traversal depth
+            rel_dir = os.path.relpath(root, abs_root)
+            depth = 0 if rel_dir == "." else len(Path(rel_dir).parts)
+            if depth >= MAX_SCAN_DEPTH:
+                dirs.clear()
+                continue
+
+            # Prune ignored directories and symlinked directories in-place
+            dirs[:] = [
+                d for d in dirs
+                if d not in self.ignore_dirs
+                and not d.startswith(".")
+                and not os.path.islink(os.path.join(root, d))
+            ]
 
             for fname in files:
-                full_path = os.path.join(root, fname)
-                rel_path = os.path.relpath(full_path, abs_root)
+                if inventory.total_files >= MAX_TOTAL_FILES:
+                    inventory.is_truncated = True
+                    inventory.truncation_reason = "MAX_TOTAL_FILES_EXCEEDED"
+                    break
 
-                # Skip broken symlinks or special devices
+                full_path = os.path.join(root, fname)
+
+                # Path length check
+                if len(full_path) > MAX_PATH_LENGTH:
+                    continue
+
+                # Symlink Containment Check: ensure symlinks do not escape repository root
+                if os.path.islink(full_path):
+                    symlink_count += 1
+                    if symlink_count > MAX_SYMLINKS_COUNT:
+                        continue
+                    try:
+                        resolved_target = Path(full_path).resolve()
+                        resolved_target.relative_to(abs_root_path)
+                    except (ValueError, RuntimeError, OSError):
+                        # Symlink points outside repository root! Skip for security.
+                        continue
+
+                # Skip broken symlinks, special devices, or unreadable entries
                 if not os.path.isfile(full_path):
                     continue
 
@@ -106,10 +169,23 @@ class RepositoryScanner:
                 except OSError:
                     continue
 
+                # Skip files exceeding safety ceiling
+                if size > MAX_SINGLE_FILE_SIZE:
+                    continue
+
+                # Cumulative repository bytes ceiling check
+                if inventory.total_bytes + size > MAX_TOTAL_REPO_BYTES:
+                    inventory.is_truncated = True
+                    inventory.truncation_reason = "MAX_TOTAL_REPO_BYTES_EXCEEDED"
+                    dirs.clear()
+                    break
+
+                rel_path = os.path.relpath(full_path, abs_root)
                 _, ext = os.path.splitext(fname)
                 ext = ext.lower()
 
                 # Check if binary
+
                 is_binary = False
                 line_count = 0
                 if size <= MAX_INSPECTION_FILE_SIZE:
@@ -121,6 +197,8 @@ class RepositoryScanner:
                             line_count = count_lines_streaming(full_path)
                     except Exception:
                         is_binary = True
+                else:
+                    is_binary = True
 
                 scanned_file = ScannedFile(
                     relative_path=rel_path,
@@ -135,6 +213,7 @@ class RepositoryScanner:
                 inventory.files.append(scanned_file)
                 inventory.total_files += 1
                 inventory.total_lines += line_count
+                inventory.total_bytes += size
 
                 # Index by name
                 inventory.files_by_name.setdefault(fname, []).append(scanned_file)

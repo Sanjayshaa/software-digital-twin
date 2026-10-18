@@ -12,6 +12,19 @@ from main import app
 from app.core.database import SessionLocal, get_db
 
 
+from sqlalchemy import or_
+from app.models.entities import (
+    Repository,
+    RepositorySnapshot,
+    StructuralArtifact,
+    ArtifactRelationship,
+    AnalysisRun,
+    Incident,
+    RuntimeEvent,
+    ArchitectureDriftEntity,
+)
+
+
 @pytest.fixture(scope="session")
 def db_session():
     """Provides a transactional database session for tests."""
@@ -27,3 +40,65 @@ def client():
     """Provides a FastAPI test client."""
     with TestClient(app) as test_client:
         yield test_client
+
+
+os.environ["APP_ENV"] = "test"
+
+
+@pytest.fixture(autouse=True, scope="session")
+def cleanup_test_repositories():
+    """Cleans up any ephemeral test repositories after pytest suite finishes."""
+    yield
+    session = SessionLocal()
+    try:
+        test_repos = (
+            session.query(Repository)
+            .filter(
+                or_(
+                    Repository.environment.in_(["TEST", "FIXTURE"]),
+                    Repository.local_path.like("/tmp/%"),
+                    Repository.local_path.like("/private/var/%"),
+                    Repository.name.like("test-%"),
+                    Repository.name.like("test_%"),
+                    Repository.name.like("fixture-%"),
+                    Repository.name.like("tmp-%"),
+                    Repository.name.like("adv-%"),
+                    Repository.name.like("adversarial-%"),
+                    Repository.name.like("repo-%"),
+                    Repository.name.like("controlled-repo-%"),
+                    Repository.name.like("empty-repo-%"),
+                    Repository.name.like("foreign_repo_%"),
+                    Repository.name.like("arch-api-repo-%"),
+                    Repository.name.like("arch-test-repo-%"),
+                    Repository.name.like("real-repo-%"),
+                    Repository.name.like("r1-%"),
+                    Repository.name.like("r2-%"),
+                    Repository.name.like("repo_a_%"),
+                    Repository.name.like("repo_b_%"),
+                    Repository.name.like("sim-%"),
+                    Repository.name.like("sim_%"),
+                    Repository.name.like("risk-repo-%"),
+                    Repository.name.like("integrity_repo_%"),
+                    Repository.name.like("graph-repo-%"),
+                    Repository.name.like("blast_proof_repo_%"),
+                )
+            )
+            .all()
+        )
+        for r in test_repos:
+            snaps = session.query(RepositorySnapshot).filter_by(repository_id=r.id).all()
+            for s in snaps:
+                session.query(StructuralArtifact).filter_by(snapshot_id=s.id).delete()
+                session.query(ArtifactRelationship).filter_by(snapshot_id=s.id).delete()
+                session.query(ArchitectureDriftEntity).filter_by(snapshot_id=s.id).delete()
+                session.query(AnalysisRun).filter_by(snapshot_id=s.id).delete()
+                session.delete(s)
+            session.query(Incident).filter_by(repository_id=r.id).delete()
+            session.query(RuntimeEvent).filter_by(repository_id=r.id).delete()
+            session.delete(r)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"Warning: test repo cleanup error: {e}")
+    finally:
+        session.close()

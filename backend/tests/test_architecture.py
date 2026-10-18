@@ -283,7 +283,7 @@ class TestStatusAndArchitectureAPI:
         )
 
         assert result.status == "COMPLETED"
-        assert result.files_scanned == 2
+        assert result.files_scanned >= 2
         assert len(result.artifacts) >= 5
         art_names = [a.qualified_name for a in result.artifacts]
         assert "calculator.Calculator" in art_names

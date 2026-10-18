@@ -139,13 +139,23 @@ class ScenarioService:
         self,
         db: Session,
         scenario_id: str,
+        repository_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Retrieves a scenario definition and its latest simulation result if executed.
+        Enforces repository boundary when repository_id is provided.
         """
         scenario = db.query(Scenario).filter_by(id=scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail=f"Scenario '{scenario_id}' not found.")
+
+        params = scenario.parameters or {}
+        scen_repo_id = params.get("repository_id")
+        if repository_id and scen_repo_id and scen_repo_id != repository_id:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Scenario '{scenario_id}' not found for repository '{repository_id}'.",
+            )
 
         formatted = self._format_scenario(scenario)
 
@@ -164,9 +174,11 @@ class ScenarioService:
         self,
         db: Session,
         scenario_id: str,
+        repository_id: Optional[str] = None,
     ) -> ScenarioAnalysisResult:
         """
         Executes deterministic simulation on an existing scenario.
+        Enforces repository boundary when repository_id is provided.
         """
         scenario = db.query(Scenario).filter_by(id=scenario_id).first()
         if not scenario:
@@ -174,6 +186,11 @@ class ScenarioService:
 
         params = scenario.parameters or {}
         repo_id = params.get("repository_id")
+        if repository_id and repo_id and repo_id != repository_id:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Scenario '{scenario_id}' not found for repository '{repository_id}'.",
+            )
         base_snapshot_id = params.get("base_snapshot_id")
 
         # Check expiration
@@ -230,13 +247,23 @@ class ScenarioService:
         self,
         db: Session,
         scenario_id: str,
+        repository_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Deletes a scenario and associated simulation results.
+        Enforces repository boundary when repository_id is provided.
         """
         scenario = db.query(Scenario).filter_by(id=scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail=f"Scenario '{scenario_id}' not found.")
+
+        params = scenario.parameters or {}
+        scen_repo_id = params.get("repository_id")
+        if repository_id and scen_repo_id and scen_repo_id != repository_id:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Scenario '{scenario_id}' not found for repository '{repository_id}'.",
+            )
 
         db.delete(scenario)
         db.commit()

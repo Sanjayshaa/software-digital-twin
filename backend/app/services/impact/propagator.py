@@ -83,22 +83,44 @@ class ImpactPropagator:
         def _build_placeholder_map(artifacts: List[StructuralArtifact]) -> Dict[str, str]:
             concrete_by_name: Dict[str, List[StructuralArtifact]] = {}
             concrete_by_qual: Dict[str, StructuralArtifact] = {}
+            concrete_by_stem: Dict[str, List[StructuralArtifact]] = {}
             for a in artifacts:
                 if a.artifact_type != "EXTERNAL_DEPENDENCY":
                     concrete_by_qual[a.qualified_name] = a
                     concrete_by_name.setdefault(a.name, []).append(a)
+                    stem = a.name.split(".")[0]
+                    concrete_by_stem.setdefault(stem, []).append(a)
 
             ph_map: Dict[str, str] = {}
             for a in artifacts:
                 if a.artifact_type == "EXTERNAL_DEPENDENCY":
+                    name = a.name or a.qualified_name
+                    # 1. Exact qualified name
                     if a.qualified_name in concrete_by_qual:
                         ph_map[a.id] = concrete_by_qual[a.qualified_name].id
-                    elif a.name in concrete_by_name and len(concrete_by_name[a.name]) == 1:
-                        ph_map[a.id] = concrete_by_name[a.name][0].id
+                    # 2. Vite / TS alias path: @/services/dockerService -> src.services.dockerService
+                    elif name.startswith("@/"):
+                        cand = "src." + name[2:].replace("/", ".")
+                        if cand in concrete_by_qual:
+                            ph_map[a.id] = concrete_by_qual[cand].id
+                            continue
+                        # Try matching file stem from alias path
+                        alias_stem = name.split("/")[-1].split(".")[0]
+                        if alias_stem in concrete_by_stem and len(concrete_by_stem[alias_stem]) == 1:
+                            ph_map[a.id] = concrete_by_stem[alias_stem][0].id
+                            continue
+                    # 3. Exact artifact name match
+                    elif name in concrete_by_name and len(concrete_by_name[name]) == 1:
+                        ph_map[a.id] = concrete_by_name[name][0].id
+                    # 4. Relative import path stem or filename stem
                     else:
-                        suffix = a.name.split(".")[-1]
-                        if suffix in concrete_by_name and len(concrete_by_name[suffix]) == 1:
-                            ph_map[a.id] = concrete_by_name[suffix][0].id
+                        stem = name.split("/")[-1].split(".")[0]
+                        if stem in concrete_by_stem and len(concrete_by_stem[stem]) == 1:
+                            ph_map[a.id] = concrete_by_stem[stem][0].id
+                        else:
+                            suffix = name.split(".")[-1]
+                            if suffix in concrete_by_name and len(concrete_by_name[suffix]) == 1:
+                                ph_map[a.id] = concrete_by_name[suffix][0].id
             return ph_map
 
         target_ph_map = _build_placeholder_map(target_artifacts)

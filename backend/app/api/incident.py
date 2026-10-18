@@ -17,21 +17,17 @@ from app.services.incident import (
     incident_service,
 )
 
+from app.core.auth import resolve_authorized_repo, get_current_user_optional, AuthenticatedPrincipal
+
 router = APIRouter(prefix="/repositories", tags=["Incident Intelligence"])
 
 
-def _resolve_repo(db: Session, repository_id: str) -> Optional[Repository]:
-    return (
-        db.query(Repository)
-        .filter(
-            or_(
-                Repository.id == repository_id,
-                Repository.name == repository_id,
-                Repository.local_path == repository_id,
-            )
-        )
-        .first()
-    )
+def _resolve_repo(
+    db: Session,
+    repository_id: str,
+    principal: Optional[AuthenticatedPrincipal] = None,
+) -> Optional[Repository]:
+    return resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
 
 
 @router.post("/{repository_id}/incidents", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
@@ -39,9 +35,10 @@ def create_incident(
     repository_id: str,
     req: IncidentCreate,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Creates a new incident record and binds linked runtime events and affected components."""
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
 
@@ -59,9 +56,10 @@ def list_incidents(
     status: Optional[str] = Query(None, description="Filter by status (open, investigated, resolved)"),
     severity: Optional[str] = Query(None, description="Filter by severity (low, medium, high, critical)"),
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Lists incidents for a repository."""
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
 
@@ -79,13 +77,14 @@ def get_incident(
     repository_id: str,
     incident_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Retrieves single incident details."""
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
 
-    incident = incident_service.get_incident(db, incident_id)
+    incident = incident_service.get_incident(db, incident_id, repository_id=repo.id)
     if not incident:
         raise HTTPException(status_code=404, detail=f"Incident '{incident_id}' not found")
     return incident
@@ -96,14 +95,15 @@ def investigate_incident(
     repository_id: str,
     incident_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Executes a deterministic causal investigation for an incident.
     Correlates runtime events with recent changes, structural artifacts, affected processes, and tests,
     yielding evidence-backed candidate causal paths.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
 
-    return incident_service.investigate_incident(db, incident_id)
+    return incident_service.investigate_incident(db, incident_id, repository_id=repo.id)

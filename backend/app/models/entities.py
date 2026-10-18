@@ -1,3 +1,4 @@
+import os
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -20,6 +21,26 @@ from app.core.database import Base
 
 def generate_uuid() -> str:
     return str(uuid.uuid4())
+
+
+# ====================================================================
+# 0. AUTHENTICATION & IDENTITY ENTITIES
+# ====================================================================
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    role = Column(String(50), default="engineer", nullable=False)  # admin, engineer, viewer
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    repositories = relationship("Repository", back_populates="owner")
 
 
 # ====================================================================
@@ -51,19 +72,31 @@ class Repository(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     vcs_type = Column(String(50), default="git", nullable=False)
     remote_url = Column(String(1024), nullable=True)
     local_path = Column(String(1024), nullable=False)
     default_branch = Column(String(100), default="main", nullable=False)
+    source_type = Column(String(50), default="LOCAL", nullable=False)
+    environment = Column(String(50), default="USER", nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
     project = relationship("Project", back_populates="repositories")
+    owner = relationship("User", back_populates="repositories")
     branches = relationship("Branch", back_populates="repository", cascade="all, delete-orphan")
     commits = relationship("Commit", back_populates="repository", cascade="all, delete-orphan")
     snapshots = relationship("RepositorySnapshot", back_populates="repository", cascade="all, delete-orphan")
     files = relationship("File", back_populates="repository", cascade="all, delete-orphan")
+
+    def __init__(self, **kwargs):
+        if "environment" not in kwargs:
+            if os.environ.get("APP_ENV") == "test" or os.environ.get("PYTEST_CURRENT_TEST"):
+                kwargs["environment"] = "TEST"
+            else:
+                kwargs["environment"] = "USER"
+        super().__init__(**kwargs)
 
 
 class RepositorySnapshot(Base):

@@ -75,7 +75,7 @@ class EntityCorrelator:
                 db.query(StructuralArtifact)
                 .filter(
                     StructuralArtifact.snapshot_id == snapshot_id,
-                    StructuralArtifact.name.ilike(target_service),
+                    (StructuralArtifact.name.ilike(target_service)) | (StructuralArtifact.qualified_name.ilike(target_service)),
                 )
                 .first()
             )

@@ -35,8 +35,8 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
-/* Enforce Google Stitch Light Mode */
-body, body.theme-dark, body.theme-light {
+/* Google Stitch Theme Tokens */
+body, body.theme-light {
   --bg-primary: #f8fafc;
   --bg-secondary: #ffffff;
   --bg-surface: #ffffff;
@@ -46,6 +46,66 @@ body, body.theme-dark, body.theme-light {
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #64748b;
+}
+
+body.theme-dark, html.dark body {
+  --bg-primary: #0b0f19;
+  --bg-secondary: #131b2e;
+  --bg-surface: #1e293b;
+  --bg-hover: #26334d;
+  --border-color: #2a374f;
+  --border-subtle: #1e293b;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+}
+
+body.theme-dark {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+body.theme-dark main,
+body.theme-dark .bg-\[\#F8FAFC\] {
+  background-color: var(--bg-primary) !important;
+}
+
+body.theme-dark .bg-white {
+  background-color: var(--bg-secondary) !important;
+}
+
+body.theme-dark header,
+body.theme-dark aside {
+  background-color: var(--bg-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+
+body.theme-dark .text-\[\#0F172A\] {
+  color: var(--text-primary) !important;
+}
+
+body.theme-dark .text-\[\#475569\],
+body.theme-dark .text-\[\#64748B\] {
+  color: var(--text-secondary) !important;
+}
+
+body.theme-dark .border-\[\#E2E8F0\],
+body.theme-dark .border-\[\#CBD5E1\] {
+  border-color: var(--border-color) !important;
+}
+
+body.theme-dark .modal-overlay > div {
+  background-color: var(--bg-secondary) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+body.theme-dark input,
+body.theme-dark select,
+body.theme-dark textarea {
+  background-color: var(--bg-surface) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
 }
 
 * {
@@ -61,6 +121,276 @@ body {
   height: 100vh;
   overflow: hidden;
   user-select: none;
+}
+
+/* State-aware layout: hide sidebar when no repository is active (Rule 22 & User Directive) */
+body.no-repo #app-sidebar {
+  display: none !important;
+}
+
+body.no-repo main {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* State-aware disabled controls */
+.control-disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+.nav-disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+}
+
+/* ========================================================================== */
+/* REFINED CARD DESIGN SYSTEM (LIGHT & DARK DUAL THEME)                       */
+/* ========================================================================== */
+
+.twin-card {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.875rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.twin-card:hover {
+  box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.06);
+  border-color: #cbd5e1;
+}
+
+body.theme-dark .twin-card {
+  background-color: #131b2e !important;
+  border-color: #232f48 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.35) !important;
+}
+body.theme-dark .twin-card:hover {
+  background-color: #18233c !important;
+  border-color: #334466 !important;
+  box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Stat Cards (Overview 4 Entity Cards) */
+.stat-card-entity {
+  border-radius: 0.875rem;
+  padding: 1.25rem;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+}
+.stat-card-entity:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08);
+}
+
+/* 1. Topology (Indigo) */
+.stat-card-topology {
+  background: linear-gradient(135deg, rgba(238, 242, 255, 0.8) 0%, rgba(224, 231, 255, 0.45) 100%);
+  border: 1px solid rgba(199, 210, 254, 0.9);
+}
+body.theme-dark .stat-card-topology {
+  background: linear-gradient(135deg, rgba(30, 27, 75, 0.4) 0%, rgba(19, 27, 46, 0.9) 100%) !important;
+  border-color: rgba(99, 102, 241, 0.35) !important;
+}
+.stat-card-topology .stat-icon-wrap {
+  background-color: #e0e7ff;
+  color: #4338ca;
+}
+body.theme-dark .stat-card-topology .stat-icon-wrap {
+  background-color: rgba(79, 70, 229, 0.25) !important;
+  color: #a5b4fc !important;
+}
+.stat-card-topology .stat-num {
+  color: #1e1b4b;
+}
+body.theme-dark .stat-card-topology .stat-num {
+  color: #e0e7ff !important;
+}
+.stat-card-topology .stat-cat {
+  color: #4338ca;
+}
+body.theme-dark .stat-card-topology .stat-cat {
+  color: #a5b4fc !important;
+}
+.stat-card-topology .stat-sub {
+  color: #475569;
+}
+body.theme-dark .stat-card-topology .stat-sub {
+  color: #94a3b8 !important;
+}
+
+/* 2. Contracts (Emerald) */
+.stat-card-contracts {
+  background: linear-gradient(135deg, rgba(236, 253, 245, 0.85) 0%, rgba(209, 250, 229, 0.45) 100%);
+  border: 1px solid rgba(167, 243, 208, 0.9);
+}
+body.theme-dark .stat-card-contracts {
+  background: linear-gradient(135deg, rgba(6, 78, 59, 0.35) 0%, rgba(19, 27, 46, 0.9) 100%) !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
+}
+.stat-card-contracts .stat-icon-wrap {
+  background-color: #d1fae5;
+  color: #047857;
+}
+body.theme-dark .stat-card-contracts .stat-icon-wrap {
+  background-color: rgba(5, 150, 105, 0.25) !important;
+  color: #6ee7b7 !important;
+}
+.stat-card-contracts .stat-num {
+  color: #064e3b;
+}
+body.theme-dark .stat-card-contracts .stat-num {
+  color: #d1fae5 !important;
+}
+.stat-card-contracts .stat-cat {
+  color: #047857;
+}
+body.theme-dark .stat-card-contracts .stat-cat {
+  color: #6ee7b7 !important;
+}
+.stat-card-contracts .stat-sub {
+  color: #475569;
+}
+body.theme-dark .stat-card-contracts .stat-sub {
+  color: #94a3b8 !important;
+}
+
+/* 3. Relations (Purple) */
+.stat-card-relations {
+  background: linear-gradient(135deg, rgba(250, 245, 255, 0.9) 0%, rgba(237, 233, 254, 0.45) 100%);
+  border: 1px solid rgba(221, 214, 254, 0.9);
+}
+body.theme-dark .stat-card-relations {
+  background: linear-gradient(135deg, rgba(76, 29, 149, 0.35) 0%, rgba(19, 27, 46, 0.9) 100%) !important;
+  border-color: rgba(139, 92, 246, 0.35) !important;
+}
+.stat-card-relations .stat-icon-wrap {
+  background-color: #ede9fe;
+  color: #6d28d9;
+}
+body.theme-dark .stat-card-relations .stat-icon-wrap {
+  background-color: rgba(124, 58, 237, 0.25) !important;
+  color: #c4b5fd !important;
+}
+.stat-card-relations .stat-num {
+  color: #4c1d95;
+}
+body.theme-dark .stat-card-relations .stat-num {
+  color: #ede9fe !important;
+}
+.stat-card-relations .stat-cat {
+  color: #6d28d9;
+}
+body.theme-dark .stat-card-relations .stat-cat {
+  color: #c4b5fd !important;
+}
+.stat-card-relations .stat-sub {
+  color: #475569;
+}
+body.theme-dark .stat-card-relations .stat-sub {
+  color: #94a3b8 !important;
+}
+
+/* 4. Verification (Sky) */
+.stat-card-verification {
+  background: linear-gradient(135deg, rgba(240, 249, 255, 0.85) 0%, rgba(224, 242, 254, 0.45) 100%);
+  border: 1px solid rgba(186, 230, 253, 0.9);
+}
+body.theme-dark .stat-card-verification {
+  background: linear-gradient(135deg, rgba(12, 74, 110, 0.35) 0%, rgba(19, 27, 46, 0.9) 100%) !important;
+  border-color: rgba(14, 165, 233, 0.35) !important;
+}
+.stat-card-verification .stat-icon-wrap {
+  background-color: #e0f2fe;
+  color: #0284c7;
+}
+body.theme-dark .stat-card-verification .stat-icon-wrap {
+  background-color: rgba(2, 132, 199, 0.25) !important;
+  color: #7dd3fc !important;
+}
+.stat-card-verification .stat-num {
+  color: #0c4a6e;
+}
+body.theme-dark .stat-card-verification .stat-num {
+  color: #e0f2fe !important;
+}
+.stat-card-verification .stat-cat {
+  color: #0369a1;
+}
+body.theme-dark .stat-card-verification .stat-cat {
+  color: #7dd3fc !important;
+}
+.stat-card-verification .stat-sub {
+  color: #475569;
+}
+body.theme-dark .stat-card-verification .stat-sub {
+  color: #94a3b8 !important;
+}
+
+/* Onboard Cards (Rule 8: 3 Prominent Acquisition Cards) */
+.onboard-card {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.875rem;
+  padding: 1.5rem;
+  text-align: left;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+}
+.onboard-card:hover {
+  border-color: #0071e3;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -4px rgba(0, 113, 227, 0.12);
+}
+body.theme-dark .onboard-card {
+  background-color: #131b2e !important;
+  border-color: #25334d !important;
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.3) !important;
+}
+body.theme-dark .onboard-card:hover {
+  background-color: #17223b !important;
+  border-color: #3b82f6 !important;
+  box-shadow: 0 8px 24px -4px rgba(59, 130, 246, 0.25) !important;
+}
+body.theme-dark .onboard-card h3 {
+  color: #f8fafc !important;
+}
+body.theme-dark .onboard-card p {
+  color: #94a3b8 !important;
+}
+body.theme-dark .onboard-card .icon-box {
+  background-color: #1e293b !important;
+  color: #60a5fa !important;
+}
+
+/* Simulator Card (Ready to ship a change?) */
+.simulator-card {
+  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+  border: 1px solid #c7d2fe;
+  border-radius: 0.875rem;
+}
+body.theme-dark .simulator-card {
+  background: linear-gradient(135deg, #161e38 0%, #131b2e 100%) !important;
+  border-color: #2e3d64 !important;
+}
+body.theme-dark .simulator-card h3 {
+  color: #e0e7ff !important;
+}
+body.theme-dark .simulator-card p {
+  color: #94a3b8 !important;
+}
+body.theme-dark .simulator-card .sim-inner-box {
+  background-color: #1a243d !important;
+  border-color: #2b395e !important;
+  color: #f8fafc !important;
 }
 
 /* App Grid Layout */
@@ -1945,7 +2275,7 @@ body {
 }
 
 /* ======================================================== */
-/* PHASE 5: RUNTIME EVIDENCE & INCIDENT INTELLIGENCE STYLES  */
+/* RUNTIME EVIDENCE & INCIDENT INTELLIGENCE STYLES          */
 /* ======================================================== */
 .runtime-metric-strip {
   display: grid;
@@ -2072,7 +2402,7 @@ body {
   background: rgba(100, 116, 139, 0.6);
 }
 
-/* Phase 7 Risk Intelligence & Architecture Guardrail Styles */
+/* Risk Intelligence & Architecture Guardrail Styles */
 .risk-badge-low {
   background-color: #ECFDF5;
   color: #065F46;
@@ -2116,3 +2446,103 @@ body {
 .guardrail-card:hover {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
+
+/* ==========================================================================
+   PHASE 8.7.6: ZERO-FLASH BOOT SCREEN, ICONS & STATE MACHINE RULES
+   ========================================================================== */
+
+/* 1. Icon font ligature protection */
+.material-symbols-outlined {
+  font-display: block !important;
+}
+
+/* 2. Boot Screen Overlay */
+#boot-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background-color: var(--bg-primary, #f8fafc);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.25s ease-out, visibility 0.25s ease-out;
+}
+
+body.booting #app-shell {
+  visibility: hidden !important;
+}
+
+body:not(.booting) #boot-screen {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* 3. State 1: Signed-Out Guest (Zero Workspace) */
+body.state-signed-out #app-sidebar,
+body.state-signed-out #header-workspace-separator,
+body.state-signed-out #header-workspace-controls,
+body.state-signed-out #top-search-btn,
+body.state-signed-out #top-btn-ingest-runtime,
+body.state-signed-out #top-btn-create-incident,
+body.state-signed-out #header-sync-pill,
+body.state-signed-out #header-user-profile,
+body.state-signed-out #no-repo-existing-codebases-section {
+  display: none !important;
+}
+
+body.state-signed-out #top-btn-login {
+  display: inline-flex !important;
+}
+
+body.state-signed-out #top-btn-connect-repo {
+  display: inline-flex !important;
+}
+
+/* 4. State 2: Signed-In User with No Active Workspace */
+body.state-signed-in-no-repo #app-sidebar,
+body.state-signed-in-no-repo #header-workspace-separator,
+body.state-signed-in-no-repo #header-workspace-controls,
+body.state-signed-in-no-repo #top-search-btn,
+body.state-signed-in-no-repo #top-btn-ingest-runtime,
+body.state-signed-in-no-repo #top-btn-create-incident,
+body.state-signed-in-no-repo #header-sync-pill,
+body.state-signed-in-no-repo #top-btn-login {
+  display: none !important;
+}
+
+body.state-signed-in-no-repo #header-user-profile {
+  display: flex !important;
+}
+
+body.state-signed-in-no-repo #top-btn-connect-repo {
+  display: inline-flex !important;
+}
+
+/* 5. State 3: Active Workspace */
+body.state-workspace-active #app-sidebar {
+  display: flex !important;
+}
+
+body.state-workspace-active #header-workspace-separator {
+  display: block !important;
+}
+
+body.state-workspace-active #header-workspace-controls {
+  display: flex !important;
+}
+
+body.state-workspace-active #top-search-btn {
+  display: flex !important;
+}
+
+body.state-workspace-active #top-btn-ingest-runtime,
+body.state-workspace-active #top-btn-create-incident {
+  display: inline-flex !important;
+}
+
+body.state-workspace-active #header-sync-pill {
+  display: inline-flex !important;
+}
+

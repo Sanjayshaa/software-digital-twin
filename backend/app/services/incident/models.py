@@ -3,17 +3,31 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 
+import json
+
+MAX_INCIDENT_PAYLOAD_BYTES = 100 * 1024  # 100 KB max for incident metadata
+
+
 class IncidentCreate(BaseModel):
-    title: str = Field(..., max_length=255)
-    description: Optional[str] = None
-    severity: str = "medium"  # low, medium, high, critical
-    environment: str = "production"
-    affected_component_id: Optional[str] = None
-    affected_component_name: Optional[str] = None  # Resolved to ID by service layer
-    snapshot_id: Optional[str] = None
+    title: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=5000)
+    severity: str = Field("medium", max_length=32)  # low, medium, high, critical
+    environment: str = Field("production", max_length=64)
+    affected_component_id: Optional[str] = Field(None, max_length=255)
+    affected_component_name: Optional[str] = Field(None, max_length=255)
+    snapshot_id: Optional[str] = Field(None, max_length=255)
     detected_at: Optional[datetime] = None
-    event_ids: List[str] = Field(default_factory=list)
+    event_ids: List[str] = Field(default_factory=list, max_length=1000)
     metadata_payload: Dict[str, Any] = Field(default_factory=dict)
+
+    def validate_payload_size(self):
+        try:
+            dumped = json.dumps(self.metadata_payload)
+            if len(dumped.encode("utf-8")) > MAX_INCIDENT_PAYLOAD_BYTES:
+                raise ValueError(f"Incident metadata_payload exceeds maximum {MAX_INCIDENT_PAYLOAD_BYTES} bytes.")
+        except (TypeError, OverflowError) as exc:
+            raise ValueError(f"Invalid JSON metadata payload: {exc}")
+
 
 
 class IncidentEvidenceLinkModel(BaseModel):

@@ -148,7 +148,9 @@ class TwinGraphProjection:
                 "summary": {"total_nodes": 0, "total_edges": 0},
             }
 
-        snap = db.query(RepositorySnapshot).filter_by(id=target_snap_id).first()
+        snap = db.query(RepositorySnapshot).filter_by(id=target_snap_id, repository_id=repository_id).first()
+        if not snap:
+            raise ValueError(f"Snapshot '{target_snap_id}' does not belong to repository '{repository_id}'.")
 
         # 1. Fetch raw artifacts & relationships for target snapshot
         artifacts = db.query(StructuralArtifact).filter_by(snapshot_id=target_snap_id).all()
@@ -248,16 +250,44 @@ class TwinGraphProjection:
                 continue
 
             if level == 1:
-                if atype in ("PACKAGE", "MODULE", "DIRECTORY", "SERVICE", "DATABASE"):
+                # Level 1 Macro Architecture:
+                # High-level architecture hubs: packages, directories, services, databases, SQL tables, APIs, docker stages
+                if atype in ("PACKAGE", "DIRECTORY", "SERVICE", "DATABASE", "API_ENDPOINT", "DOCKER_STAGE", "SQL_TABLE", "DATABASE_TABLE"):
                     filtered_node_ids.add(nid)
+                elif atype == "MODULE":
+                    deg = full_graph.degree(nid)
+                    is_hub = deg >= 2
+                    is_entry = bool(art.location and any(ep in art.location.lower() for ep in ("app.", "main.", "index.", "server.", "route", "controller", "api", "router")))
+                    if is_hub or is_entry:
+                        filtered_node_ids.add(nid)
             elif level == 2:
-                if atype in ("PACKAGE", "MODULE", "CLASS", "INTERFACE", "SERVICE", "API_ENDPOINT", "DATABASE_TABLE", "TEST_CASE", "TEST_SUITE"):
+                if atype in ("PACKAGE", "MODULE", "CLASS", "INTERFACE", "SERVICE", "API_ENDPOINT", "DATABASE_TABLE", "SQL_TABLE", "TEST_CASE", "TEST_SUITE", "DOCKER_STAGE") or (include_external_dependencies and atype == "EXTERNAL_DEPENDENCY"):
                     filtered_node_ids.add(nid)
             elif level == 3:
-                if atype in ("PACKAGE", "MODULE", "CLASS", "INTERFACE", "SERVICE", "API_ENDPOINT", "DATABASE_TABLE", "TEST_CASE", "TEST_SUITE", "METHOD", "FUNCTION", "CONSTRUCTOR"):
+                if atype in ("PACKAGE", "MODULE", "CLASS", "INTERFACE", "SERVICE", "API_ENDPOINT", "DATABASE_TABLE", "SQL_TABLE", "TEST_CASE", "TEST_SUITE", "DOCKER_STAGE", "METHOD", "FUNCTION", "CONSTRUCTOR") or (include_external_dependencies and atype == "EXTERNAL_DEPENDENCY"):
                     filtered_node_ids.add(nid)
             else:  # Level 4: All
                 filtered_node_ids.add(nid)
+
+        # Fallback for Level 1 if no macro hubs matched
+        if level == 1 and not filtered_node_ids:
+            for nid in active_node_ids:
+                art = artifact_by_id.get(nid)
+                if art and str(art.artifact_type).upper() in ("PACKAGE", "MODULE", "DIRECTORY", "SERVICE"):
+                    filtered_node_ids.add(nid)
+
+        # Build placeholder resolution map for internal aliases (e.g. @/services/languageDetector -> src.services.languageDetector)
+        concrete_by_qual = {a.qualified_name: a for a in artifacts if a.artifact_type != "EXTERNAL_DEPENDENCY"}
+        ph_map: Dict[str, str] = {}
+        for a in artifacts:
+            if a.artifact_type == "EXTERNAL_DEPENDENCY":
+                name = a.name or a.qualified_name
+                if a.qualified_name in concrete_by_qual:
+                    ph_map[a.id] = concrete_by_qual[a.qualified_name].id
+                elif name.startswith("@/"):
+                    cand = "src." + name[2:].replace("/", ".")
+                    if cand in concrete_by_qual:
+                        ph_map[a.id] = concrete_by_qual[cand].id
 
         # 8. Transform to JSON-ready Nodes
         rendered_nodes: List[Dict[str, Any]] = []
@@ -312,8 +342,12 @@ class TwinGraphProjection:
 
         # 9. Transform to JSON-ready Edges
         rendered_edges: List[Dict[str, Any]] = []
+        seen_edges: Set[Tuple[str, str, str]] = set()
         for u, v, k, data in full_graph.edges(keys=True, data=True):
-            if u not in node_id_set or v not in node_id_set:
+            # Resolve placeholders/aliases if target is mapped to internal artifact
+            u_eff = ph_map.get(u, u)
+            v_eff = ph_map.get(v, v)
+            if u_eff not in node_id_set or v_eff not in node_id_set or u_eff == v_eff:
                 continue
 
             rel: ArtifactRelationship = data["relationship"]
@@ -322,8 +356,13 @@ class TwinGraphProjection:
             if relationship_types and rtype not in [r.upper() for r in relationship_types]:
                 continue
 
-            src_art = artifact_by_id.get(u)
-            tgt_art = artifact_by_id.get(v)
+            edge_key = (u_eff, v_eff, rtype)
+            if edge_key in seen_edges:
+                continue
+            seen_edges.add(edge_key)
+
+            src_art = artifact_by_id.get(u_eff)
+            tgt_art = artifact_by_id.get(v_eff)
             src_qual = src_art.qualified_name if src_art else ""
             tgt_qual = tgt_art.qualified_name if tgt_art else ""
 
@@ -361,8 +400,8 @@ class TwinGraphProjection:
 
             rendered_edges.append({
                 "id": rel.id,
-                "source": rel.source_artifact_id,
-                "target": rel.target_artifact_id,
+                "source": u_eff,
+                "target": v_eff,
                 "type": rel.relationship_type,
                 "confidence": rel.confidence or 1.0,
                 "detection_method": rel.detection_method,

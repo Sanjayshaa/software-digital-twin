@@ -36,6 +36,7 @@ class RawRuntimeEvent(BaseModel):
     event_type: str = "LOG"
     service: Optional[str] = None
     service_name: Optional[str] = None
+    component_name: Optional[str] = None
     environment: str = "production"
     severity: str = "INFO"
     message: Optional[str] = None

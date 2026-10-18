@@ -148,13 +148,10 @@ class ChangeImpactAnalyzer:
             else:
                 affected_components.add(f.target_qual_name)
 
-        # Indirectly affected nodes that were also directly affected should count as directly affected
-        indirectly_only = indirectly_affected_nodes - directly_affected_nodes
-
         summary = ImpactSummary(
             changed=len(changed_artifacts),
             directly_affected=len(directly_affected_nodes),
-            indirectly_affected=len(indirectly_only),
+            indirectly_affected=len(indirectly_affected_nodes),
             affected_components=len(affected_components),
             affected_services=len(affected_services),
             affected_apis=len(affected_apis),

@@ -168,9 +168,14 @@ class ProcessDiscoveryEngine:
                 if depth < 4:
                     out_rels = rel_map.get(curr_art.id, [])
                     for r in out_rels:
-                        if r.relationship_type in ("CALLS", "DEPENDS_ON", "EXPOSES", "CONSUMES", "PERSISTS_TO"):
+                        # Only follow explicit execution/call transitions — never treat external dependencies or generic imports as execution steps
+                        if r.relationship_type in ("CALLS", "EXPOSES", "CONSUMES", "PERSISTS_TO"):
                             tgt_art = art_map.get(r.target_artifact_id)
-                            if tgt_art and tgt_art.id not in visited_art_ids:
+                            if (
+                                tgt_art
+                                and tgt_art.artifact_type not in ("EXTERNAL_DEPENDENCY", "PACKAGE")
+                                and tgt_art.id not in visited_art_ids
+                            ):
                                 visited_art_ids.add(tgt_art.id)
                                 queue.append((tgt_art, depth + 1, step_id))
 
@@ -198,6 +203,8 @@ class ProcessDiscoveryEngine:
         entry_points = []
         for a in artifacts:
             type_upper = (a.artifact_type or "").upper()
+            if type_upper in ("EXTERNAL_DEPENDENCY", "PACKAGE"):
+                continue
             name_lower = (a.name or "").lower()
             loc_lower = (a.location or "").lower()
 
@@ -213,6 +220,8 @@ class ProcessDiscoveryEngine:
             # Fallback to public services, classes, or top-level functions
             for a in artifacts:
                 type_up = (a.artifact_type or "").upper()
+                if type_up in ("EXTERNAL_DEPENDENCY", "PACKAGE"):
+                    continue
                 if type_up in ("CLASS", "MODULE", "FUNCTION", "METHOD") and "test" not in a.name.lower() and "test" not in (a.location or "").lower():
                     entry_points.append(a)
                 if len(entry_points) >= 5:

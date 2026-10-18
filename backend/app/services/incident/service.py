@@ -49,12 +49,12 @@ class IncidentService:
         # Resolve affected_component_name to affected_component_id if needed
         resolved_component_id = req.affected_component_id
         if not resolved_component_id and req.affected_component_name:
-            art_q = db.query(StructuralArtifact).filter_by(
-                repository_id=repository_id,
-                name=req.affected_component_name,
+            art_q = db.query(StructuralArtifact).filter(
+                StructuralArtifact.repository_id == repository_id,
+                (StructuralArtifact.name == req.affected_component_name) | (StructuralArtifact.qualified_name == req.affected_component_name),
             )
             if target_snap_id:
-                art_q = art_q.filter_by(snapshot_id=target_snap_id)
+                art_q = art_q.filter(StructuralArtifact.snapshot_id == target_snap_id)
             matching_art = art_q.first()
             if matching_art:
                 resolved_component_id = matching_art.id
@@ -122,13 +122,33 @@ class IncidentService:
         rows = query.order_by(desc(Incident.detected_at)).all()
         return [self._entity_to_response(db, inc) for inc in rows]
 
-    def get_incident(self, db: Session, incident_id: str) -> Optional[IncidentResponse]:
-        inc = db.query(Incident).filter_by(id=incident_id).first()
+    def get_incident(
+        self,
+        db: Session,
+        incident_id: str,
+        repository_id: Optional[str] = None,
+    ) -> Optional[IncidentResponse]:
+        query = db.query(Incident).filter_by(id=incident_id)
+        if repository_id:
+            query = query.filter_by(repository_id=repository_id)
+        inc = query.first()
         if not inc:
             return None
         return self._entity_to_response(db, inc)
 
-    def investigate_incident(self, db: Session, incident_id: str, repository_id: Optional[str] = None) -> InvestigationResult:
+    def investigate_incident(
+        self,
+        db: Session,
+        incident_id: str,
+        repository_id: Optional[str] = None,
+    ) -> InvestigationResult:
+        if repository_id:
+            inc = db.query(Incident).filter_by(id=incident_id, repository_id=repository_id).first()
+            if not inc:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Incident '{incident_id}' not found for repository '{repository_id}'",
+                )
         return incident_investigator.investigate(db, incident_id)
 
     def _entity_to_response(self, db: Session, inc: Incident) -> IncidentResponse:

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.core.database import get_db
+from app.core.auth import resolve_authorized_repo, get_current_user_optional, AuthenticatedPrincipal
 from app.models.entities import Repository, RepositorySnapshot
 from app.services.simulation import (
     scenario_service,
@@ -24,25 +25,20 @@ from app.services.simulation import (
 router = APIRouter(prefix="/repositories", tags=["Scenario Simulation"])
 
 
-def _resolve_repo(db: Session, repository_id: str) -> Optional[Repository]:
-    return (
-        db.query(Repository)
-        .filter(
-            or_(
-                Repository.id == repository_id,
-                Repository.name == repository_id,
-                Repository.local_path == repository_id,
-            )
-        )
-        .first()
-    )
+def _resolve_repo(
+    db: Session,
+    repository_id: str,
+    principal: Optional[AuthenticatedPrincipal] = None,
+) -> Optional[Repository]:
+    return resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
 
 
 class QuickSimulateRequest(BaseModel):
-    name: Optional[str] = "Quick Simulation"
-    description: Optional[str] = None
+    name: Optional[str] = Field("Quick Simulation", max_length=255)
+    description: Optional[str] = Field(None, max_length=5000)
     base_snapshot_id: str = Field(..., description="Snapshot ID against which simulation runs")
-    proposed_changes: List[Dict[str, Any]] = Field(..., description="List of proposed structural changes")
+    proposed_changes: List[Dict[str, Any]] = Field(..., max_length=100, description="List of proposed structural changes (max 100)")
+
 
 
 @router.post("/{repository_id}/scenarios", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
@@ -50,12 +46,13 @@ def create_scenario(
     repository_id: str,
     req: CreateScenarioRequest,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Creates a new temporary What-If scenario against a baseline Digital Twin snapshot.
     Does NOT modify the real repository, working tree, or existing snapshots.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -68,11 +65,12 @@ def create_scenario(
 def list_scenarios(
     repository_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Lists all previously created What-If scenarios for the given repository.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -86,17 +84,18 @@ def get_scenario(
     repository_id: str,
     scenario_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Retrieves a scenario definition and its latest simulated impact results.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Repository '{repository_id}' not found.",
         )
-    return scenario_service.get_scenario(db=db, scenario_id=scenario_id)
+    return scenario_service.get_scenario(db=db, scenario_id=scenario_id, repository_id=repo.id)
 
 
 @router.post("/{repository_id}/scenarios/{scenario_id}/analyze", response_model=Dict[str, Any])
@@ -104,19 +103,20 @@ def analyze_scenario(
     repository_id: str,
     scenario_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Executes deterministic simulation on an existing scenario.
     Traverses the virtual twin, computes simulated impact, simulated test impact,
     architecture guardrails, and scenario risk.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Repository '{repository_id}' not found.",
         )
-    res = scenario_service.simulate_scenario(db=db, scenario_id=scenario_id)
+    res = scenario_service.simulate_scenario(db=db, scenario_id=scenario_id, repository_id=repo.id)
     return res.dict()
 
 
@@ -125,11 +125,12 @@ def simulate_scenario_alias(
     repository_id: str,
     scenario_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Alias for /{repository_id}/scenarios/{scenario_id}/analyze.
     """
-    return analyze_scenario(repository_id=repository_id, scenario_id=scenario_id, db=db)
+    return analyze_scenario(repository_id=repository_id, scenario_id=scenario_id, db=db, principal=principal)
 
 
 @router.delete("/{repository_id}/scenarios/{scenario_id}", response_model=Dict[str, Any])
@@ -137,17 +138,18 @@ def delete_scenario(
     repository_id: str,
     scenario_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Deletes a What-If scenario and its simulation results.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Repository '{repository_id}' not found.",
         )
-    return scenario_service.delete_scenario(db=db, scenario_id=scenario_id)
+    return scenario_service.delete_scenario(db=db, scenario_id=scenario_id, repository_id=repo.id)
 
 
 @router.post("/{repository_id}/simulate", response_model=Dict[str, Any])
@@ -155,12 +157,13 @@ def quick_simulate(
     repository_id: str,
     req: QuickSimulateRequest,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     One-shot simulation endpoint for interactive simulation workspaces.
     Creates, validates, and simulates a scenario in a single call.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

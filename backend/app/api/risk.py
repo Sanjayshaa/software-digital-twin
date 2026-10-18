@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.core.database import get_db
+from app.core.auth import resolve_authorized_repo, get_current_user_optional, AuthenticatedPrincipal
 from app.models.entities import Repository, RepositorySnapshot
 from app.services.risk import (
     risk_intelligence_service,
@@ -30,18 +31,12 @@ class RiskAnalysisRequest(BaseModel):
     baseline_path: Optional[str] = Field(None, description="Optional custom baseline path")
 
 
-def _resolve_repo(db: Session, repository_id: str) -> Optional[Repository]:
-    return (
-        db.query(Repository)
-        .filter(
-            or_(
-                Repository.id == repository_id,
-                Repository.name == repository_id,
-                Repository.local_path == repository_id,
-            )
-        )
-        .first()
-    )
+def _resolve_repo(
+    db: Session,
+    repository_id: str,
+    principal: Optional[AuthenticatedPrincipal] = None,
+) -> Optional[Repository]:
+    return resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
 
 
 @router.post("/{repository_id}/risk-analysis", response_model=Dict[str, Any])
@@ -49,13 +44,14 @@ def run_risk_analysis(
     repository_id: str,
     req: RiskAnalysisRequest,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Executes deterministic Risk Intelligence & Guardrail evaluation between two snapshots.
     Answers: 'How significant is this change, what evidence contributes, and which guardrails are relevant?'
     Returns explainable risk category, confidence level, risk factors, guardrail results, and recommendations.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -121,11 +117,12 @@ def get_risk_analysis(
     repository_id: str,
     analysis_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Retrieves stored Risk Assessment results by analysis ID.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -147,11 +144,12 @@ def get_architecture_guardrails(
     snapshot_id: Optional[str] = Query(None),
     baseline_path: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Evaluates and returns architecture boundary guardrails for the given snapshot.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
 

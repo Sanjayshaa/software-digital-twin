@@ -632,17 +632,26 @@ def test_scenario_18_scenario_deletion(db_session: Session, sim_env):
 # 19. Scenario Expiration
 # ==============================================================================
 def test_scenario_19_scenario_expiration(db_session: Session, sim_env):
-    """Test scenario with negative TTL expires and raises 410 on simulation."""
+    """Test scenario with past expiration date raises 410 on simulation."""
     from fastapi import HTTPException
+    from datetime import datetime, timedelta
+    from app.models.entities import Scenario
     req = CreateScenarioRequest(
         name="Expiring Scenario",
         base_snapshot_id=sim_env["snap"].id,
-        expires_in_hours=-1,  # Already expired
+        expires_in_hours=1,
         proposed_changes=[
             {"mutation_type": "MODIFY_SYMBOL", "target": "app.services.OrderService"}
         ],
     )
     created = scenario_service.create_scenario(db_session, sim_env["repo"].id, req)
+    # Manually backdate expiration in parameters JSON
+    scenario = db_session.query(Scenario).filter_by(id=created["id"]).first()
+    scenario.parameters = {
+        **scenario.parameters,
+        "expires_at": (datetime.utcnow() - timedelta(hours=2)).isoformat(),
+    }
+    db_session.commit()
     with pytest.raises(HTTPException) as excinfo:
         scenario_service.simulate_scenario(db_session, created["id"])
     assert excinfo.value.status_code == 410

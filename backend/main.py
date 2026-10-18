@@ -20,8 +20,12 @@ from app.api.incident import router as incident_router
 from app.api.testing import router as testing_router
 from app.api.risk import router as risk_router
 from app.api.simulation import router as simulation_router
+from app.api.auth import router as auth_router
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi import Request
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -32,14 +36,57 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-# CORS middleware
+# SEC-06 Remediation: Enforce explicit origins and disallow wildcard with credentials
+settings.validate_cors()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.CORS_ALLOWED_ORIGINS,
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+    allow_methods=settings.CORS_ALLOWED_METHODS,
+    allow_headers=settings.CORS_ALLOWED_HEADERS,
 )
+
+
+@app.middleware("http")
+async def security_and_governance_middleware(request: Request, call_next):
+    """
+    Enforces:
+    1. Request payload size limits (rejects oversized bodies with 413).
+    2. Standard HTTP security headers on all responses.
+    """
+    path = request.url.path
+    is_auth_endpoint = path.startswith("/auth") or path.startswith("/api/v1/auth")
+    max_allowed_bytes = settings.MAX_AUTH_BODY_BYTES if is_auth_endpoint else settings.MAX_REQUEST_BODY_BYTES
+
+    content_length_header = request.headers.get("content-length")
+    if content_length_header:
+        try:
+            content_length = int(content_length_header)
+            if content_length > max_allowed_bytes:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "detail": f"Request payload size ({content_length} bytes) exceeds maximum permitted limit ({max_allowed_bytes} bytes).",
+                        "code": "PAYLOAD_TOO_LARGE",
+                    },
+                )
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Invalid Content-Length header.", "code": "INVALID_HEADER"},
+            )
+
+    response = await call_next(request)
+
+    # Standard security headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-XSS-Protection"] = "0"
+    response.headers["Content-Security-Policy"] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://fonts.googleapis.com https://fonts.gstatic.com data: blob:; font-src 'self' https://fonts.gstatic.com data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com; frame-ancestors 'none';"
+
+    return response
 
 static_dir = os.path.join(os.path.dirname(__file__), "app", "static")
 if not os.path.exists(static_dir):
@@ -62,7 +109,10 @@ def favicon():
 
 # Root route
 @app.get("/", tags=["System"])
-def root():
+def root(request: Request):
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept and "application/json" not in accept and not accept.startswith("*/*"):
+        return RedirectResponse(url="/app")
     return {
         "name": settings.PROJECT_NAME,
         "version": settings.VERSION,
@@ -86,6 +136,8 @@ app.include_router(incident_router)
 app.include_router(testing_router)
 app.include_router(risk_router)
 app.include_router(simulation_router)
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(auth_router)
 
 
 if __name__ == "__main__":

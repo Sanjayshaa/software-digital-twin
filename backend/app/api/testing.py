@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.core.database import get_db
+from app.core.auth import resolve_authorized_repo, get_current_user_optional, AuthenticatedPrincipal
 from app.models.entities import Repository, RepositorySnapshot, StructuralArtifact, ArtifactRelationship
 from app.services.testing import (
     test_impact_service,
@@ -28,18 +29,12 @@ class TestImpactRequest(BaseModel):
     include_unaffected: Optional[bool] = Field(True, description="Include unaffected test catalog in output")
 
 
-def _resolve_repo(db: Session, repository_id: str) -> Optional[Repository]:
-    return (
-        db.query(Repository)
-        .filter(
-            or_(
-                Repository.id == repository_id,
-                Repository.name == repository_id,
-                Repository.local_path == repository_id,
-            )
-        )
-        .first()
-    )
+def _resolve_repo(
+    db: Session,
+    repository_id: str,
+    principal: Optional[AuthenticatedPrincipal] = None,
+) -> Optional[Repository]:
+    return resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
 
 
 @router.post("/{repository_id}/test-impact", response_model=Dict[str, Any])
@@ -47,13 +42,14 @@ def run_test_impact_analysis(
     repository_id: str,
     req: TestImpactRequest,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Executes deterministic Test Impact Intelligence between two snapshots.
     Answers: 'If I change this code, which tests should I run and why?'
     Returns directly affected tests, indirectly affected tests, unaffected tests, and unknown coverage.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -69,7 +65,7 @@ def run_test_impact_analysis(
 
     base_snapshot_id = req.base_snapshot_id
     if not base_snapshot_id:
-        # Find preceding snapshot
+        # Find preceding snapshot within this repository
         prev_snap = (
             db.query(RepositorySnapshot)
             .filter(
@@ -119,11 +115,12 @@ def get_test_impact_analysis(
     repository_id: str,
     analysis_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Retrieves stored Test Impact Analysis results by analysis ID.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -144,12 +141,13 @@ def get_tests_catalog(
     repository_id: str,
     snapshot_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Returns the comprehensive catalog of tests discovered for this repository snapshot,
     including test types, locations, and mapped target components.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
 

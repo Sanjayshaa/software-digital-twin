@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.core.database import get_db
+from app.core.auth import resolve_authorized_repo, get_current_user_optional, AuthenticatedPrincipal
 from app.models.entities import Repository
 from app.services.runtime import (
     RawRuntimeEvent,
@@ -23,18 +24,12 @@ from app.services.runtime import (
 router = APIRouter(prefix="/repositories", tags=["Runtime Evidence"])
 
 
-def _resolve_repo(db: Session, repository_id: str) -> Optional[Repository]:
-    return (
-        db.query(Repository)
-        .filter(
-            or_(
-                Repository.id == repository_id,
-                Repository.name == repository_id,
-                Repository.local_path == repository_id,
-            )
-        )
-        .first()
-    )
+def _resolve_repo(
+    db: Session,
+    repository_id: str,
+    principal: Optional[AuthenticatedPrincipal] = None,
+) -> Optional[Repository]:
+    return resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
 
 
 @router.post("/{repository_id}/runtime-events/ingest", response_model=RuntimeIngestResult, status_code=status.HTTP_201_CREATED)
@@ -42,12 +37,13 @@ def ingest_runtime_events(
     repository_id: str,
     req: RuntimeIngestRequest,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Ingests, sanitizes, and deterministically correlates a batch of runtime events.
     Applies credential redaction and links events to Structural Digital Twin artifacts.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
 
@@ -74,9 +70,10 @@ def list_runtime_events(
     limit: int = Query(50, ge=1, le=200, description="Items per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Lists normalized runtime events with bounded pagination and filtering."""
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
 
@@ -101,13 +98,14 @@ def get_runtime_event(
     repository_id: str,
     event_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Retrieves a single normalized runtime event by ID."""
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
 
     event = runtime_evidence_service.get_event(db, event_id)
-    if not event:
+    if not event or event.repository_id != repo.id:
         raise HTTPException(status_code=404, detail=f"Runtime event '{event_id}' not found")
     return event

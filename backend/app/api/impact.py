@@ -29,18 +29,15 @@ class ImpactAnalysisRequest(BaseModel):
     include_apis: Optional[bool] = Field(True, description="Propagate impact to exposed API endpoints")
 
 
-def _resolve_repo(db: Session, repository_id: str) -> Optional[Repository]:
-    return (
-        db.query(Repository)
-        .filter(
-            or_(
-                Repository.id == repository_id,
-                Repository.name == repository_id,
-                Repository.local_path == repository_id,
-            )
-        )
-        .first()
-    )
+from app.core.auth import resolve_authorized_repo, get_current_user_optional, AuthenticatedPrincipal
+
+
+def _resolve_repo(
+    db: Session,
+    repository_id: str,
+    principal: Optional[AuthenticatedPrincipal] = None,
+) -> Optional[Repository]:
+    return resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
 
 
 @router.post("/{repository_id}/impact-analysis", response_model=Dict[str, Any])
@@ -48,12 +45,13 @@ def run_impact_analysis(
     repository_id: str,
     req: ImpactAnalysisRequest,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Executes a deterministic Change Impact & Blast Radius analysis between two snapshots.
     Traverses typed relationships with cycle protection, attaches evidence, and generates explainable paths.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -112,11 +110,12 @@ def get_impact_analysis(
     repository_id: str,
     analysis_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Retrieves the full deterministic findings and paths for a previously completed impact analysis.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -142,12 +141,13 @@ def get_impact_graph(
     repository_id: str,
     analysis_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Projects the impact subgraph: changed nodes, directly/indirectly affected entities,
     and causal connecting relationships.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -174,12 +174,13 @@ def get_snapshot_diff(
     base_snapshot_id: str,
     target_snapshot_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Computes a fast, normalized ChangeSet between two snapshots.
     Surfaces ADDED, REMOVED, and MODIFIED symbols/files before running full blast-radius.
     """
-    repo = _resolve_repo(db, repository_id)
+    repo = _resolve_repo(db, repository_id, principal=principal)
     if not repo:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

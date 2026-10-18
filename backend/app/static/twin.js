@@ -7,6 +7,91 @@
 (function () {
   'use strict';
 
+  // --- API Client & Authorization ---
+  const nativeFetch = window.fetch.bind(window);
+  async function apiFetch(url, options = {}) {
+    const token = localStorage.getItem('jwt_token');
+    const headers = Object.assign({}, options.headers || {});
+    if (token && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const opts = { ...options, headers };
+    const res = await nativeFetch(url, opts);
+    if (res.status === 401) {
+      localStorage.removeItem('jwt_token');
+      if (typeof updateAuthUI === 'function') {
+        updateAuthUI(null);
+      }
+    }
+    return res;
+  }
+  const fetch = apiFetch;
+
+  // --- Notification / Toast System (Replacing alert) ---
+  function showNotification(message, type = 'info', duration = 4000) {
+    let toastContainer = document.getElementById('twin-toast-container');
+    if (!toastContainer) {
+      toastContainer = document.createElement('div');
+      toastContainer.id = 'twin-toast-container';
+      toastContainer.className = 'fixed bottom-5 right-5 z-[9999] flex flex-col gap-2 max-w-sm pointer-events-none';
+      document.body.appendChild(toastContainer);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'pointer-events-auto p-3.5 rounded-xl shadow-lg border text-xs flex items-start gap-2.5 transition-all transform translate-y-2 opacity-0';
+
+    let bg = '#EFF6FF';
+    let border = '#BFDBFE';
+    let text = '#1E40AF';
+    let icon = 'info';
+
+    if (type === 'error') {
+      bg = '#FEF2F2';
+      border = '#FECDD3';
+      text = '#991B1B';
+      icon = 'error';
+    } else if (type === 'success') {
+      bg = '#ECFDF5';
+      border = '#A7F3D0';
+      text = '#065F46';
+      icon = 'check_circle';
+    } else if (type === 'warning') {
+      bg = '#FFFBEB';
+      border = '#FDE68A';
+      text = '#92400E';
+      icon = 'warning';
+    }
+
+    toast.style.backgroundColor = bg;
+    toast.style.borderColor = border;
+    toast.style.color = text;
+
+    toast.innerHTML = `
+      <span class="material-symbols-outlined text-[18px] shrink-0 mt-0.5">${icon}</span>
+      <div class="flex-1 leading-relaxed">${escapeHtml(message)}</div>
+      <button class="shrink-0 text-current opacity-60 hover:opacity-100 p-0.5 rounded cursor-pointer" type="button">
+        <span class="material-symbols-outlined text-[16px]">close</span>
+      </button>
+    `;
+
+    toast.querySelector('button').onclick = () => {
+      toast.remove();
+    };
+
+    toastContainer.appendChild(toast);
+    requestAnimationFrame(() => {
+      toast.classList.remove('translate-y-2', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+    });
+
+    setTimeout(() => {
+      if (toast.parentElement) {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 250);
+      }
+    }, duration);
+  }
+
   // Global State
   const state = {
     repositories: [],
@@ -15,6 +100,8 @@
     snapshots: [],
     currentSnapshotId: null,
     diffSnapshotId: null,
+    appState: 'BOOT',
+    user: null,
 
     currentPrimaryView: 'overview',
     currentArchSubtab: 'graph',
@@ -70,17 +157,55 @@
     },
   };
 
+  // --- Stitch Theme Manager ---
+  const ThemeManager = {
+    STORAGE_KEY: 'twin_theme',
+    init() {
+      const saved = localStorage.getItem(this.STORAGE_KEY) || 'light';
+      this.apply(saved);
+      document.getElementById('btn-toggle-theme')?.addEventListener('click', () => {
+        const isDark = document.body.classList.contains('theme-dark');
+        this.apply(isDark ? 'light' : 'dark');
+      });
+      document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
+        const isDark = document.body.classList.contains('theme-dark');
+        this.apply(isDark ? 'light' : 'dark');
+      });
+    },
+    apply(theme) {
+      if (theme === 'dark') {
+        document.body.classList.remove('theme-light');
+        document.body.classList.add('theme-dark');
+        document.documentElement.classList.add('dark');
+        localStorage.setItem(this.STORAGE_KEY, 'dark');
+        this.updateIcon('dark_mode');
+      } else {
+        document.body.classList.remove('theme-dark');
+        document.body.classList.add('theme-light');
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem(this.STORAGE_KEY, 'light');
+        this.updateIcon('light_mode');
+      }
+    },
+    updateIcon(iconName) {
+      const icons = document.querySelectorAll('#btn-toggle-theme .material-symbols-outlined, #theme-toggle-btn .material-symbols-outlined');
+      icons.forEach(el => { el.textContent = iconName; });
+    }
+  };
+
   // --- Initializer ---
   window.addEventListener('DOMContentLoaded', () => {
+    ThemeManager.init();
     initCanvas();
     initNavigation();
     initModal();
+    initAuth();
     initCommandPalette();
     initAskSoftware();
     initEventListeners();
     initPhase5Handlers();
     initSimulationHandlers();
-    fetchRepositories();
+    startApplicationStateMachine();
   });
 
   function initCanvas() {
@@ -115,6 +240,23 @@
     tabs.forEach(tab => {
       tab.addEventListener('click', () => {
         const view = tab.dataset.view;
+        if (!state.currentRepoId && view !== 'overview') {
+          const viewLabels = {
+            architecture: 'Architecture',
+            dependencies: 'Dependencies',
+            components: 'Components',
+            changes: 'Changes',
+            impact: 'Change Impact',
+            simulation: 'What-If Simulation',
+            tests: 'Tests',
+            incidents: 'Incidents',
+            runtime: 'Runtime Evidence',
+            ask: 'Ask Twin'
+          };
+          const label = viewLabels[view] || view;
+          showNotification(`Connect a codebase to explore ${label}.`, 'info');
+          return;
+        }
         switchPrimaryView(view);
       });
     });
@@ -143,15 +285,32 @@
     });
 
     // Header Quick Action & Sidebar Buttons
-    document.getElementById('top-btn-connect-repo')?.addEventListener('click', openConnectModal);
-    document.getElementById('sidebar-repo-card')?.addEventListener('click', openConnectModal);
-    document.getElementById('top-btn-ingest-runtime')?.addEventListener('click', openIngestModal);
-    document.getElementById('top-btn-create-incident')?.addEventListener('click', openCreateIncidentModal);
-    document.getElementById('top-search-btn')?.addEventListener('click', () => window.openCommandPalette?.());
+    document.getElementById('top-btn-connect-repo')?.addEventListener('click', () => openConnectModal('github'));
+    document.getElementById('sidebar-repo-card')?.addEventListener('click', () => openConnectModal('github'));
+    document.getElementById('sidebar-btn-connect-codebase')?.addEventListener('click', () => openConnectModal('github'));
 
-    // Theme toggle
-    document.getElementById('btn-toggle-theme')?.addEventListener('click', () => {
-      document.body.classList.toggle('theme-light');
+    document.getElementById('top-btn-ingest-runtime')?.addEventListener('click', () => {
+      if (!state.currentRepoId) {
+        showNotification('Connect a codebase before ingesting runtime telemetry.', 'warning');
+        return;
+      }
+      openIngestModal();
+    });
+
+    document.getElementById('top-btn-create-incident')?.addEventListener('click', () => {
+      if (!state.currentRepoId) {
+        showNotification('Connect a codebase before declaring an incident.', 'warning');
+        return;
+      }
+      openCreateIncidentModal();
+    });
+
+    document.getElementById('top-search-btn')?.addEventListener('click', () => {
+      if (!state.currentRepoId) {
+        showNotification('Connect a codebase to search Twin graphs and artifacts.', 'info');
+        return;
+      }
+      window.openCommandPalette?.();
     });
 
     // Level Selector
@@ -184,16 +343,14 @@
     const repoSelect = document.getElementById('repo-select');
     if (repoSelect) {
       repoSelect.addEventListener('change', (e) => {
-        state.currentRepoId = e.target.value;
-        loadSnapshotsForRepo(state.currentRepoId);
+        selectRepository(e.target.value);
       });
     }
 
     const snapSelect = document.getElementById('snapshot-select');
     if (snapSelect) {
       snapSelect.addEventListener('change', (e) => {
-        state.currentSnapshotId = e.target.value;
-        refreshActiveView();
+        selectSnapshot(e.target.value);
       });
     }
 
@@ -230,7 +387,7 @@
     });
 
     // If no repo selected, show no-repo hero
-    if (!state.currentRepoId && state.repositories.length === 0) {
+    if (!state.currentRepoId) {
       const noRepoView = document.getElementById('view-no-repo');
       if (noRepoView) noRepoView.style.display = 'block';
       return;
@@ -333,89 +490,141 @@
     }
   }
 
-  // --- 2. Onboarding Modal & Local Ingestion Workflow ---
+  // --- 2. Modals, Overlays & Global Keyboard Management ---
   function initModal() {
-    const modal = document.getElementById('modal-onboard');
-    const openBtn = document.getElementById('btn-open-connect-modal');
-    const heroBtn = document.getElementById('hero-btn-connect-local');
-    const closeBtn = document.getElementById('modal-close-btn');
-    const cancelBtn = document.getElementById('modal-cancel-btn');
-    const submitBtn = document.getElementById('modal-submit-btn');
+    initGlobalModalHandlers();
+    initOnboardModal();
+  }
 
-    if (openBtn) openBtn.addEventListener('click', openConnectModal);
-    if (heroBtn) heroBtn.addEventListener('click', openConnectModal);
-    if (closeBtn) closeBtn.addEventListener('click', closeConnectModal);
-    if (cancelBtn) cancelBtn.addEventListener('click', closeConnectModal);
-
-    // Modal Provider Tabs (Local, GitHub, Archive)
-    document.querySelectorAll('.m-prov-tab').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.m-prov-tab').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.modal-panel').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        const prov = btn.dataset.prov;
-        const panel = document.getElementById(`modal-panel-${prov}`);
-        if (panel) panel.classList.add('active');
-
-        // Disable submit button on unreleased providers
-        if (submitBtn) {
-          submitBtn.disabled = prov !== 'local';
-          submitBtn.style.opacity = prov === 'local' ? '1' : '0.5';
+  function initGlobalModalHandlers() {
+    // Backdrop click handler for all modal overlays
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          overlay.style.display = 'none';
+          checkAnyModalOpen();
         }
       });
     });
 
-    if (submitBtn) {
-      submitBtn.addEventListener('click', () => {
-        const pathInput = document.getElementById('input-local-path');
-        const nameInput = document.getElementById('input-repo-name');
-        const pathVal = pathInput ? pathInput.value.trim() : '';
-        const nameVal = nameInput ? nameInput.value.trim() : '';
+    // ESC key closes any open modal
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeAllModals();
+      }
+    });
 
-        if (!pathVal) {
-          showOnboardError('Please provide an absolute or relative directory path.');
-          return;
-        }
+    // Disconnect and Resync buttons (only active when repository is connected)
 
-        triggerOnboarding(pathVal, nameVal);
-      });
+    // Disconnect and Resync buttons
+    document.getElementById('btn-disconnect-repo')?.addEventListener('click', disconnectRepository);
+    document.getElementById('btn-resync-repo')?.addEventListener('click', resyncRepository);
+
+  }
+
+  function closeAllModals() {
+    document.querySelectorAll('.modal-overlay').forEach(m => {
+      m.style.display = 'none';
+    });
+    document.body.style.overflow = '';
+  }
+
+  function checkAnyModalOpen() {
+    const anyOpen = Array.from(document.querySelectorAll('.modal-overlay')).some(m => m.style.display !== 'none');
+    if (!anyOpen) {
+      document.body.style.overflow = '';
     }
   }
 
-  function openConnectModal() {
-    const modal = document.getElementById('modal-onboard');
-    if (!modal) return;
-    modal.style.display = 'flex';
+  function openModal(modalId) {
+    closeAllModals();
+    const modal = document.getElementById(modalId);
+    if (modal) {
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) modal.style.display = 'none';
+    checkAnyModalOpen();
+  }
+
+  function switchOnboardTab(prov) {
+    state.currentOnboardProv = prov;
+    hideOnboardError();
+
+    document.querySelectorAll('.m-prov-tab').forEach(b => {
+      const isTarget = b.dataset.prov === prov;
+      b.classList.toggle('border-b-2', isTarget);
+      b.classList.toggle('border-[#0071e3]', isTarget);
+      b.classList.toggle('text-[#0071e3]', isTarget);
+      b.classList.toggle('font-semibold', isTarget);
+      b.classList.toggle('text-[#64748B]', !isTarget);
+      b.classList.toggle('font-medium', !isTarget);
+      b.setAttribute('aria-selected', String(isTarget));
+    });
+
+    document.querySelectorAll('.modal-panel').forEach(p => {
+      p.style.display = (p.id === `modal-panel-${prov}`) ? 'block' : 'none';
+    });
+
+    const submitBtn = document.getElementById('modal-submit-btn');
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Connect & Synthesize Twin';
+    }
+  }
+
+  function openConnectModal(preferredProv = 'github') {
+    state.currentOnboardProv = preferredProv;
+    openModal('modal-onboard');
     hideOnboardError();
     const progBox = document.getElementById('onboard-progress-box');
     if (progBox) progBox.style.display = 'none';
-    const submitBtn = document.getElementById('modal-submit-btn');
-    if (submitBtn) submitBtn.disabled = false;
+
+    switchOnboardTab(preferredProv);
   }
 
   function closeConnectModal() {
-    const modal = document.getElementById('modal-onboard');
-    if (modal) modal.style.display = 'none';
+    closeModal('modal-onboard');
+    hideOnboardError();
+    // Clear sensitive token and form inputs
+    const tokenInput = document.getElementById('input-github-token');
+    if (tokenInput) tokenInput.value = '';
+    const urlInput = document.getElementById('input-github-url');
+    if (urlInput) urlInput.value = '';
+    const localInput = document.getElementById('input-local-path');
+    if (localInput) localInput.value = '';
+    const archiveInput = document.getElementById('input-archive-file');
+    if (archiveInput) archiveInput.value = '';
   }
 
   function openIngestModal() {
-    const modal = document.getElementById('modal-ingest-runtime');
-    if (modal) modal.style.display = 'flex';
+    openModal('modal-ingest-runtime');
   }
 
   function closeIngestModal() {
-    const modal = document.getElementById('modal-ingest-runtime');
-    if (modal) modal.style.display = 'none';
+    closeModal('modal-ingest-runtime');
   }
 
   function openCreateIncidentModal() {
-    const modal = document.getElementById('modal-create-incident');
-    if (modal) modal.style.display = 'flex';
+    openModal('modal-create-incident');
   }
 
   function closeCreateIncidentModal() {
-    const modal = document.getElementById('modal-create-incident');
-    if (modal) modal.style.display = 'none';
+    closeModal('modal-create-incident');
+  }
+
+  function openAuthModal() {
+    openModal('modal-auth');
+    hideAuthError();
+    document.getElementById('auth-input-username')?.focus();
+  }
+
+  function closeAuthModal() {
+    closeModal('modal-auth');
   }
 
   window.openConnectModal = openConnectModal;
@@ -424,6 +633,106 @@
   window.closeIngestModal = closeIngestModal;
   window.openCreateIncidentModal = openCreateIncidentModal;
   window.closeCreateIncidentModal = closeCreateIncidentModal;
+  window.openAuthModal = openAuthModal;
+  window.closeAuthModal = closeAuthModal;
+
+  function initOnboardModal() {
+    const closeBtn = document.getElementById('modal-close-btn');
+    const cancelBtn = document.getElementById('modal-cancel-btn');
+    const submitBtn = document.getElementById('modal-submit-btn');
+    const openBtn = document.getElementById('top-btn-connect-repo');
+    const heroBtn = document.getElementById('hero-btn-connect-local');
+    const chooseDirBtn = document.getElementById('btn-choose-directory');
+
+    if (openBtn) openBtn.addEventListener('click', () => openConnectModal('github'));
+    if (heroBtn) heroBtn.addEventListener('click', () => openConnectModal('local'));
+    if (closeBtn) closeBtn.addEventListener('click', closeConnectModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeConnectModal);
+
+    // Modal Provider Tabs (GitHub, Local, Archive)
+    document.querySelectorAll('.m-prov-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        switchOnboardTab(btn.dataset.prov);
+      });
+    });
+
+    // Native Directory Picker (File System Access API)
+    if (chooseDirBtn) {
+      chooseDirBtn.addEventListener('click', async () => {
+        try {
+          if ('showDirectoryPicker' in window) {
+            const dirHandle = await window.showDirectoryPicker();
+            if (dirHandle && dirHandle.name) {
+              const nameInput = document.getElementById('input-repo-name');
+              const pathInput = document.getElementById('input-local-path');
+              if (nameInput && !nameInput.value) nameInput.value = dirHandle.name;
+              if (pathInput) pathInput.value = dirHandle.name;
+              showNotification(`Directory selected: ${dirHandle.name}. Ensure path is within allowed workspace roots.`, 'info');
+            }
+          } else {
+            showNotification('Native directory picker is not supported in this browser. Please enter local path.', 'warning');
+          }
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.warn('Directory picker error:', err);
+          }
+        }
+      });
+    }
+
+    if (submitBtn) {
+      submitBtn.addEventListener('click', async () => {
+        const prov = state.currentOnboardProv || 'github';
+
+        if (prov === 'github') {
+          const urlInput = document.getElementById('input-github-url');
+          const branchInput = document.getElementById('input-github-branch');
+          const nameInput = document.getElementById('input-github-name');
+          const tokenInput = document.getElementById('input-github-token');
+
+          const repoUrl = urlInput ? urlInput.value.trim() : '';
+          const branch = branchInput ? branchInput.value.trim() : '';
+          const name = nameInput ? nameInput.value.trim() : '';
+          const token = tokenInput ? tokenInput.value.trim() : '';
+
+          if (!repoUrl) {
+            showOnboardError('Please provide a valid GitHub repository URL.');
+            return;
+          }
+
+          try {
+            await triggerGithubOnboarding({ repo_url: repoUrl, branch: branch || undefined, name: name || undefined, access_token: token || undefined });
+          } finally {
+            if (tokenInput) tokenInput.value = '';
+          }
+        } else if (prov === 'local') {
+          const pathInput = document.getElementById('input-local-path');
+          const nameInput = document.getElementById('input-repo-name');
+          const pathVal = pathInput ? pathInput.value.trim() : '';
+          const nameVal = nameInput ? nameInput.value.trim() : '';
+
+          if (!pathVal) {
+            showOnboardError('Please provide an absolute or relative directory path.');
+            return;
+          }
+
+          await triggerLocalOnboarding(pathVal, nameVal);
+        } else if (prov === 'archive') {
+          const fileInput = document.getElementById('input-archive-file');
+          const nameInput = document.getElementById('input-archive-name');
+          const file = fileInput?.files?.[0];
+          const nameVal = nameInput ? nameInput.value.trim() : '';
+
+          if (!file) {
+            showOnboardError('Please select a project archive file (.zip).');
+            return;
+          }
+
+          await triggerArchiveOnboarding(file, nameVal);
+        }
+      });
+    }
+  }
 
   function showOnboardError(msg) {
     const errBox = document.getElementById('onboard-error-box');
@@ -438,27 +747,62 @@
     if (errBox) errBox.style.display = 'none';
   }
 
-  async function triggerOnboarding(localPath, repoName = '') {
-    openConnectModal();
+  async function triggerGithubOnboarding(payload) {
     hideOnboardError();
-
     const progBox = document.getElementById('onboard-progress-box');
     const submitBtn = document.getElementById('modal-submit-btn');
     if (progBox) progBox.style.display = 'block';
-    if (submitBtn) submitBtn.disabled = true;
-
-    // Animate real progress indicators
-    const stepIds = ['prog-step-1', 'prog-step-2', 'prog-step-3', 'prog-step-4', 'prog-step-5', 'prog-step-6', 'prog-step-7'];
-    stepIds.forEach((id, i) => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.style.opacity = '0.4';
-        setTimeout(() => { if (el) el.style.opacity = '1'; }, i * 250);
-      }
-    });
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Cloning & Synthesizing...';
+    }
 
     try {
-      const res = await fetch('/repositories/onboard', {
+      const res = await nativeFetch('/repositories/connect-github', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ detail: 'Failed to connect GitHub repository' }));
+        throw new Error(errData.detail || 'GitHub connection error');
+      }
+
+      const result = await res.json();
+      const newRepoId = result.repository?.id || result.repository_id;
+      showNotification('GitHub repository synthesized into Digital Twin!', 'success');
+      setTimeout(async () => {
+        closeConnectModal();
+        await startApplicationStateMachine(newRepoId);
+        switchPrimaryView('overview');
+      }, 700);
+    } catch (err) {
+      console.error('GitHub onboarding error', err);
+      showOnboardError(err.message || 'Failed to connect GitHub repository.');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Connect & Synthesize Twin';
+      }
+    }
+  }
+
+  async function triggerOnboarding(localPath, repoName = '') {
+    return triggerLocalOnboarding(localPath, repoName);
+  }
+
+  async function triggerLocalOnboarding(localPath, repoName = '') {
+    hideOnboardError();
+    const progBox = document.getElementById('onboard-progress-box');
+    const submitBtn = document.getElementById('modal-submit-btn');
+    if (progBox) progBox.style.display = 'block';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Analyzing Directory...';
+    }
+
+    try {
+      const res = await nativeFetch('/repositories/onboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -474,130 +818,797 @@
 
       const result = await res.json();
       const newRepoId = result.repository?.id || result.repository_id;
+      showNotification('Codebase successfully synthesized!', 'success');
       setTimeout(async () => {
         closeConnectModal();
-        await fetchRepositories(newRepoId);
+        await startApplicationStateMachine(newRepoId);
         switchPrimaryView('overview');
       }, 700);
-
     } catch (err) {
-      console.error('Onboarding error', err);
+      console.error('Local onboarding error', err);
       showOnboardError(err.message || 'Failed to analyze repository. Check filesystem path.');
-      if (submitBtn) submitBtn.disabled = false;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Connect & Synthesize Twin';
+      }
     }
   }
 
-  // --- 3. Repository Discovery & Loading ---
-  async function fetchRepositories(preferredRepoId = null) {
+  async function triggerArchiveOnboarding(file, repoName = '') {
+    hideOnboardError();
+    const progBox = document.getElementById('onboard-progress-box');
+    const submitBtn = document.getElementById('modal-submit-btn');
+    if (progBox) progBox.style.display = 'block';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Extracting & Scanning...';
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      if (repoName) formData.append('name', repoName);
+
+      const res = await nativeFetch('/repositories/upload-archive', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ detail: 'Archive processing failed' }));
+        throw new Error(errData.detail || 'Archive processing error');
+      }
+
+      const result = await res.json();
+      const newRepoId = result.repository?.id || result.repository_id;
+      showNotification('Project archive synthesized into Digital Twin!', 'success');
+      setTimeout(async () => {
+        closeConnectModal();
+        await startApplicationStateMachine(newRepoId);
+        switchPrimaryView('overview');
+      }, 700);
+    } catch (err) {
+      console.error('Archive onboarding error', err);
+      showOnboardError(err.message || 'Failed to upload or analyze archive.');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Connect & Synthesize Twin';
+      }
+    }
+  }
+
+  // --- 3. Authentication Management ---
+  function initAuth() {
+    const loginBtn = document.getElementById('top-btn-login');
+    const logoutBtn = document.getElementById('top-btn-logout');
+    const authCloseBtn = document.getElementById('modal-auth-close-btn');
+    const authCancelBtn = document.getElementById('modal-auth-cancel-btn');
+    const authTabLogin = document.getElementById('auth-tab-login');
+    const authTabRegister = document.getElementById('auth-tab-register');
+    const authSubmitBtn = document.getElementById('auth-submit-btn');
+
+    loginBtn?.addEventListener('click', openAuthModal);
+    logoutBtn?.addEventListener('click', logoutUser);
+    authCloseBtn?.addEventListener('click', closeAuthModal);
+    authCancelBtn?.addEventListener('click', closeAuthModal);
+
+    let authMode = 'login';
+
+    authTabLogin?.addEventListener('click', () => {
+      authMode = 'login';
+      authTabLogin.className = 'flex-1 py-1.5 rounded-lg text-xs font-semibold bg-white text-[#0F172A] shadow-2xs transition-all';
+      authTabRegister.className = 'flex-1 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] transition-all';
+      document.getElementById('auth-modal-title').textContent = 'Sign In to Digital Twin';
+      document.getElementById('auth-email-field').style.display = 'none';
+      authSubmitBtn.textContent = 'Sign In';
+      hideAuthError();
+    });
+
+    authTabRegister?.addEventListener('click', () => {
+      authMode = 'register';
+      authTabRegister.className = 'flex-1 py-1.5 rounded-lg text-xs font-semibold bg-white text-[#0F172A] shadow-2xs transition-all';
+      authTabLogin.className = 'flex-1 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] transition-all';
+      document.getElementById('auth-modal-title').textContent = 'Create Digital Twin Account';
+      document.getElementById('auth-email-field').style.display = 'block';
+      authSubmitBtn.textContent = 'Register & Sign In';
+      hideAuthError();
+    });
+
+    authSubmitBtn?.addEventListener('click', async () => {
+      const usernameInput = document.getElementById('auth-input-username');
+      const emailInput = document.getElementById('auth-input-email');
+      const passwordInput = document.getElementById('auth-input-password');
+
+      const username = usernameInput ? usernameInput.value.trim() : '';
+      const email = emailInput ? emailInput.value.trim() : '';
+      const password = passwordInput ? passwordInput.value : '';
+
+      if (!username || !password) {
+        showAuthError('Username and password are required.');
+        return;
+      }
+      if (authMode === 'register' && !email) {
+        showAuthError('Email address is required for registration.');
+        return;
+      }
+
+      authSubmitBtn.disabled = true;
+      authSubmitBtn.textContent = 'Authenticating...';
+      hideAuthError();
+
+      try {
+        if (authMode === 'register') {
+          const regRes = await nativeFetch('/api/v1/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, email, password }),
+          });
+          if (!regRes.ok) {
+            const errData = await regRes.json().catch(() => ({}));
+            throw new Error(errData.detail || 'Registration failed.');
+          }
+        }
+
+        const loginRes = await nativeFetch('/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        if (!loginRes.ok) {
+          const errData = await loginRes.json().catch(() => ({}));
+          throw new Error(errData.detail || 'Invalid credentials.');
+        }
+        const loginData = await loginRes.json();
+        if (loginData.access_token) {
+          localStorage.setItem('jwt_token', loginData.access_token);
+        }
+
+        await checkAuthentication();
+        await startApplicationStateMachine();
+        closeAuthModal();
+        showNotification(`Welcome, ${state.user?.username || username}!`, 'success');
+      } catch (err) {
+        showAuthError(err.message || 'Authentication error.');
+      } finally {
+        authSubmitBtn.disabled = false;
+        authSubmitBtn.textContent = authMode === 'login' ? 'Sign In' : 'Register & Sign In';
+      }
+    });
+  }
+
+  function showAuthError(msg) {
+    const errEl = document.getElementById('auth-error-msg');
+    if (errEl) {
+      errEl.textContent = msg;
+      errEl.style.display = 'block';
+    }
+  }
+
+  function hideAuthError() {
+    const errEl = document.getElementById('auth-error-msg');
+    if (errEl) errEl.style.display = 'none';
+  }
+
+  async function checkAuthentication() {
+    const token = localStorage.getItem('jwt_token');
+    if (!token) {
+      updateAuthUI(null);
+      return null;
+    }
+    try {
+      const res = await nativeFetch('/api/v1/auth/me', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const user = await res.json();
+        state.user = user;
+        updateAuthUI(user);
+        return user;
+      } else {
+        localStorage.removeItem('jwt_token');
+        state.user = null;
+        updateAuthUI(null);
+        return null;
+      }
+    } catch (e) {
+      console.warn('Auth check error', e);
+      updateAuthUI(null);
+      return null;
+    }
+  }
+
+  function updateAuthUI(user) {
+    const loginBtn = document.getElementById('top-btn-login');
+    const profileSection = document.getElementById('header-user-profile');
+    const avatarEl = document.getElementById('header-user-avatar');
+    const nameEl = document.getElementById('header-user-name');
+
+    if (user) {
+      if (loginBtn) loginBtn.style.display = 'none';
+      if (profileSection) profileSection.style.display = 'flex';
+      const initials = (user.username || 'U').slice(0, 2).toUpperCase();
+      if (avatarEl) avatarEl.textContent = initials;
+      if (nameEl) nameEl.textContent = user.username || 'User';
+    } else {
+      if (loginBtn) loginBtn.style.display = 'flex';
+      if (profileSection) profileSection.style.display = 'none';
+    }
+  }
+
+  async function logoutUser() {
+    const token = localStorage.getItem('jwt_token');
+    if (token) {
+      try {
+        await nativeFetch('/api/v1/auth/logout', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      } catch (e) {
+        // ignore
+      }
+    }
+    localStorage.removeItem('jwt_token');
+    localStorage.removeItem('selected_repo_id');
+    localStorage.removeItem('selected_snapshot_id');
+    try {
+      window.history.replaceState({}, '', window.location.pathname);
+    } catch (_) {}
+    state.user = null;
+    state.currentRepoId = null;
+    state.currentSnapshotId = null;
+    state.diffSnapshotId = null;
+    state.repositories = [];
+    state.snapshots = [];
+    updateAuthUI(null);
+    updateSidebarRepoCard(null);
+    populateRepoSelect([]);
+    populateSnapshotSelects([]);
+    showNotification('Signed out successfully.', 'info');
+    await startApplicationStateMachine();
+    switchPrimaryView('overview');
+  }
+
+  // --- 4. Deterministic Application State Machine ---
+  function normalizeApiError(err, stage = 'Operation') {
+    if (!err) return { code: 'UNKNOWN_ERROR', message: 'An unexpected error occurred.', stage, retryable: true };
+    if (typeof err === 'string') return { code: 'API_ERROR', message: err, stage, retryable: true };
+    const code = err.code || (err.status ? `HTTP_${err.status}` : 'API_ERROR');
+    let message = err.message || err.detail || err.error;
+    if (typeof message === 'object') {
+      try {
+        message = JSON.stringify(message);
+      } catch (_) {
+        message = 'The service encountered an issue processing the request.';
+      }
+    }
+    if (!message || message === '[object Object]') {
+      message = 'The service encountered an issue processing the request.';
+    }
+    return {
+      code,
+      message,
+      stage,
+      retryable: err.retryable !== false,
+    };
+  }
+
+  function updateStateUI() {
+    const hasRepo = Boolean(state.currentRepoId);
+
+    // 1. Body state classes
+    if (hasRepo) {
+      document.body.classList.remove('state-signed-out', 'state-signed-in-no-repo', 'no-repo');
+      document.body.classList.add('state-workspace-active');
+    } else {
+      document.body.classList.remove('state-workspace-active');
+      document.body.classList.add('no-repo');
+      if (state.user) {
+        document.body.classList.remove('state-signed-out');
+        document.body.classList.add('state-signed-in-no-repo');
+      } else {
+        document.body.classList.remove('state-signed-in-no-repo');
+        document.body.classList.add('state-signed-out');
+      }
+    }
+
+    // 2. Sidebar visibility: remove sidebar when no repo (user request & Rule 22)
+    const sidebar = document.getElementById('app-sidebar');
+    if (hasRepo) {
+      if (sidebar) sidebar.style.display = 'flex';
+      const activeRepoContainer = document.getElementById('sidebar-repo-active-container');
+      const connectContainer = document.getElementById('sidebar-repo-connect-container');
+      if (activeRepoContainer) activeRepoContainer.style.display = 'block';
+      if (connectContainer) connectContainer.style.display = 'none';
+    } else {
+      if (sidebar) sidebar.style.display = 'none';
+      const activeRepoContainer = document.getElementById('sidebar-repo-active-container');
+      const connectContainer = document.getElementById('sidebar-repo-connect-container');
+      if (activeRepoContainer) activeRepoContainer.style.display = 'none';
+      if (connectContainer) connectContainer.style.display = 'block';
+    }
+
+    // 3. Snapshot selector gating (Rule 1: No repository means no snapshot)
+    const snapSelect = document.getElementById('snapshot-select');
+    const snapWrap = document.getElementById('snapshot-select-wrap');
+    if (snapSelect) {
+      snapSelect.disabled = !hasRepo;
+      snapSelect.setAttribute('aria-disabled', String(!hasRepo));
+      snapSelect.style.cursor = hasRepo ? 'pointer' : 'not-allowed';
+    }
+    if (snapWrap) {
+      snapWrap.classList.toggle('opacity-50', !hasRepo);
+      snapWrap.classList.toggle('cursor-not-allowed', !hasRepo);
+    }
+
+    // 4. Global search gating (Rule 2: No repository means no search)
+    const searchBtn = document.getElementById('top-search-btn');
+    if (searchBtn) {
+      searchBtn.disabled = !hasRepo;
+      searchBtn.classList.toggle('opacity-60', !hasRepo);
+      searchBtn.classList.toggle('cursor-not-allowed', !hasRepo);
+    }
+
+    // 5. Action buttons gating (Rule 4 & 5)
+    const ingestBtn = document.getElementById('top-btn-ingest-runtime');
+    const incidentBtn = document.getElementById('top-btn-create-incident');
+    const syncPill = document.getElementById('header-sync-pill');
+
+    if (ingestBtn) {
+      ingestBtn.disabled = !hasRepo;
+      ingestBtn.classList.toggle('opacity-50', !hasRepo);
+      ingestBtn.classList.toggle('cursor-not-allowed', !hasRepo);
+    }
+    if (incidentBtn) {
+      incidentBtn.disabled = !hasRepo;
+      incidentBtn.classList.toggle('opacity-50', !hasRepo);
+      incidentBtn.classList.toggle('cursor-not-allowed', !hasRepo);
+    }
+    if (syncPill) {
+      syncPill.style.display = hasRepo ? 'inline-flex' : 'none';
+    }
+
+    // 6. Navigation gating (Rule 3)
+    document.querySelectorAll('.view-tab').forEach(tab => {
+      const v = tab.dataset.view;
+      if (v !== 'overview') {
+        tab.classList.toggle('nav-disabled', !hasRepo);
+      }
+    });
+
+    // 7. Update hero text and codebases list in #view-no-repo
+    const heroTitle = document.getElementById('no-repo-hero-title');
+    const heroSubtitle = document.getElementById('no-repo-hero-subtitle');
+    if (state.user) {
+      if (heroTitle) heroTitle.textContent = `Welcome back, ${state.user.username || 'Engineer'}`;
+      if (heroSubtitle) heroSubtitle.textContent = 'Select an existing codebase to open its workspace, or connect a new repository.';
+    } else {
+      if (heroTitle) heroTitle.textContent = 'Welcome to Software Digital Twin';
+      if (heroSubtitle) heroSubtitle.textContent = 'Understand your software before you change it. Connect a codebase to explore architecture, blast radius, test impact, and operational health.';
+    }
+
+    // 8. Populate codebases in #view-no-repo: strictly ONLY for signed-in users with codebases
+    const existingSection = document.getElementById('no-repo-existing-codebases-section');
+    const existingGrid = document.getElementById('no-repo-existing-grid');
+    if (existingSection && existingGrid) {
+      const validRepos = (state.repositories || []).filter(r => r.environment !== 'TEST' && r.environment !== 'FIXTURE');
+      if (!hasRepo && state.user && validRepos.length > 0) {
+        existingSection.style.display = 'block';
+        existingGrid.innerHTML = validRepos.map(r => `
+          <div class="twin-card p-4 hover:border-[#0071e3] text-left transition-all flex items-center justify-between group shadow-2xs">
+            <div class="flex items-center gap-3 truncate">
+              <div class="w-9 h-9 rounded-lg bg-[#EFF6FF] text-[#0071e3] flex items-center justify-center shrink-0">
+                <span class="material-symbols-outlined text-[20px]">code_blocks</span>
+              </div>
+              <div class="truncate">
+                <div class="text-xs font-bold text-[#0F172A] group-hover:text-[#0071e3] transition-colors truncate">${escapeHtml(r.name || r.id)}</div>
+                <div class="text-[10px] text-[#64748B] font-mono mt-0.5">${escapeHtml(r.source_type || 'GIT')} · ${escapeHtml(r.default_branch || 'main')}</div>
+              </div>
+            </div>
+            <button onclick="window.TwinApp.selectRepository('${r.id}')" class="btn-open-workspace px-3 py-1.5 rounded-lg bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs flex items-center gap-1 transition-all shrink-0 cursor-pointer" type="button" aria-label="Open Workspace for ${escapeHtml(r.name || r.id)}">
+              <span>Open Workspace</span>
+              <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+            </button>
+          </div>
+        `).join('');
+      } else {
+        existingSection.style.display = 'none';
+        existingGrid.innerHTML = '';
+      }
+    }
+  }
+
+  function setAppState(appState, details = null) {
+    state.appState = appState;
+    const banner = document.getElementById('app-recovery-banner');
+
+    if (banner) {
+      if (appState === 'READY' || appState === 'NO_REPOSITORY' || appState === 'SELECT_REPOSITORY') {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+      } else if (appState === 'INVALID_REPOSITORY') {
+        banner.style.display = 'block';
+        banner.className = 'rounded-xl border border-[#FECDD3] bg-[#FFF1F2] p-4 shadow-xs text-[#BE123C] flex items-center justify-between gap-4';
+        banner.innerHTML = `
+          <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-[24px] text-[#E11D48]">warning</span>
+            <div>
+              <h4 class="text-xs font-bold text-[#9F1239]">Repository Not Found</h4>
+              <p class="text-[11px] text-[#BE123C] mt-0.5">The repository "${escapeHtml(details?.repoId || '')}" could not be located or is no longer accessible.</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button onclick="window.TwinApp.startApplicationStateMachine()" class="px-3 py-1.5 rounded-lg bg-white border border-[#FECDD3] text-[#9F1239] hover:bg-[#FFE4E6] text-xs font-semibold shadow-2xs" type="button">
+              View Repositories
+            </button>
+            <button onclick="window.TwinApp.openConnectModal()" class="px-3 py-1.5 rounded-lg bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-semibold shadow-xs" type="button">
+              Connect New
+            </button>
+          </div>
+        `;
+      } else if (appState === 'INVALID_SNAPSHOT') {
+        banner.style.display = 'block';
+        banner.className = 'rounded-xl border border-[#FED7AA] bg-[#FFFBEB] p-4 shadow-xs text-[#C2410C] flex items-center justify-between gap-4';
+        banner.innerHTML = `
+          <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-[24px] text-[#EA580C]">history_toggle_off</span>
+            <div>
+              <h4 class="text-xs font-bold text-[#9A3412]">Snapshot Not Found</h4>
+              <p class="text-[11px] text-[#C2410C] mt-0.5">Snapshot "${escapeHtml(details?.snapId || '')}" was not found in repository "${escapeHtml(details?.repoName || '')}". Please select a valid snapshot from the header.</p>
+            </div>
+          </div>
+          <button onclick="document.getElementById('snapshot-select')?.focus()" class="px-3 py-1.5 rounded-lg bg-white border border-[#FED7AA] text-[#9A3412] hover:bg-[#FEF3C7] text-xs font-semibold shadow-2xs shrink-0" type="button">
+            Select Snapshot
+          </button>
+        `;
+      } else if (appState === 'LOAD_ERROR') {
+        banner.style.display = 'block';
+        banner.className = 'rounded-xl border border-[#FECDD3] bg-[#FFF1F2] p-4 shadow-xs text-[#BE123C] flex items-center justify-between gap-4';
+        banner.innerHTML = `
+          <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-[24px] text-[#E11D48]">error</span>
+            <div>
+              <h4 class="text-xs font-bold text-[#9F1239]">Digital Twin Load Error</h4>
+              <p class="text-[11px] text-[#BE123C] mt-0.5">${escapeHtml(details?.error || 'A communication failure occurred while connecting to the backend.')}</p>
+            </div>
+          </div>
+          <button onclick="window.TwinApp.startApplicationStateMachine()" class="px-3 py-1.5 rounded-lg bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-semibold shadow-xs shrink-0" type="button">
+            Retry
+          </button>
+        `;
+      }
+    }
+
+    updateStateUI();
+  }
+
+  async function finishBoot() {
+    try {
+      if (document.fonts && document.fonts.ready) {
+        await Promise.race([
+          document.fonts.ready,
+          new Promise(r => setTimeout(r, 400))
+        ]);
+      }
+    } catch (_) {}
+    document.body.classList.remove('booting');
+    updateStateUI();
+  }
+
+  async function startApplicationStateMachine(preferredRepoId = null, preferredSnapId = null) {
+    document.body.classList.add('booting');
+    setAppState('BOOT');
+
+    // Step 1: RESTORING_SESSION & AUTH CHECK
+    setAppState('AUTHENTICATION_CHECK');
+    await checkAuthentication();
+
+    // If unauthenticated guest, clear any stale selected repo/snap from localStorage
+    if (!state.user) {
+      localStorage.removeItem('selected_repo_id');
+      localStorage.removeItem('selected_snapshot_id');
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetRepo = state.user ? (preferredRepoId || urlParams.get('repo') || localStorage.getItem('selected_repo_id')) : null;
+    const targetSnap = state.user ? (preferredSnapId || urlParams.get('snapshot') || localStorage.getItem('selected_snapshot_id')) : null;
+
+    // Step 2: LOAD_REPOSITORIES
+    setAppState('LOAD_REPOSITORIES');
+    let loadedRepos = [];
+    try {
+      const res = await apiFetch('/repositories');
+      if (res.ok) {
+        loadedRepos = await res.json();
+      } else {
+        throw new Error(`Failed to load repositories (HTTP ${res.status})`);
+      }
+    } catch (err) {
+      console.error('State machine error loading repositories:', err);
+      setAppState('LOAD_ERROR', { error: err.message });
+      await finishBoot();
+      return;
+    }
+
+    const validRepos = loadedRepos.filter(r => r.environment !== 'TEST' && r.environment !== 'FIXTURE');
+    state.repositories = validRepos;
+    populateRepoSelect(validRepos);
+
+    if (!state.user) {
+      state.currentRepoId = null;
+      state.currentSnapshotId = null;
+      setAppState('NO_REPOSITORY');
+      populateSnapshotSelects([]);
+      updateSidebarRepoCard(null);
+      switchPrimaryView('overview');
+      await finishBoot();
+      return;
+    }
+
+    if (validRepos.length === 0) {
+      state.currentRepoId = null;
+      state.currentSnapshotId = null;
+      setAppState('NO_REPOSITORY');
+      populateSnapshotSelects([]);
+      updateSidebarRepoCard(null);
+      switchPrimaryView('overview');
+      await finishBoot();
+      return;
+    }
+
+    // Step 3: VALIDATE_REPOSITORY
+    setAppState('VALIDATE_REPOSITORY');
+    if (targetRepo) {
+      const matched = validRepos.find(r => r.id === targetRepo || r.name === targetRepo);
+      if (matched) {
+        state.currentRepoId = matched.id;
+        localStorage.setItem('selected_repo_id', matched.id);
+        const repoSelect = document.getElementById('repo-select');
+        if (repoSelect) repoSelect.value = matched.id;
+        updateSidebarRepoCard(matched);
+      } else {
+        localStorage.removeItem('selected_repo_id');
+        state.currentRepoId = null;
+        state.currentSnapshotId = null;
+        setAppState('SELECT_REPOSITORY');
+        populateSnapshotSelects([]);
+        updateSidebarRepoCard(null);
+        switchPrimaryView('overview');
+        await finishBoot();
+        return;
+      }
+    } else {
+      state.currentRepoId = null;
+      state.currentSnapshotId = null;
+      setAppState('SELECT_REPOSITORY');
+      populateSnapshotSelects([]);
+      updateSidebarRepoCard(null);
+      switchPrimaryView('overview');
+      await finishBoot();
+      return;
+    }
+
+    // Step 4: LOAD_SNAPSHOTS
+    await loadSnapshotsForCurrentRepo(targetSnap);
+    await finishBoot();
+  }
+
+  function populateRepoSelect(repos = []) {
     const repoSelect = document.getElementById('repo-select');
     if (!repoSelect) return;
     repoSelect.innerHTML = '';
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const paramRepo = preferredRepoId || urlParams.get('repo');
-    const paramSnap = urlParams.get('snapshot');
+    const promptOpt = document.createElement('option');
+    promptOpt.value = '';
+    promptOpt.textContent = '-- Select Codebase --';
+    promptOpt.disabled = true;
+    if (!state.currentRepoId) promptOpt.selected = true;
+    repoSelect.appendChild(promptOpt);
 
-    let loadedRepos = [];
+    const validRepos = repos.filter(r => r.environment !== 'TEST' && r.environment !== 'FIXTURE');
+
+    validRepos.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = `${r.name || r.id} (${r.default_branch || 'main'})`;
+      if (r.id === state.currentRepoId) opt.selected = true;
+      repoSelect.appendChild(opt);
+    });
+  }
+
+  function updateSidebarRepoCard(repo) {
+    const nameEl = document.getElementById('sidebar-repo-name');
+    const branchEl = document.getElementById('sidebar-branch-name');
+    if (nameEl) nameEl.textContent = repo ? (repo.name || repo.id) : 'Select Codebase';
+    if (branchEl) branchEl.textContent = repo ? `${repo.default_branch || 'main'} branch` : 'No active repo';
+  }
+
+  async function loadSnapshotsForCurrentRepo(targetSnap = null) {
+    setAppState('LOAD_SNAPSHOTS');
+    const repoId = state.currentRepoId;
+    if (!repoId) return;
+
     try {
-      const res = await fetch('/repositories');
-      if (res.ok) {
-        loadedRepos = await res.json();
+      const res = await apiFetch(`/repositories/${repoId}/graph/snapshots`);
+      if (!res.ok) {
+        throw new Error(`Failed to load snapshots for repository (HTTP ${res.status})`);
       }
+      state.snapshots = await res.json();
     } catch (err) {
-      console.warn('Failed to load /repositories', err);
+      console.error('State machine error loading snapshots:', err);
+      setAppState('LOAD_ERROR', { error: err.message });
+      return;
     }
 
-    state.repositories = loadedRepos;
+    populateSnapshotSelects(state.snapshots);
 
-    if (loadedRepos.length > 0) {
-      loadedRepos.forEach(r => {
-        const opt = document.createElement('option');
-        opt.value = r.id;
-        opt.textContent = `${r.name || r.id} (${r.default_branch || 'main'})`;
-        repoSelect.appendChild(opt);
-      });
+    // Step 6: VALIDATE_SNAPSHOT
+    setAppState('VALIDATE_SNAPSHOT');
+    const currentRepo = state.repositories.find(r => r.id === repoId);
 
-      const matched = loadedRepos.find(r => r.id === paramRepo || r.name === paramRepo);
-      state.currentRepoId = matched ? matched.id : loadedRepos[0].id;
-      repoSelect.value = state.currentRepoId;
-
-      await loadSnapshotsForRepo(state.currentRepoId, paramSnap);
-      switchPrimaryView(state.currentPrimaryView || 'overview');
+    if (targetSnap) {
+      const matchedSnap = state.snapshots.find(s => s.id === targetSnap || s.commit_hash?.startsWith(targetSnap));
+      if (matchedSnap) {
+        state.currentSnapshotId = matchedSnap.id;
+        localStorage.setItem('selected_snapshot_id', matchedSnap.id);
+        const snapSelect = document.getElementById('snapshot-select');
+        if (snapSelect) snapSelect.value = matchedSnap.id;
+      } else {
+        localStorage.removeItem('selected_snapshot_id');
+        state.currentSnapshotId = null;
+        setAppState('INVALID_SNAPSHOT', { snapId: targetSnap, repoName: currentRepo?.name || repoId });
+        return;
+      }
     } else {
-      const opt = document.createElement('option');
-      opt.value = 'default';
-      opt.textContent = 'No Repositories Available';
-      repoSelect.appendChild(opt);
-      state.currentRepoId = null;
-      switchPrimaryView('overview');
+      // Never silently select first snapshot
+      state.currentSnapshotId = null;
+      const snapSelect = document.getElementById('snapshot-select');
+      if (snapSelect) snapSelect.value = '';
+    }
+
+    configureDiffSelectors();
+
+    // Step 7: LOAD_APPLICATION_DATA
+    setAppState('LOAD_APPLICATION_DATA');
+    if (state.currentSnapshotId) {
+      loadFileTree();
+    }
+    await refreshActiveView();
+
+    // Step 8: READY
+    setAppState('READY');
+  }
+
+  function populateSnapshotSelects(snapshots = []) {
+    const snapSelect = document.getElementById('snapshot-select');
+    const diffBaseSelect = document.getElementById('diff-base-select');
+    const diffTargetSelect = document.getElementById('diff-target-select');
+    const sbDiffSelect = document.getElementById('diff-snapshot-select');
+    const hasRepo = Boolean(state.currentRepoId);
+
+    [snapSelect, diffBaseSelect, diffTargetSelect, sbDiffSelect].forEach(sel => {
+      if (!sel) return;
+      sel.innerHTML = '';
+      const promptOpt = document.createElement('option');
+      promptOpt.value = '';
+      if (sel === snapSelect) promptOpt.textContent = '-- Select Snapshot --';
+      else if (sel === diffBaseSelect) promptOpt.textContent = '-- Select Baseline --';
+      else if (sel === diffTargetSelect) promptOpt.textContent = '-- Select Target --';
+      else promptOpt.textContent = '-- Select Comparison --';
+      promptOpt.disabled = true;
+      if (!state.currentSnapshotId || !hasRepo) promptOpt.selected = true;
+      sel.appendChild(promptOpt);
+    });
+
+    if (!hasRepo || snapshots.length === 0) return;
+
+    snapshots.forEach((s) => {
+      const branch = s.branch_name || s.branch || 'main';
+      const shortHash = (s.commit_hash && s.commit_hash !== 'no-git') ? s.commit_hash.slice(0, 7) : (s.id ? s.id.slice(0, 7) : 'HEAD');
+      const dateStr = s.created_at ? new Date(s.created_at).toLocaleDateString() : '';
+      const label = `${branch} · ${shortHash}${dateStr ? ' (' + dateStr + ')' : ''}`;
+      [snapSelect, diffBaseSelect, diffTargetSelect, sbDiffSelect].forEach(sel => {
+        if (!sel) return;
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = label;
+        if (s.id === state.currentSnapshotId && sel === snapSelect) {
+          opt.selected = true;
+        }
+        sel.appendChild(opt);
+      });
+    });
+  }
+
+  function configureDiffSelectors() {
+    const diffBaseSelect = document.getElementById('diff-base-select');
+    const diffTargetSelect = document.getElementById('diff-target-select');
+    const sbDiffSelect = document.getElementById('diff-snapshot-select');
+
+    if (state.currentSnapshotId) {
+      if (diffTargetSelect) diffTargetSelect.value = state.currentSnapshotId;
+      const snapSelect = document.getElementById('snapshot-select');
+      if (snapSelect) snapSelect.value = state.currentSnapshotId;
+    }
+    if (state.diffSnapshotId) {
+      if (diffBaseSelect) diffBaseSelect.value = state.diffSnapshotId;
+      if (sbDiffSelect) sbDiffSelect.value = state.diffSnapshotId;
     }
   }
 
-  async function loadSnapshotsForRepo(repoId, preferredSnapId = null) {
-    try {
-      const res = await fetch(`/repositories/${repoId}/graph/snapshots`);
-      const snapSelect = document.getElementById('snapshot-select');
-      const diffBaseSelect = document.getElementById('diff-base-select');
-      const diffTargetSelect = document.getElementById('diff-target-select');
-      const sbDiffSelect = document.getElementById('diff-snapshot-select');
-
-      if (snapSelect) snapSelect.innerHTML = '';
-      if (diffBaseSelect) diffBaseSelect.innerHTML = '';
-      if (diffTargetSelect) diffTargetSelect.innerHTML = '';
-      if (sbDiffSelect) sbDiffSelect.innerHTML = '';
-
-      if (res.ok) {
-        state.snapshots = await res.json();
-        state.snapshots.forEach((s, idx) => {
-          const label = `${s.id.slice(0, 10)} (${s.commit_hash.slice(0, 7)}) [${s.artifacts_count} arts]`;
-
-          if (snapSelect) {
-            const opt = document.createElement('option');
-            opt.value = s.id;
-            opt.textContent = label;
-            snapSelect.appendChild(opt);
-          }
-
-          if (diffBaseSelect) {
-            const opt = document.createElement('option');
-            opt.value = s.id;
-            opt.textContent = label;
-            diffBaseSelect.appendChild(opt);
-          }
-
-          if (diffTargetSelect) {
-            const opt = document.createElement('option');
-            opt.value = s.id;
-            opt.textContent = label;
-            diffTargetSelect.appendChild(opt);
-          }
-
-          if (sbDiffSelect) {
-            const opt = document.createElement('option');
-            opt.value = s.id;
-            opt.textContent = label;
-            sbDiffSelect.appendChild(opt);
-          }
-        });
-
-        if (state.snapshots.length > 0) {
-          state.currentSnapshotId = preferredSnapId || state.snapshots[0].id;
-          if (snapSelect) snapSelect.value = state.currentSnapshotId;
-
-          if (state.snapshots.length > 1) {
-            state.diffSnapshotId = state.snapshots[1].id;
-            if (diffTargetSelect) diffTargetSelect.value = state.diffSnapshotId;
-            if (sbDiffSelect) sbDiffSelect.value = state.diffSnapshotId;
-          }
-        }
-      }
-
-      loadFileTree();
-      refreshActiveView();
-    } catch (e) {
-      console.error('Error loading snapshots', e);
-      refreshActiveView();
+  async function selectRepository(repoId) {
+    if (!repoId) return;
+    state.currentRepoId = repoId;
+    localStorage.setItem('selected_repo_id', repoId);
+    localStorage.removeItem('selected_snapshot_id');
+    state.currentSnapshotId = null;
+    state.diffSnapshotId = null;
+    const matched = state.repositories.find(r => r.id === repoId);
+    if (matched) {
+      updateSidebarRepoCard(matched);
     }
+    const repoSelect = document.getElementById('repo-select');
+    if (repoSelect) repoSelect.value = repoId;
+    updateStateUI();
+    switchPrimaryView(state.currentPrimaryView || 'overview');
+    await loadSnapshotsForCurrentRepo(null);
+    await refreshActiveView();
+  }
+
+  async function selectSnapshot(snapId) {
+    if (!snapId) return;
+    state.currentSnapshotId = snapId;
+    localStorage.setItem('selected_snapshot_id', snapId);
+    const snapSelect = document.getElementById('snapshot-select');
+    if (snapSelect) snapSelect.value = snapId;
+    loadFileTree();
+    await refreshActiveView();
+  }
+
+  async function disconnectRepository() {
+    if (!state.currentRepoId) {
+      showNotification('No repository currently selected.', 'warning');
+      return;
+    }
+    const repoName = state.repositories.find(r => r.id === state.currentRepoId)?.name || state.currentRepoId;
+    localStorage.removeItem('selected_repo_id');
+    localStorage.removeItem('selected_snapshot_id');
+    try {
+      window.history.replaceState({}, '', window.location.pathname);
+    } catch (_) {}
+    state.currentRepoId = null;
+    state.currentSnapshotId = null;
+    state.diffSnapshotId = null;
+    state.snapshots = [];
+    populateRepoSelect(state.repositories);
+    populateSnapshotSelects([]);
+    updateSidebarRepoCard(null);
+    showNotification(`Disconnected from codebase: ${repoName}`, 'info');
+    setAppState('SELECT_REPOSITORY');
+    updateStateUI();
+    switchPrimaryView('overview');
+  }
+
+  async function resyncRepository() {
+    if (!state.currentRepoId) {
+      showNotification('Please select a repository first.', 'warning');
+      return;
+    }
+    showNotification('Resyncing digital twin from code...', 'info');
+    await loadSnapshotsForCurrentRepo(state.currentSnapshotId);
+    await refreshActiveView();
+    showNotification('Digital twin synchronized.', 'success');
+  }
+
+  // Backward-compatible delegates
+  async function fetchRepositories(preferredRepoId = null) {
+    return startApplicationStateMachine(preferredRepoId);
+  }
+
+  async function loadSnapshotsForRepo(repoId, preferredSnapId = null) {
+    if (repoId && repoId !== state.currentRepoId) {
+      state.currentRepoId = repoId;
+    }
+    return loadSnapshotsForCurrentRepo(preferredSnapId);
   }
 
   // Global Twin Context Strip Updater
@@ -712,8 +1723,8 @@
         } else {
           pkgs.forEach(pkg => {
             const card = document.createElement('div');
-            card.className = 'bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-4 flex flex-col justify-between space-y-3';
-            const sampleHtml = (pkg.sample_components || []).slice(0, 3).map(c => `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-white border border-[#E2E8F0] text-[#6D28D9]">${escapeHtml(c)}</span>`).join(' ');
+            card.className = 'twin-card p-4 flex flex-col justify-between space-y-3';
+            const sampleHtml = (pkg.sample_components || []).slice(0, 3).map(c => `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-[#F1F5F9] border border-[#CBD5E1] text-[#6D28D9]">${escapeHtml(c)}</span>`).join(' ');
             card.innerHTML = `
               <div class="flex items-center justify-between">
                 <strong class="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
@@ -805,31 +1816,31 @@
               </button>
             </div>
             <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+              <div class="twin-card p-2.5 text-center">
                 <div class="text-[10px] text-[#64748B] uppercase font-bold">Changed</div>
                 <div class="text-lg font-bold text-[#F59E0B] mt-0.5">${imp.changed_count}</div>
               </div>
-              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+              <div class="twin-card p-2.5 text-center">
                 <div class="text-[10px] text-[#64748B] uppercase font-bold">Direct</div>
                 <div class="text-lg font-bold text-[#EF4444] mt-0.5">${imp.directly_affected_count}</div>
               </div>
-              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+              <div class="twin-card p-2.5 text-center">
                 <div class="text-[10px] text-[#64748B] uppercase font-bold">Indirect</div>
                 <div class="text-lg font-bold text-[#EC4899] mt-0.5">${imp.indirectly_affected_count}</div>
               </div>
-              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+              <div class="twin-card p-2.5 text-center">
                 <div class="text-[10px] text-[#64748B] uppercase font-bold">Components</div>
                 <div class="text-lg font-bold text-[#3B82F6] mt-0.5">${imp.components_affected}</div>
               </div>
-              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+              <div class="twin-card p-2.5 text-center">
                 <div class="text-[10px] text-[#64748B] uppercase font-bold">APIs</div>
                 <div class="text-lg font-bold text-[#8B5CF6] mt-0.5">${imp.apis_affected}</div>
               </div>
-              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+              <div class="twin-card p-2.5 text-center">
                 <div class="text-[10px] text-[#64748B] uppercase font-bold">Processes</div>
                 <div class="text-lg font-bold text-[#06B6D4] mt-0.5">${imp.processes_affected}</div>
               </div>
-              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2.5 text-center">
+              <div class="twin-card p-2.5 text-center">
                 <div class="text-[10px] text-[#64748B] uppercase font-bold">Tests</div>
                 <div class="text-lg font-bold text-[#10B981] mt-0.5">${imp.tests_affected}</div>
               </div>
@@ -876,7 +1887,7 @@
       if (evProcs) evProcs.textContent = m.processes ?? 0;
       if (evRuns) evRuns.textContent = state.snapshots.length || 1;
 
-      // Conformance Banner
+      // Dynamic Architecture Conformance Card
       const confAlert = document.getElementById('conformance-alert-box');
       const confTitle = document.getElementById('conf-title');
       const confDesc = document.getElementById('conf-desc');
@@ -884,17 +1895,36 @@
 
       if (confAlert && confTitle && confDesc && confIcon) {
         if ((m.violations || 0) > 0) {
-          confAlert.className = 'conformance-banner alert-drift';
-          confIcon.textContent = '⚠️';
+          confAlert.className = 'p-3.5 rounded-xl bg-[#FEF2F2] border border-[#FECDD3] flex items-center gap-3';
+          confIcon.className = 'w-7 h-7 rounded-lg bg-[#FEE2E2] text-[#DC2626] flex items-center justify-center font-bold text-sm';
+          confIcon.textContent = '!';
+          confTitle.className = 'text-xs font-bold text-[#991B1B]';
           confTitle.textContent = `${m.violations} Architecture Drift Violation(s) Detected`;
-          confDesc.textContent = 'Active dependencies cross declared architectural boundaries. Review under Architecture → Conformance & Drift.';
+          confDesc.className = 'text-[11px] text-[#B91C1C]';
+          confDesc.textContent = 'Active dependencies cross declared architectural boundaries. Review under Explore → Architecture.';
         } else {
-          confAlert.className = 'conformance-banner alert-ok';
+          confAlert.className = 'p-3.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] flex items-center gap-3';
+          confIcon.className = 'w-7 h-7 rounded-lg bg-[#D1FAE5] text-[#059669] flex items-center justify-center font-bold text-sm';
           confIcon.textContent = '✓';
-          confTitle.textContent = '100% Architecture Conformance';
-          confDesc.textContent = 'No baseline violations. All dependencies strictly comply with defined architecture boundaries.';
+          confTitle.className = 'text-xs font-bold text-[#064E3B]';
+          confTitle.textContent = 'Architecture Conformance Verified';
+          confDesc.className = 'text-[11px] text-[#047857]';
+          confDesc.textContent = '0 structural violations detected. Component boundaries match baseline.';
         }
       }
+
+      // Compact Twin Controls Metrics
+      const causalCovEl = document.getElementById('ov-causal-coverage');
+      if (causalCovEl) {
+        causalCovEl.textContent = `${m.relationships || 0} Relations Indexed`;
+      }
+      const driftCountEl = document.getElementById('ov-drift-count');
+      if (driftCountEl) {
+        driftCountEl.textContent = `${m.violations || 0} breaking changes`;
+      }
+
+      // Render Discovered Architecture Packages & Tiers
+      renderArchitectureTiers(data.architecture_packages || []);
 
       // Analysis Pipeline Status
       const pipeTestVal = document.getElementById('pipe-test-val');
@@ -953,6 +1983,47 @@
     } catch (e) {
       console.error('Error loading overview data', e);
     }
+  }
+
+  function renderArchitectureTiers(packages) {
+    const container = document.getElementById('arch-tiers-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!packages || packages.length === 0) {
+      container.innerHTML = '<div class="col-span-full p-6 text-center text-xs text-[#64748B] bg-white border border-[#E2E8F0] rounded-xl">No architecture packages discovered in active snapshot.</div>';
+      return;
+    }
+
+    packages.forEach(pkg => {
+      const card = document.createElement('div');
+      card.className = 'bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-2xs space-y-3 flex flex-col justify-between';
+      const sampleBadges = (pkg.sample_components || []).slice(0, 3).map(c =>
+        `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-[#F8FAFC] border border-[#E2E8F0] text-[#0F172A] truncate max-w-[150px]">${escapeHtml(c)}</span>`
+      ).join('');
+
+      card.innerHTML = `
+        <div class="space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
+              <span>📦</span> ${escapeHtml(pkg.name)}
+            </span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]">
+              ${pkg.artifact_count || pkg.total_artifacts || 0} artifacts
+            </span>
+          </div>
+          <div class="text-[11px] text-[#64748B] flex items-center gap-3">
+            <span>${pkg.module_count || pkg.modules || 1} Modules</span>
+            <span>${pkg.files_count || 1} Files</span>
+          </div>
+        </div>
+        ${sampleBadges ? `<div class="flex flex-wrap gap-1">${sampleBadges}</div>` : ''}
+        <button class="text-xs text-[#0071e3] hover:text-[#0059b5] font-semibold text-left pt-1 border-t border-[#F1F5F9] flex items-center gap-1" onclick="window.TwinApp.switchPrimaryView('architecture'); window.TwinApp.switchArchSubtab('graph');" type="button">
+          Inspect in Graph →
+        </button>
+      `;
+      container.appendChild(card);
+    });
   }
 
   async function loadOverviewIncidents(repoId) {
@@ -1016,7 +2087,7 @@
           `;
         }
 
-        if (confEl) confEl.textContent = 'Confidence: 100% verified';
+        if (confEl) confEl.textContent = 'Evidence: Causal graph correlation';
 
         const doInvestigate = () => {
           switchPrimaryView('incidents');
@@ -1031,31 +2102,31 @@
         if (card) {
           card.className = "bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-6 shadow-xs hover:shadow-md transition-all relative overflow-hidden";
         }
-        if (stripeEl) stripeEl.className = "absolute left-0 top-0 bottom-0 w-1.5 bg-[#10B981]";
-        if (pillEl) pillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] text-[11px] font-bold border border-[#A7F3D0]";
-        if (pulseEl) pulseEl.className = "w-2 h-2 rounded-full bg-[#10B981]";
-        if (statusEl) statusEl.textContent = 'All Systems Operational';
+        if (stripeEl) stripeEl.className = "absolute left-0 top-0 bottom-0 w-1.5 bg-[#94A3B8]";
+        if (pillEl) pillEl.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569] text-[11px] font-bold border border-[#CBD5E1]";
+        if (pulseEl) pulseEl.className = "w-2 h-2 rounded-full bg-[#94A3B8]";
+        if (statusEl) statusEl.textContent = 'Runtime Status Unavailable';
 
         if (titleEl) {
-          titleEl.textContent = 'No Active Incidents';
+          titleEl.textContent = 'No Incidents Recorded';
           titleEl.className = "text-lg font-bold text-[#0F172A] tracking-tight";
         }
         if (descEl) {
-          descEl.textContent = 'No open incidents recorded in this environment. System running cleanly.';
+          descEl.textContent = 'No active incidents recorded for this repository. Ingest runtime telemetry to observe live operational evidence.';
           descEl.className = "text-xs text-[#64748B] mt-1 leading-relaxed";
         }
-        if (targetEl) targetEl.textContent = 'Clean Environment';
+        if (targetEl) targetEl.textContent = 'No live telemetry';
 
         if (badgesContainer) {
           badgesContainer.innerHTML = `
-            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#E2E8F0] text-[#059669] text-xs font-medium shadow-2xs">
-              <span class="material-symbols-outlined text-[16px] text-[#10B981]">check_circle</span>
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#E2E8F0] text-[#64748B] text-xs font-medium shadow-2xs">
+              <span class="material-symbols-outlined text-[16px] text-[#94A3B8]">info</span>
               <span>0 active anomalies · 0 open incidents</span>
             </div>
           `;
         }
 
-        if (confEl) confEl.textContent = 'Status: Verified Healthy';
+        if (confEl) confEl.textContent = 'Evidence: Static model (no live telemetry)';
 
         const doViewIncidents = () => {
           switchPrimaryView('incidents');
@@ -1073,10 +2144,11 @@
     try {
       const res = await fetch(`/repositories/${repoId}/runtime-events?limit=4`);
       if (!res.ok) return;
-      const events = await res.json();
+      const data = await res.json();
+      const events = Array.isArray(data) ? data : (data.events || data.items || []);
 
       const sbRuntimeBadge = document.getElementById('sidebar-runtime-badge');
-      if (sbRuntimeBadge) sbRuntimeBadge.textContent = events.length;
+      if (sbRuntimeBadge) sbRuntimeBadge.textContent = data.total !== undefined ? data.total : events.length;
 
       const feed = document.getElementById('ov-runtime-feed');
       if (!feed) return;
@@ -1803,7 +2875,7 @@
     }
 
     // Populate dropdown with default "Select a component..." placeholder
-    const select = document.getElementById('dep-component-select');
+    const select = document.getElementById('dep-component-select') || document.getElementById('dep-focus-select');
     if (select) {
       select.innerHTML = '<option value="">-- Select a component to explore --</option>';
       state.componentsList.forEach(c => {
@@ -1820,6 +2892,15 @@
           showDependencyEmptyState();
         }
       };
+
+      if (state.componentsList.length > 0 && !selectedDepComponentId) {
+        const getEndpointId = (ep) => (ep && typeof ep === 'object' ? ep.id : ep);
+        const connectedComp = state.componentsList.find(c => {
+          return state.edges.some(e => getEndpointId(e.source) === c.id || getEndpointId(e.target) === c.id);
+        }) || state.componentsList[0];
+        select.value = connectedComp.id;
+        selectDependencyComponent(connectedComp.id);
+      }
     }
 
     // Setup component search filter input
@@ -1924,7 +3005,7 @@
 
   function selectDependencyComponent(componentId) {
     selectedDepComponentId = componentId;
-    const select = document.getElementById('dep-component-select');
+    const select = document.getElementById('dep-component-select') || document.getElementById('dep-focus-select');
     if (select) select.value = componentId;
 
     const emptyBox = document.getElementById('dep-empty-selection');
@@ -1944,8 +3025,9 @@
     const transCard = document.getElementById('dep-transitive-card');
     if (transCard) transCard.style.display = 'block';
 
-    const incoming = state.edges.filter(e => e.target === componentId);
-    const outgoing = state.edges.filter(e => e.source === componentId);
+    const getEndpointId = (ep) => (ep && typeof ep === 'object' ? ep.id : ep);
+    const incoming = state.edges.filter(e => getEndpointId(e.target) === componentId);
+    const outgoing = state.edges.filter(e => getEndpointId(e.source) === componentId);
 
     if (inCount) inCount.textContent = `${incoming.length} callers`;
     if (outCount) outCount.textContent = `${outgoing.length} callees`;
@@ -2102,9 +3184,18 @@
     const unaffectedList = document.getElementById('ti-unaffected-tests-list');
 
     try {
+      const baseSelect = document.getElementById('diff-base-select');
+      const targetSelect = document.getElementById('diff-target-select');
+      const targetSnapId = (targetSelect && targetSelect.value) || state.currentSnapshotId || (state.snapshots[0] ? state.snapshots[0].id : null);
+      let baseSnapId = (baseSelect && baseSelect.value && baseSelect.value !== targetSnapId)
+        ? baseSelect.value
+        : (state.diffSnapshotId && state.diffSnapshotId !== targetSnapId
+          ? state.diffSnapshotId
+          : (state.snapshots.find(s => s.id !== targetSnapId)?.id || null));
+
       const payload = {
-        target_snapshot_id: state.currentSnapshotId || (state.snapshots[0] ? state.snapshots[0].id : null),
-        base_snapshot_id: state.diffSnapshotId || (state.snapshots[1] ? state.snapshots[1].id : null),
+        target_snapshot_id: targetSnapId,
+        base_snapshot_id: baseSnapId,
         max_depth: 6,
         include_indirect: true,
         include_unaffected: true,
@@ -2413,9 +3504,35 @@
     const maxDepth = depthInput ? parseInt(depthInput.value, 10) || 5 : 5;
 
     if (!baseId || !targetId) {
-      alert('Please select both Baseline (A) and Target (B) snapshots.');
+      if (diffTbody) {
+        diffTbody.innerHTML = '<tr><td colspan="5" class="td-empty" style="text-align:center; padding: 2rem; color:#64748B;">Please select both Baseline and Target snapshots to compare.</td></tr>';
+      }
       return;
     }
+
+    if (baseId === targetId) {
+      if (metaSpan) {
+        metaSpan.innerHTML = `<span style="color:#f59e0b; font-weight:600;">Baseline and Target snapshots are identical. Select distinct snapshots to analyze changes.</span>`;
+      }
+      if (diffTbody) {
+        diffTbody.innerHTML = '<tr><td colspan="5" class="td-empty" style="text-align:center; padding: 2rem; color:#64748B;">Identical snapshots selected (Base == Target). Comparison requires distinct versions.</td></tr>';
+      }
+      const tree = document.getElementById('impact-paths-tree');
+      if (tree) {
+        tree.innerHTML = '<div class="p-6 text-center text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl border border-dashed border-[#CBD5E1]">Identical snapshots selected (Base == Target). Please select distinct versions to compute impact propagation paths.</div>';
+      }
+      document.getElementById('metric-impact-changed').textContent = '-';
+      document.getElementById('metric-impact-direct').textContent = '-';
+      document.getElementById('metric-impact-indirect').textContent = '-';
+      document.getElementById('metric-impact-components').textContent = '-';
+      document.getElementById('metric-impact-apis').textContent = '-';
+      document.getElementById('metric-impact-processes').textContent = '-';
+      document.getElementById('metric-impact-tests').textContent = '-';
+      return;
+    }
+
+    state.impactAnalysisSeq = (state.impactAnalysisSeq || 0) + 1;
+    const currentSeq = state.impactAnalysisSeq;
 
     if (impactContainer) {
       impactContainer.style.display = 'block';
@@ -2441,12 +3558,15 @@
         }),
       });
 
+      if (currentSeq !== state.impactAnalysisSeq) return;
+
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
         throw new Error(errJson.detail || `Analysis failed with HTTP ${res.status}`);
       }
 
       const data = await res.json();
+      if (currentSeq !== state.impactAnalysisSeq) return;
       currentImpactAnalysisResult = data;
 
       // 1. Update Metrics
@@ -2775,7 +3895,7 @@
 
   async function projectImpactGraph() {
     if (!currentImpactAnalysisResult || !currentImpactAnalysisResult.analysis_id) {
-      alert('Please run a change impact analysis first.');
+      showNotification('Please run a change impact analysis first.', 'warning');
       return;
     }
 
@@ -2793,7 +3913,7 @@
       updateStats(gData);
 
     } catch (err) {
-      alert(`Could not project impact graph: ${err.message}`);
+      showNotification(`Could not project impact graph: ${err.message}`, 'error');
     }
   }
 
@@ -2836,6 +3956,9 @@
     if (!baseId || !targetId) {
       return;
     }
+
+    state.diffSnapshotId = baseId;
+    state.currentSnapshotId = targetId;
 
     tbody.innerHTML = '<tr><td colspan="5" class="td-loading">Calculating structural snapshot diff...</td></tr>';
 
@@ -3180,7 +4303,17 @@
 
   // --- 14. Graph Engine & Physics Simulation ---
   async function loadGraph() {
-    if (!state.currentRepoId) return;
+    if (!state.currentRepoId) {
+      state.rawGraph = { nodes: [], edges: [] };
+      state.nodes = [];
+      state.edges = [];
+      updateStats({ nodes: [], edges: [] });
+      return;
+    }
+
+    state.graphReqSeq = (state.graphReqSeq || 0) + 1;
+    const currentReqSeq = state.graphReqSeq;
+    const targetRepo = state.currentRepoId;
 
     let url = `/repositories/${state.currentRepoId}/graph?level=${state.currentLevel}&depth=${state.depth}`;
     if (state.currentSnapshotId) url += `&snapshot_id=${state.currentSnapshotId}`;
@@ -3208,8 +4341,10 @@
 
     try {
       const res = await fetch(url);
+      if (currentReqSeq !== state.graphReqSeq || state.currentRepoId !== targetRepo) return;
       if (res.ok) {
         const data = await res.json();
+        if (currentReqSeq !== state.graphReqSeq || state.currentRepoId !== targetRepo) return;
         state.rawGraph = data;
         processGraphData(data);
         updateStats(data);
@@ -3848,12 +4983,6 @@
       loadGraph();
     });
 
-    // Theme Toggle
-    document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
-      document.body.classList.toggle('theme-light');
-      document.body.classList.toggle('theme-dark');
-    });
-
     // Filter Buttons
     document.getElementById('reset-filters-btn')?.addEventListener('click', () => {
       document.querySelectorAll('#type-filter-grid input').forEach(cb => cb.checked = true);
@@ -4434,10 +5563,10 @@
           });
           if (!res.ok) throw new Error(await res.text());
           const data = await res.json();
-          alert(`Process Discovery Completed: Found ${data.processes_discovered} workflows, ${data.steps_created} steps, ${data.transitions_created} transitions.`);
+          showNotification(`Process Discovery Completed: Found ${data.processes_discovered} workflows, ${data.steps_created} steps, ${data.transitions_created} transitions.`, 'success');
           loadProcessesView();
         } catch (err) {
-          alert('Process discovery failed: ' + err.message);
+          showNotification('Process discovery failed: ' + err.message, 'error');
         } finally {
           discBtn.disabled = false;
           discBtn.textContent = '⚡ Run Process Discovery';
@@ -4446,19 +5575,20 @@
     }
 
     // Ingest Runtime modal
-    const openIngestBtn = document.getElementById('btn-open-ingest-modal');
     const modalIngest = document.getElementById('modal-ingest-runtime');
     const closeIngestBtn = document.getElementById('modal-ingest-close-btn');
     const cancelIngestBtn = document.getElementById('modal-ingest-cancel-btn');
     const submitIngestBtn = document.getElementById('modal-ingest-submit-btn');
 
-    if (openIngestBtn && modalIngest) {
-      openIngestBtn.addEventListener('click', () => modalIngest.style.display = 'flex');
+    if (modalIngest) {
       closeIngestBtn?.addEventListener('click', () => modalIngest.style.display = 'none');
       cancelIngestBtn?.addEventListener('click', () => modalIngest.style.display = 'none');
 
       submitIngestBtn?.addEventListener('click', async () => {
-        if (!state.currentRepoId) return;
+        if (!state.currentRepoId) {
+          showNotification('Please select a codebase first.', 'warning');
+          return;
+        }
         const env = document.getElementById('input-ingest-env')?.value || 'production';
         const fileInput = document.getElementById('input-ingest-file');
         const rawJson = document.getElementById('input-ingest-json')?.value || '';
@@ -4517,15 +5647,16 @@
 
           const resData = await res.json();
           modalIngest.style.display = 'none';
-          alert(`Runtime Ingestion Complete: ${resData.ingested_count} ingested, ${resData.correlated_count} correlated, ${resData.redacted_count} fields redacted.`);
-          loadRuntimeView();
+          showNotification(`Runtime Ingestion Complete: ${resData.ingested_count} ingested, ${resData.correlated_count} correlated, ${resData.redacted_count} fields redacted.`, 'success');
+          switchPrimaryView('runtime');
+          await loadRuntimeView();
 
         } catch (err) {
           if (errorBox) {
             errorBox.style.display = 'block';
             errorBox.textContent = err.message;
           } else {
-            alert(err.message);
+            showNotification(`Runtime ingestion error: ${err.message}`, 'error');
           }
         } finally {
           submitIngestBtn.disabled = false;
@@ -4558,19 +5689,20 @@
     document.getElementById('btn-refresh-incidents')?.addEventListener('click', () => loadIncidentsView());
 
     // Create Incident modal
-    const openIncBtn = document.getElementById('btn-open-create-incident-modal');
     const modalInc = document.getElementById('modal-create-incident');
     const closeIncBtn = document.getElementById('modal-incident-close-btn');
     const cancelIncBtn = document.getElementById('modal-incident-cancel-btn');
     const submitIncBtn = document.getElementById('modal-incident-submit-btn');
 
-    if (openIncBtn && modalInc) {
-      openIncBtn.addEventListener('click', () => modalInc.style.display = 'flex');
+    if (modalInc) {
       closeIncBtn?.addEventListener('click', () => modalInc.style.display = 'none');
       cancelIncBtn?.addEventListener('click', () => modalInc.style.display = 'none');
 
       submitIncBtn?.addEventListener('click', async () => {
-        if (!state.currentRepoId) return;
+        if (!state.currentRepoId) {
+          showNotification('Please select a codebase first.', 'warning');
+          return;
+        }
         const title = document.getElementById('input-incident-title')?.value || '';
         const severity = document.getElementById('input-incident-severity')?.value || 'high';
         const env = document.getElementById('input-incident-env')?.value || 'production';
@@ -4582,6 +5714,8 @@
           if (errorBox) {
             errorBox.style.display = 'block';
             errorBox.textContent = 'Incident title is required';
+          } else {
+            showNotification('Incident title is required.', 'warning');
           }
           return;
         }
@@ -4594,11 +5728,11 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              title,
-              severity,
+              title: title.trim(),
+              severity: severity.toLowerCase(),
               environment: env,
-              affected_component_name: component,
-              description: desc,
+              affected_component_name: component ? component.trim() : null,
+              description: desc.trim(),
               snapshot_id: state.currentSnapshotId || null
             })
           });
@@ -4610,15 +5744,17 @@
 
           const newInc = await res.json();
           modalInc.style.display = 'none';
-          loadIncidentsView();
-          investigateIncident(newInc.id);
+          showNotification(`Incident declared: ${newInc.title}`, 'success');
+          switchPrimaryView('incidents');
+          await loadIncidentsView();
+          await investigateIncident(newInc.id);
 
         } catch (err) {
           if (errorBox) {
             errorBox.style.display = 'block';
             errorBox.textContent = err.message;
           } else {
-            alert(err.message);
+            showNotification(`Incident declaration failed: ${err.message}`, 'error');
           }
         } finally {
           submitIncBtn.disabled = false;
@@ -4757,13 +5893,13 @@
         renderSimulationResult(data);
       }
     } catch (err) {
-      alert('Error simulating scenario: ' + err.message);
+      showNotification('Error simulating scenario: ' + err.message, 'error');
     }
   }
 
   async function runSimulationAction() {
     if (!state.currentRepoId) {
-      alert('Please connect or select a repository first.');
+      showNotification('Please connect or select a repository first.', 'warning');
       return;
     }
 
@@ -4981,6 +6117,7 @@
 
   window.TwinApp = {
     state,
+    getState: () => state,
     focusOnNode,
     inspectNode,
     inspectNodeByName,
@@ -4997,8 +6134,26 @@
     loadIncidentsView,
     investigateIncident,
     openConnectModal,
+    closeConnectModal,
     openIngestModal,
+    closeIngestModal,
     openCreateIncidentModal,
+    closeCreateIncidentModal,
+    openAuthModal,
+    closeAuthModal,
+    logoutUser,
+    checkAuthentication,
+    selectRepository,
+    selectSnapshot,
+    loadSnapshotsForRepo,
+    loadSnapshotsForCurrentRepo,
+    disconnectRepository,
+    resyncRepository,
+    showNotification,
+    startApplicationStateMachine,
+    apiFetch,
+    loadDependenciesView,
+    selectDependencyComponent,
     loadSimulationView,
     runSimulationAction,
     inspectScenario,
