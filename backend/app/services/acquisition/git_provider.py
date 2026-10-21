@@ -493,7 +493,8 @@ def extract_commit_source_tree(
             stderr=subprocess.PIPE,
             env=clean_env,
         )
-        p1.stdout.close()
+        if p1.stdout:
+            p1.stdout.close()
         out, err = p2.communicate(timeout=60)
         p1.wait(timeout=10)
         if p2.returncode != 0:

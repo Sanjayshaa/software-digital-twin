@@ -249,3 +249,4 @@ class ChangeImpactAnalyzer:
 
 
 change_impact_analyzer = ChangeImpactAnalyzer()
+ImpactAnalyzer = ChangeImpactAnalyzer

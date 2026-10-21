@@ -3,6 +3,7 @@ Phase 4 — Change Impact & Blast Radius API Router.
 Exposes deterministic endpoints for running, retrieving, and projecting change impact analyses.
 """
 
+import os
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field

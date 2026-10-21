@@ -34,6 +34,21 @@ ENV/
 *.key
 *.cert
 *.crt
+*.p12
+*.pfx
+*.pkcs12
+*id_rsa*
+*id_ed25519*
+service_account*.json
+client_secret*.json
+*.token
+*.credentials
+*.credential
+secrets/
+credentials/
+.aws/
+.azure/
+.gcp/
 
 # IDEs & Editors
 .idea/
@@ -62,5 +77,6 @@ node_modules/
 # Temporary & Scratch Files
 tmp/
 scratch/
+run_p0_tests.sh
 real_validation_repo/
 data/cloned_repos/

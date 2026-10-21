@@ -25,13 +25,24 @@ from app.models.entities import (
 )
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def db_session():
     """Provides a transactional database session for tests."""
     session = SessionLocal()
     try:
+        from app.models.entities import Project
+        default_proj = session.query(Project).filter_by(id="default-project").first()
+        if not default_proj:
+            default_proj = Project(
+                id="default-project",
+                name="Default System Test Project",
+                description="Seeded test project for unassigned repositories",
+            )
+            session.merge(default_proj)
+            session.commit()
         yield session
     finally:
+        session.rollback()
         session.close()
 
 
@@ -49,8 +60,11 @@ os.environ["APP_ENV"] = "test"
 def cleanup_test_repositories():
     """Cleans up any ephemeral test repositories after pytest suite finishes."""
     yield
-    session = SessionLocal()
+    if os.environ.get("SKIP_DB_CLEANUP") == "1":
+        return
+    session = None
     try:
+        session = SessionLocal()
         test_repos = (
             session.query(Repository)
             .filter(
@@ -98,7 +112,9 @@ def cleanup_test_repositories():
             session.delete(r)
         session.commit()
     except Exception as e:
-        session.rollback()
+        if session:
+            session.rollback()
         print(f"Warning: test repo cleanup error: {e}")
     finally:
-        session.close()
+        if session:
+            session.close()

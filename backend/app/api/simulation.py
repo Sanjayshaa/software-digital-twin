@@ -377,7 +377,9 @@ def get_scenario_engineering_report(
         snap = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).order_by(RepositorySnapshot.created_at.desc()).first()
         base_snapshot_id = snap.id if snap else ""
 
-    query_text = (scenario_data.get("parameters", {}).get("query") if scenario_data else None) or (scenario_data.get("name") if scenario_data else "Scenario Analysis")
+    params = scenario_data.get("parameters") if scenario_data and isinstance(scenario_data.get("parameters"), dict) else {}
+    raw_query = params.get("query") or (scenario_data.get("name") if scenario_data else None) or "Scenario Analysis"
+    query_text: str = str(raw_query)
 
     plan = multi_agent_scenario_orchestrator.plan_scenario(
         db=db,
@@ -418,7 +420,7 @@ def get_scenario_engineering_report(
         commit_sha=commit_sha,
     )
 
-    sanitized_md = SensitiveDataSanitizer().sanitize_text(report.markdown_content)
+    sanitized_md, _ = SensitiveDataSanitizer().sanitize_text(report.markdown_content)
     rep_dict = report.dict()
     rep_dict["markdown_content"] = sanitized_md
     rep_dict["report_markdown"] = sanitized_md

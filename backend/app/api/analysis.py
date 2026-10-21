@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.core.auth import resolve_authorized_repo, get_current_user_optional, AuthenticatedPrincipal
 from app.models.entities import (
     Repository,
     RepositorySnapshot,
@@ -26,6 +27,7 @@ def get_repository_commits(
     repository_id: str,
     max_count: int = Query(default=30, le=100),
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Discovers actual accessible Git commits for the repository.
@@ -34,7 +36,7 @@ def get_repository_commits(
     Distinguishes commit availability from snapshot availability.
     Never fabricates historical snapshots or commits.
     """
-    repo = db.query(Repository).filter_by(id=repository_id).first()
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
     if not repo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
 
@@ -133,6 +135,7 @@ def reconstruct_snapshot(
     payload: Optional[Dict[str, Any]] = None,
     branch_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """
     Reconstructs the actual historical source tree at commit_sha using git archive,
@@ -140,7 +143,7 @@ def reconstruct_snapshot(
     Does NOT modify the workspace working directory or branch.
     Zero fabrication: derives all twin entities directly from the historical commit AST.
     """
-    repo = db.query(Repository).filter_by(id=repository_id).first()
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
     if not repo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
 
@@ -209,8 +212,13 @@ def reconstruct_snapshot(
 def get_repository_snapshots(
     repository_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Returns all snapshots recorded for the repository over time."""
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
+
     snapshots = twin_query_service.get_snapshots_by_repo(db, repository_id)
     return [
         {
@@ -230,8 +238,13 @@ def get_snapshot_details(
     repository_id: str,
     snapshot_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Returns detailed component and structural metrics for a specific snapshot."""
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
+
     snapshot = twin_query_service.get_snapshot(db, snapshot_id)
     if not snapshot or snapshot.repository_id != repository_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Snapshot not found")
@@ -258,8 +271,13 @@ def get_repository_artifacts(
     language: Optional[str] = None,
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Returns normalized structural artifacts for a snapshot."""
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
+
     if not snapshot_id:
         snapshots = twin_query_service.get_snapshots_by_repo(db, repository_id)
         if not snapshots:
@@ -299,8 +317,13 @@ def get_repository_relationships(
     relationship_type: Optional[str] = None,
     limit: int = Query(default=200, le=1000),
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Returns typed relationships between structural artifacts."""
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
+
     if not snapshot_id:
         snapshots = twin_query_service.get_snapshots_by_repo(db, repository_id)
         if not snapshots:
@@ -333,11 +356,12 @@ def get_repository_evidence(
     repository_id: str,
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Returns all recorded evidence items."""
-    repo = db.query(Repository).filter_by(id=repository_id).first()
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
     if not repo:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
 
     items = twin_query_service.get_evidence(db, repo.project_id, limit=limit)
     return [
@@ -359,8 +383,13 @@ def get_analysis_run(
     repository_id: str,
     run_id: str,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Returns details for a specific analysis run."""
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
+
     run = db.query(AnalysisRun).filter_by(id=run_id, repository_id=repository_id).first()
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis run not found")
@@ -391,9 +420,14 @@ def get_architecture_conformance(
     repository_id: str,
     snapshot_id: Optional[str] = None,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Returns deterministic architecture conformance report for a snapshot."""
     from app.services.architecture.drift_detector import architecture_drift_detector
+
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
 
     if not snapshot_id:
         snapshots = twin_query_service.get_snapshots_by_repo(db, repository_id)
@@ -417,9 +451,14 @@ def get_architecture_drifts(
     category: Optional[str] = None,
     severity: Optional[str] = None,
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Returns detected architectural drifts and boundary violations."""
     from app.services.architecture.drift_detector import architecture_drift_detector
+
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
 
     if not snapshot_id:
         snapshots = twin_query_service.get_snapshots_by_repo(db, repository_id)
@@ -449,9 +488,14 @@ def compare_architecture_snapshots(
     from_snapshot: str = Query(..., description="Source baseline snapshot ID"),
     to_snapshot: str = Query(..., description="Target candidate snapshot ID"),
     db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
     """Compares architectural state between two snapshots, identifying new and resolved drifts."""
     from app.services.architecture.drift_detector import architecture_drift_detector
+
+    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Repository '{repository_id}' not found.")
 
     comparison = architecture_drift_detector.compare_snapshots(
         db=db,

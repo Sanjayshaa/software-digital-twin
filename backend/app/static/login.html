@@ -374,8 +374,8 @@
       </div>
       <nav class="flex items-center gap-6">
         <a class="hover:text-on-surface transition-colors cursor-pointer" onclick="showModalInfo('Compliance', 'SOC 2 Type II certified. ISO/IEC 27001 compliant architecture. Multi-tenant zero-trust isolation enforced at the database and AST engine boundaries.')">Compliance</a>
-        <a class="hover:text-on-surface transition-colors cursor-pointer" onclick="showModalInfo('Privacy Policy', 'Zero code retention policy. ASTs and dependency graphs are processed in volatile memory. Tokens and private keys are never persisted in plaintext.')">Privacy Policy</a>
-        <a class="hover:text-on-surface transition-colors cursor-pointer" onclick="showModalInfo('Terms of Service', 'Read-only static code discovery. Digital Twin engine executes no binaries, no build pipelines, and no container scripts from target repositories.')">Terms of Service</a>
+        <a class="hover:text-on-surface transition-colors cursor-pointer" href="/privacy" target="_blank">Privacy Policy</a>
+        <a class="hover:text-on-surface transition-colors cursor-pointer" href="/terms" target="_blank">Terms of Service</a>
         <a class="hover:text-on-surface transition-colors cursor-pointer" onclick="showModalInfo('Security Overview', 'End-to-end encrypted sessions with PBKDF2-HMAC-SHA256 password hashing, signed JWT Bearer credentials, and automated token revocation.')">Security Overview</a>
       </nav>
     </div>
@@ -668,14 +668,27 @@
       // Forgot Password Button
       const forgotBtn = document.getElementById('btn-forgot-password');
       if (forgotBtn) {
-        forgotBtn.addEventListener('click', (e) => {
+        forgotBtn.addEventListener('click', async (e) => {
           e.preventDefault();
           const emailVal = emailInput.value.trim();
-          if (emailVal) {
-            showInfo(`Password reset instructions have been sent to ${emailVal} if the account exists.`);
-          } else {
-            showInfo('Please enter your work email to receive password reset instructions.');
+          if (!emailVal) {
+            showInfo('Please enter your work email in the field above to receive password reset instructions.');
             emailInput.focus();
+            return;
+          }
+          try {
+            forgotBtn.textContent = 'Requesting...';
+            const res = await fetch('/api/v1/auth/forgot-password', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: emailVal })
+            });
+            const data = await res.json();
+            showInfo(data.message || `If an account with that email exists, reset instructions have been dispatched.`);
+          } catch (err) {
+            showInfo('Unable to request password reset right now. Please try again later.');
+          } finally {
+            forgotBtn.textContent = 'Forgot password?';
           }
         });
       }

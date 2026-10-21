@@ -112,6 +112,8 @@ class Repository(Base):
                 kwargs["environment"] = "TEST"
             else:
                 kwargs["environment"] = "USER"
+        if "project_id" not in kwargs or not kwargs["project_id"]:
+            kwargs["project_id"] = "default-project"
         super().__init__(**kwargs)
 
 
@@ -130,15 +132,40 @@ class RepositorySnapshot(Base):
     # Relationships
     repository = relationship("Repository", back_populates="snapshots")
     files = relationship("File", back_populates="snapshot", cascade="all, delete-orphan")
+    structural_artifacts = relationship("StructuralArtifact", back_populates="snapshot", cascade="all, delete-orphan")
+    artifact_relationships = relationship("ArtifactRelationship", back_populates="snapshot", cascade="all, delete-orphan")
 
     _snapshot_repo_cache = {}
 
     def __init__(self, **kwargs):
         if "id" not in kwargs or not kwargs["id"]:
             kwargs["id"] = generate_uuid()
+        if "branch_name" not in kwargs or not kwargs["branch_name"]:
+            kwargs["branch_name"] = "main"
+        cm = kwargs.pop("commit_message", None)
+        if cm:
+            meta = kwargs.setdefault("snapshot_metadata", {})
+            if isinstance(meta, dict):
+                meta["commit_message"] = cm
         super().__init__(**kwargs)
+        if cm:
+            self._commit_message = cm
         if self.id and self.repository_id:
             RepositorySnapshot._snapshot_repo_cache[self.id] = self.repository_id
+
+    @property
+    def commit_message(self):
+        if hasattr(self, "_commit_message"):
+            return self._commit_message
+        if isinstance(self.snapshot_metadata, dict):
+            return self.snapshot_metadata.get("commit_message")
+        return None
+
+    @commit_message.setter
+    def commit_message(self, val):
+        self._commit_message = val
+        if isinstance(self.snapshot_metadata, dict):
+            self.snapshot_metadata["commit_message"] = val
 
 
 class Branch(Base):
@@ -512,6 +539,30 @@ class Scenario(Base):
     project = relationship("Project", back_populates="scenarios")
     results = relationship("ScenarioResult", back_populates="scenario", cascade="all, delete-orphan")
 
+    def __init__(self, **kwargs):
+        repo_id = kwargs.pop("repository_id", None)
+        if repo_id:
+            params = kwargs.setdefault("parameters", {})
+            if isinstance(params, dict):
+                params["repository_id"] = repo_id
+        super().__init__(**kwargs)
+        if repo_id:
+            self._repository_id = repo_id
+
+    @property
+    def repository_id(self) -> Optional[str]:
+        if hasattr(self, "_repository_id"):
+            return self._repository_id
+        if isinstance(self.parameters, dict):
+            return self.parameters.get("repository_id")
+        return None
+
+    @repository_id.setter
+    def repository_id(self, val: Optional[str]):
+        self._repository_id = val
+        if isinstance(self.parameters, dict):
+            self.parameters["repository_id"] = val
+
 
 class ScenarioResult(Base):
     __tablename__ = "scenario_results"
@@ -773,6 +824,7 @@ class StructuralArtifact(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
+    snapshot = relationship("RepositorySnapshot", back_populates="structural_artifacts")
     out_relationships = relationship(
         "ArtifactRelationship",
         foreign_keys="ArtifactRelationship.source_artifact_id",
@@ -796,6 +848,10 @@ class StructuralArtifact(Base):
             fp = kwargs.pop("file_path")
             if "location" not in kwargs:
                 kwargs["location"] = f"{fp}:1"
+        if "content_hash" in kwargs:
+            ch = kwargs.pop("content_hash")
+            if "source_hash" not in kwargs:
+                kwargs["source_hash"] = ch
         if "language" not in kwargs:
             kwargs["language"] = "python"
         if "repository_id" not in kwargs and "snapshot_id" in kwargs and kwargs["snapshot_id"]:
@@ -822,8 +878,16 @@ class StructuralArtifact(Base):
 
     @file_path.setter
     def file_path(self, val: str):
-        if not self.location:
-            self.location = f"{val}:1"
+        if not getattr(self, "location", None):
+            setattr(self, "location", f"{val}:1")
+
+    @property
+    def content_hash(self) -> Optional[str]:
+        return self.source_hash
+
+    @content_hash.setter
+    def content_hash(self, val: Optional[str]):
+        setattr(self, "source_hash", val)
 
 
 class ArtifactRelationship(Base):
@@ -842,6 +906,7 @@ class ArtifactRelationship(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
+    snapshot = relationship("RepositorySnapshot", back_populates="artifact_relationships")
     source_artifact = relationship("StructuralArtifact", foreign_keys=[source_artifact_id], back_populates="out_relationships")
     target_artifact = relationship("StructuralArtifact", foreign_keys=[target_artifact_id], back_populates="in_relationships")
 

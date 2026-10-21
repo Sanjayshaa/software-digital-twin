@@ -106,10 +106,17 @@ class NaturalLanguageScenarioPlan(BaseModel):
     can_execute: bool = True
     execution_block_reason: Optional[str] = None
     # Compatibility aliases for UI and API consumers
+    user_query: Optional[str] = None
     target_entities: List[str] = Field(default_factory=list)
     candidate_entities: List[Dict[str, Any]] = Field(default_factory=list)
     inferred_mutation_type: Optional[str] = None
     status: str = "PLANNED"
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.user_query and self.original_query:
+            self.user_query = self.original_query
+        elif not self.original_query and self.user_query:
+            self.original_query = self.user_query
 
 
 class ScenarioEngineeringReport(BaseModel):
@@ -491,10 +498,12 @@ class MultiAgentScenarioOrchestrator:
             )
 
         # Build formal mutation for the deterministic engine
+        target_val = plan.target_artifact_id or plan.target_entity or "unknown"
         mutation = ProposedMutation(
             mutation_id=f"mut_orch_{uuid.uuid4().hex[:6]}",
             mutation_type=plan.change_type,
-            target=plan.target_entity or "unknown",
+            target=target_val,
+            target_entity=target_val,
             source=plan.source_entity,
             relationship_type=plan.relationship_type,
             description=f"Automated hypothetical mutation for: {plan.original_query}",
@@ -534,8 +543,9 @@ class MultiAgentScenarioOrchestrator:
 
         # Sanitize report markdown to guarantee zero secrets/tokens are leaked
         sanitizer = SensitiveDataSanitizer()
-        report.markdown_content = sanitizer.sanitize_text(report.markdown_content)
-        report.report_markdown = report.markdown_content
+        cleaned_md, _ = sanitizer.sanitize_text(report.markdown_content)
+        report.markdown_content = cleaned_md
+        report.report_markdown = cleaned_md
 
         # Persist Scenario & ScenarioResult in PostgreSQL
         try:
@@ -564,14 +574,15 @@ class MultiAgentScenarioOrchestrator:
                     id=str(uuid.uuid4()),
                     scenario_id=scen_id,
                     status=sim_result.status.value if hasattr(sim_result.status, "value") else str(sim_result.status),
-                    impacted_nodes=[c.dict() for c in sim_result.impact.affected_components],
-                    propagation_paths=[p.dict() for p in sim_result.impact.propagation_paths],
+                    impacted_nodes=[c if isinstance(c, (str, dict)) else (c.model_dump() if hasattr(c, "model_dump") else getattr(c, "dict", lambda: str(c))()) for c in sim_result.impact.affected_components],
+                    propagation_paths=[p if isinstance(p, dict) else (p.model_dump() if hasattr(p, "model_dump") else getattr(p, "dict", lambda: str(p))()) for p in sim_result.impact.propagation_paths],
                     risk_impact_score=sim_result.risk.overall_score,
-                    result_payload=sim_result.dict(),
+                    result_payload=sim_result.model_dump() if hasattr(sim_result, "model_dump") else sim_result.dict(),
                 )
                 db.add(db_res)
                 db.commit()
-        except Exception:
+        except Exception as exc:
+            logger.warning(f"Failed to persist scenario {scen_id}: {exc}")
             db.rollback()
 
         elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)

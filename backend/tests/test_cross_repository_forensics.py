@@ -11,6 +11,17 @@ Regression tests validating:
 """
 
 import os
+import sys
+
+if sys.version_info < (3, 11):
+    venv_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".venv", "bin", "python"))
+    if os.path.exists(venv_py):
+        env = dict(os.environ)
+        env["SKIP_DB_CLEANUP"] = "1"
+        env["PYTHONPATH"] = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        extra_args = sys.argv[1:] if len(sys.argv) > 1 else ["-v", "--tb=long"]
+        os.execve(venv_py, [venv_py, "-m", "pytest", os.path.abspath(__file__)] + extra_args, env)
+
 import uuid
 import pytest
 from unittest.mock import MagicMock, patch
@@ -143,9 +154,10 @@ def test_ast_symbol_and_file_diff_integration():
     snap_a = RepositorySnapshot(id="snap_a", repository_id="repo_java", commit_hash="commit_a")
     snap_b = RepositorySnapshot(id="snap_b", repository_id="repo_java", commit_hash="commit_b")
 
+    mock_query = MagicMock()
+    mock_query.first.side_effect = [snap_a, snap_b]
+
     def query_filter_side_effect(*args, **kwargs):
-        mock_query = MagicMock()
-        mock_query.first.side_effect = [snap_a, snap_b]
         return mock_query
 
     mock_db.query().filter.side_effect = query_filter_side_effect

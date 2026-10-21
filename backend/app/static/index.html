@@ -83,26 +83,11 @@
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          Loading workspace...
+          <span id="boot-status-text">Initializing TwinCore workspace...</span>
         </span>
       </div>
     </div>
   </div>
-
-  <script>
-    // Independent failsafe boot watchdog (guarantees boot-screen is dismissed within 1.5s)
-    setTimeout(function() {
-      if (document.body && document.body.classList.contains('booting')) {
-        document.body.classList.remove('booting');
-        var bs = document.getElementById('boot-screen');
-        if (bs) {
-          bs.style.display = 'none';
-          bs.style.opacity = '0';
-          bs.style.visibility = 'hidden';
-        }
-      }
-    }, 1500);
-  </script>
 
   <!-- APPLICATION SHELL WRAPPER (Hidden during boot) -->
   <div id="app-shell" class="flex h-screen w-full overflow-hidden">
@@ -135,6 +120,13 @@
               <span class="material-symbols-outlined text-[18px]">grid_view</span>
               <span>Overview</span>
             </div>
+          </button>
+          <button data-view="discovery" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px]">explore</span>
+              <span>Discovery &amp; Health</span>
+            </div>
+            <span id="badge-discovery-status" class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 uppercase">Project Health</span>
           </button>
         </div>
 
@@ -735,7 +727,7 @@
               <div class="twin-card p-6 space-y-4">
                 <div class="flex items-center justify-between">
                   <h3 class="text-base font-bold text-[#0F172A] tracking-tight">Software Model State</h3>
-                  <span class="flex h-2.5 w-2.5 relative" title="Twin model active">
+                  <span id="ov-model-live-indicator" class="flex h-2.5 w-2.5 relative" title="Twin model active">
                     <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#10B981] opacity-75"></span>
                     <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#059669]"></span>
                   </span>
@@ -743,15 +735,29 @@
 
                 <div class="space-y-2 divide-y divide-[#F1F5F9] text-xs">
                   <div class="flex items-center justify-between py-2">
-                    <span class="text-[#64748B]">Graph Status</span>
+                    <span class="text-[#64748B]">Repository</span>
+                    <span id="ov-repo-readiness" class="font-semibold text-[#0F172A] flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-[16px] text-[#10B981]">check_circle</span>
+                      <span>Connected</span>
+                    </span>
+                  </div>
+                  <div class="flex items-center justify-between py-2">
+                    <span class="text-[#64748B]">Graph Topology</span>
                     <span class="font-semibold text-[#0F172A] flex items-center gap-1.5">
-                      <span class="material-symbols-outlined text-[16px] text-[#4F46E5]">sync</span>
-                      <span id="ov-graph-status">Source model synchronized</span>
+                      <span id="ov-graph-status-icon" class="material-symbols-outlined text-[16px] text-[#4F46E5]">sync</span>
+                      <span id="ov-graph-status">Evaluating model readiness...</span>
                     </span>
                   </div>
                   <div class="flex items-center justify-between py-2">
                     <span class="text-[#64748B]">Relations Indexed</span>
-                    <span id="ov-causal-coverage" class="font-semibold text-[#059669] bg-[#ECFDF5] px-2 py-0.5 rounded-full border border-[#A7F3D0]/60">0 Indexed</span>
+                    <span id="ov-causal-coverage" class="font-semibold text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full border border-[#CBD5E1]">0 Indexed</span>
+                  </div>
+                  <div class="flex items-center justify-between py-2">
+                    <span class="text-[#64748B]">Runtime Telemetry</span>
+                    <span id="ov-telemetry-readiness" class="font-semibold text-[#64748B] flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[16px] text-[#94A3B8]">sensors_off</span>
+                      <span>No active streams</span>
+                    </span>
                   </div>
                   <div class="flex items-center justify-between py-2">
                     <span class="text-[#64748B]">Contract Drift</span>
@@ -764,6 +770,15 @@
                     <span class="text-[#64748B]">Active Snapshot</span>
                     <span id="ov-snapshot" class="font-mono text-[#64748B] bg-[#F8FAFC] px-1.5 py-0.5 rounded border border-[#E2E8F0]">—</span>
                   </div>
+                </div>
+
+                <!-- Next Action Guidance Prompt -->
+                <div id="ov-model-readiness-banner" class="p-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] text-[11px] text-[#475569] space-y-1">
+                  <div class="font-semibold text-[#0F172A] flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[15px] text-[#0071e3]">lightbulb</span>
+                    <span id="ov-next-action-title">Next Action</span>
+                  </div>
+                  <p id="ov-next-action-desc" class="text-[#64748B] leading-relaxed">Evaluating software model index status...</p>
                 </div>
 
                 <!-- CLI integration snippet -->
@@ -809,6 +824,147 @@
 
           </div>
 
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW: PROJECT DISCOVERY & TECHNICAL HEALTH ASSESSMENT (PHASE 9) -->
+        <!-- ============================================================== -->
+        <section id="view-discovery" class="content-view-panel space-y-6" style="display:none;">
+          <!-- Top Control Card -->
+          <div class="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] uppercase">
+                    Repository Health Analysis
+                  </span>
+                  <span id="disc-status-badge" class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1] uppercase">
+                    NOT_EVALUATED
+                  </span>
+                </div>
+                <h2 class="text-xl font-bold text-[#0F172A] tracking-tight">Project Discovery &amp; Technical Health Assessment</h2>
+                <p class="text-xs text-[#64748B]">Evidence-backed evaluation of repository modularity, coupling density, testing coverage gaps, and blast-radius exposure.</p>
+              </div>
+
+              <div class="flex items-center gap-2.5 flex-wrap">
+                <button id="btn-run-assessment" class="px-4 py-2 rounded-xl text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#005bb5] shadow-xs transition-all flex items-center gap-2" type="button" onclick="window.TwinApp.runTechnicalAssessment()">
+                  <span class="material-symbols-outlined text-[16px]">sync</span>
+                  <span id="btn-run-assessment-text">Run Technical Assessment</span>
+                </button>
+                <button id="btn-export-assessment" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-white border border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC] shadow-xs transition-all flex items-center gap-2" type="button" onclick="window.TwinApp.downloadAssessmentReport()">
+                  <span class="material-symbols-outlined text-[16px]">download</span>
+                  <span>Export Report (Markdown)</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Actionable Pre-Assessment Banner (Visible when NOT_EVALUATED) -->
+            <div id="disc-pre-assessment-banner" class="p-4 rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] space-y-2">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-[18px] text-[#1D4ED8]">assessment</span>
+                  <span class="text-xs font-bold text-[#1E3A8A]">Assessment Pending for Revision</span>
+                  <span id="disc-active-revision-badge" class="font-mono text-[11px] font-semibold bg-white text-[#1D4ED8] px-2 py-0.5 rounded border border-[#BFDBFE]">—</span>
+                </div>
+                <span class="text-[10px] font-semibold text-[#1D4ED8] bg-[#DBEAFE] px-2 py-0.5 rounded-full w-fit">Prerequisites: Connected Snapshot</span>
+              </div>
+              <p class="text-xs text-[#1E40AF] leading-relaxed">
+                Click <strong>"Run Technical Assessment"</strong> above to perform deterministic architecture evaluation. The assessment analyzes AST files, maps dependency relationships, evaluates 9 engineering dimensions, detects structural anti-patterns, and compiles a prioritized remediation roadmap.
+              </p>
+            </div>
+
+            <!-- Error Banner -->
+            <div id="disc-error-box" class="p-3.5 rounded-xl border border-red-200 bg-red-50 text-xs text-red-700 hidden"></div>
+
+            <!-- Discovery Completeness Matrix -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+              <div class="p-3.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-1">
+                <div class="text-[11px] font-medium text-[#64748B]">Files Discovered &amp; Analyzed</div>
+                <div id="disc-metric-discovered" class="text-lg font-bold text-[#0F172A]">— / —</div>
+                <div id="disc-metric-coverage" class="text-[10px] text-[#059669] font-medium">0.0% AST Coverage</div>
+              </div>
+              <div class="p-3.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-1">
+                <div class="text-[11px] font-medium text-[#64748B]">Extracted Symbols</div>
+                <div id="disc-metric-symbols" class="text-lg font-bold text-[#0F172A]">—</div>
+                <div class="text-[10px] text-[#64748B]">Classes, methods, services</div>
+              </div>
+              <div class="p-3.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-1">
+                <div class="text-[11px] font-medium text-[#64748B]">Indexed Relationships</div>
+                <div id="disc-metric-relationships" class="text-lg font-bold text-[#0F172A]">—</div>
+                <div class="text-[10px] text-[#64748B]">Calls, imports, dependencies</div>
+              </div>
+              <div class="p-3.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-1">
+                <div class="text-[11px] font-medium text-[#64748B]">Tests Discovered &amp; Linked</div>
+                <div id="disc-metric-tests" class="text-lg font-bold text-[#0F172A]">— / —</div>
+                <div id="disc-metric-tests-ratio" class="text-[10px] text-[#64748B]">Verified test coverage</div>
+              </div>
+            </div>
+
+            <!-- Completeness Explanation Banner -->
+            <div id="disc-completeness-alert" class="p-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] text-[11px] text-[#475569] flex items-center gap-2">
+              <span class="material-symbols-outlined text-[16px] text-[#0071e3]">info</span>
+              <span id="disc-completeness-text">Select a repository revision and click "Run Technical Assessment" to begin discovery.</span>
+            </div>
+          </div>
+
+          <!-- 9-Dimensional Technical Health Scorecard -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="space-y-0.5">
+                <h3 class="text-sm font-bold text-[#0F172A]">9-Dimensional Architecture Health Scorecard</h3>
+                <p class="text-[11px] text-[#64748B]">Deterministic evaluation across modularity, coupling density, interface exposure, testing gaps, and blast radius.</p>
+              </div>
+              <span id="disc-overall-health" class="text-xs font-bold text-[#0071e3] bg-[#EFF6FF] px-2.5 py-1 rounded-lg border border-[#BFDBFE]">Overall: — / 100</span>
+            </div>
+
+            <div id="disc-dimensions-grid" class="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+              <!-- Dynamically populated dimensional cards -->
+              <div class="p-4 rounded-xl border border-[#E2E8F0] bg-white shadow-xs text-xs text-[#94A3B8] italic text-center col-span-3 py-8">
+                Assessment not yet executed. Run technical assessment to view dimensional scorecard.
+              </div>
+            </div>
+          </div>
+
+          <!-- Two Column Layout: Findings & Advisory Roadmap -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Left Column: Prioritized Technical Findings -->
+            <div class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="space-y-0.5">
+                  <h3 class="text-sm font-bold text-[#0F172A]">Architecture Findings</h3>
+                  <p class="text-[11px] text-[#64748B]">Measurable architectural defects, circular dependencies, and test coverage deficits.</p>
+                </div>
+                <div class="flex items-center gap-1.5" id="disc-finding-filters">
+                  <button class="px-2 py-0.5 text-[10px] font-bold rounded bg-[#0F172A] text-white filter-btn active" data-filter="all">All</button>
+                  <button class="px-2 py-0.5 text-[10px] font-bold rounded bg-[#F1F5F9] text-[#475569] filter-btn" data-filter="critical">Critical/High</button>
+                  <button class="px-2 py-0.5 text-[10px] font-bold rounded bg-[#F1F5F9] text-[#475569] filter-btn" data-filter="medium">Medium</button>
+                </div>
+              </div>
+
+              <div id="disc-findings-list" class="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+                <div class="text-xs text-[#94A3B8] italic p-6 text-center border border-dashed border-[#CBD5E1] rounded-xl">
+                  No findings evaluated yet. Run assessment to detect structural defects.
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Recommended Actions & Remediation Roadmap -->
+            <div class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs space-y-4">
+              <div class="space-y-1">
+                <div class="flex items-center justify-between">
+                  <h3 class="text-sm font-bold text-[#0F172A]">Recommended Actions &amp; Remediation Roadmap</h3>
+                  <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">Advisory Only</span>
+                </div>
+                <p class="text-[11px] text-[#64748B]">Prioritized refactoring steps tied directly to validated findings. Non-destructive and requires engineer sign-off.</p>
+              </div>
+
+              <div id="disc-roadmap-list" class="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+                <div class="text-xs text-[#94A3B8] italic p-6 text-center border border-dashed border-[#CBD5E1] rounded-xl">
+                  Roadmap will synthesize automatically once technical assessment completes.
+                </div>
+              </div>
+            </div>
+          </div>
         </section>
 
         <!-- ============================================================== -->
@@ -1128,16 +1284,48 @@
         <!-- VIEW 6: CHANGES (SNAPSHOT COMPARISON) -->
         <!-- ============================================================== -->
         <section id="view-changes" class="content-view-panel space-y-6" style="display:none;">
-          <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h2 class="text-xl font-bold text-[#0F172A]">Changes</h2>
-              <p class="text-xs text-[#64748B]">See what changed between two versions of your software and what those changes may affect.</p>
+          <!-- Responsive Page Header -->
+          <div class="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] uppercase">
+                    Differential Analysis
+                  </span>
+                </div>
+                <h2 class="text-xl font-bold text-[#0F172A] tracking-tight">Changes Workspace</h2>
+                <p class="text-xs text-[#64748B]">Compare architectural states between two repository revisions to detect modified classes, interfaces, schemas, and endpoints.</p>
+              </div>
             </div>
-            <div class="flex items-center gap-2">
-              <select id="diff-base-select" class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-2.5 py-1.5 text-xs"></select>
-              <span class="text-xs text-[#94A3B8]">→</span>
-              <select id="diff-target-select" class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-2.5 py-1.5 text-xs"></select>
-              <button id="btn-compute-diff" class="px-3.5 py-1.5 rounded-lg bg-[#0071e3] text-white text-xs font-semibold shadow-xs">Compare</button>
+          </div>
+
+          <!-- Full-Width Revision Comparison Toolbar -->
+          <div class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs space-y-4">
+            <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                <div class="space-y-1.5">
+                  <label for="diff-base-select" class="block text-xs font-semibold text-[#475569]">
+                    Baseline Revision (From)
+                  </label>
+                  <div class="relative">
+                    <select id="diff-base-select" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#0071e3] transition-all min-h-[38px]"></select>
+                  </div>
+                </div>
+                <div class="space-y-1.5">
+                  <label for="diff-target-select" class="block text-xs font-semibold text-[#475569]">
+                    Target Revision (To)
+                  </label>
+                  <div class="relative">
+                    <select id="diff-target-select" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#0071e3] transition-all min-h-[38px]"></select>
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 pt-1 lg:pt-0">
+                <button id="btn-compute-diff" class="px-5 py-2.5 rounded-xl bg-[#0071e3] text-white text-xs font-semibold hover:bg-[#005bb5] shadow-xs flex items-center justify-center gap-2 whitespace-nowrap transition-all w-full sm:w-auto min-h-[38px]" type="button">
+                  <span class="material-symbols-outlined text-[16px]">compare_arrows</span>
+                  <span id="btn-compute-diff-text">Compare Snapshots</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1169,23 +1357,68 @@
         <!-- VIEW 7: IMPACT ANALYSIS (BLAST RADIUS) -->
         <!-- ============================================================== -->
         <section id="view-impact" class="content-view-panel space-y-6" style="display:none;">
-          <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h2 class="text-xl font-bold text-[#0F172A]">Change Impact</h2>
-              <p class="text-xs text-[#64748B]">Trace which components, APIs and tests may be affected by the selected changes before you merge.</p>
+          <!-- Responsive Page Header -->
+          <div class="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] uppercase">
+                    Deterministic Blast Radius
+                  </span>
+                </div>
+                <h2 class="text-xl font-bold text-[#0F172A] tracking-tight">Change Impact Analysis</h2>
+                <p class="text-xs text-[#64748B]">Trace which components, APIs, and tests may be affected by the selected changes before you merge.</p>
+              </div>
             </div>
-            <div class="flex items-center gap-2">
-              <select id="impact-base-select" class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-2.5 py-1.5 text-xs"></select>
-              <span class="text-xs text-[#94A3B8]">→</span>
-              <select id="impact-target-select" class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-2.5 py-1.5 text-xs"></select>
-              <button id="btn-run-impact-action" class="px-4 py-2 rounded-lg bg-[#0071e3] text-white text-xs font-bold shadow-xs flex items-center gap-1.5">
-                <span class="material-symbols-outlined text-[15px]">bolt</span>
-                <span>Execute Impact</span>
-              </button>
-              <button id="btn-impact-visualize-3d" class="px-3.5 py-2 rounded-lg bg-[#0F172A] text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all opacity-50 cursor-not-allowed" type="button" disabled title="Execute Change Impact first to enable 3D propagation animation">
-                <span class="material-symbols-outlined text-[15px] text-[#38BDF8]">view_in_ar</span>
-                <span>Animate in 3D</span>
-              </button>
+          </div>
+
+          <!-- Full-Width Comparison Toolbar -->
+          <div class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs space-y-4">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
+              <div class="lg:col-span-4 space-y-1.5">
+                <label for="impact-base-select" class="block text-xs font-semibold text-[#475569]">
+                  Baseline Revision (From)
+                </label>
+                <select id="impact-base-select" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#0071e3] transition-all min-h-[38px]"></select>
+              </div>
+              <div class="lg:col-span-4 space-y-1.5">
+                <label for="impact-target-select" class="block text-xs font-semibold text-[#475569]">
+                  Target Revision (To)
+                </label>
+                <select id="impact-target-select" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#0071e3] transition-all min-h-[38px]"></select>
+              </div>
+              <div class="lg:col-span-2 space-y-1.5">
+                <label for="impact-depth-input" class="block text-xs font-semibold text-[#475569]">
+                  Max Depth
+                </label>
+                <select id="impact-depth-input" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#0071e3] transition-all min-h-[38px]">
+                  <option value="1">1 Hop (Direct Only)</option>
+                  <option value="3">3 Hops (Near Cluster)</option>
+                  <option value="5" selected>5 Hops (Standard)</option>
+                  <option value="10">10 Hops (Exhaustive)</option>
+                </select>
+              </div>
+              <div class="lg:col-span-2 flex items-center gap-2 pt-1 lg:pt-0">
+                <button id="btn-run-impact-action" class="flex-1 px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#005bb5] text-white text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 min-h-[38px] transition-all cursor-pointer" type="button">
+                  <span class="material-symbols-outlined text-[16px]">bolt</span>
+                  <span id="btn-run-impact-text">Execute Impact</span>
+                </button>
+                <button id="btn-impact-visualize-3d" class="px-3.5 py-2 rounded-xl bg-[#0F172A] text-white text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 transition-all opacity-50 cursor-not-allowed min-h-[38px]" type="button" disabled title="Execute Change Impact first to enable 3D propagation animation">
+                  <span class="material-symbols-outlined text-[16px] text-[#38BDF8]">view_in_ar</span>
+                  <span>3D</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Analysis Status / Lifecycle Explanation Banner -->
+            <div id="impact-lifecycle-banner" class="p-3.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="flex items-center gap-2.5 text-[#475569] flex-1">
+                <span id="impact-lifecycle-icon" class="material-symbols-outlined text-[18px] text-[#0071e3]">info</span>
+                <span id="impact-analysis-meta" class="font-medium text-xs leading-relaxed">
+                  Select Baseline and Target revisions above and click "Execute Impact" to evaluate causal blast radius.
+                </span>
+              </div>
+              <div id="impact-lifecycle-actions" class="flex items-center gap-2"></div>
             </div>
           </div>
 
@@ -1614,123 +1847,155 @@
           <!-- Two-Column Simulation Grid -->
           <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-            <!-- LEFT COLUMN: NATURAL-LANGUAGE SCENARIO DESIGNER (5 cols) -->
+            <!-- LEFT COLUMN: GUIDED SCENARIO DESIGNER (5 cols) -->
             <div class="lg:col-span-5 space-y-4">
               <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-4">
+                
+                <!-- Stepper Progress Header -->
                 <div class="flex items-center justify-between border-b border-[#F1F5F9] pb-3">
-                  <h3 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider flex items-center gap-2">
-                    <span class="material-symbols-outlined text-[16px] text-[#0071e3]">chat</span>
-                    <span>1. Natural-Language Scenario</span>
-                  </h3>
-                  <span class="text-[10px] text-[#0284C7] bg-[#E0F2FE] px-2 py-0.5 rounded font-semibold border border-[#BAE6FD]">Graph-Grounded</span>
+                  <div class="flex items-center gap-2">
+                    <span class="workflow-step-badge active" id="sim-wizard-step-badge">1</span>
+                    <h3 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider" id="sim-wizard-step-title">
+                      Step 1 — Define the Question
+                    </h3>
+                  </div>
+                  <span class="text-[10px] text-[#0284C7] bg-[#E0F2FE] px-2 py-0.5 rounded font-semibold border border-[#BAE6FD]">Guided Simulation</span>
                 </div>
 
-                <!-- Primary Natural-Language Question Input -->
-                <div class="space-y-1.5">
-                  <label class="block text-xs font-bold text-[#0F172A]">What would happen if ...?</label>
-                  <textarea id="input-sim-nl-query" rows="3" placeholder="e.g. What would happen if we remove studentGamificationService.ts?&#10;e.g. What if we change /api/v1/auth/login route contract?&#10;e.g. What if submissions traffic increases 10x?" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3.5 py-2.5 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3] focus:ring-1 focus:ring-[#0071e3] transition-all resize-none font-medium leading-relaxed"></textarea>
-                </div>
+                <!-- STEP 1: DEFINE THE QUESTION & SELECT ARCHETYPE -->
+                <div id="sim-step-1-container" class="space-y-3">
+                  <label class="block text-xs font-bold text-[#0F172A]">What hypothetical change do you want to evaluate?</label>
+                  
+                  <!-- Archetype Selection Cards -->
+                  <div class="grid grid-cols-2 gap-2" id="sim-archetype-grid">
+                    <button type="button" class="sim-archetype-card p-2.5 rounded-xl border border-[#0071e3] bg-[#EFF6FF] text-left transition-all group active cursor-pointer" data-type="MODIFY_SYMBOL">
+                      <div class="flex items-center gap-1.5 text-xs font-bold text-[#0071e3]">
+                        <span class="material-symbols-outlined text-[16px]">tune</span>
+                        <span>Modify Symbol</span>
+                      </div>
+                      <p class="text-[10px] text-[#475569] mt-0.5 leading-snug">Change a core function, class, or method signature</p>
+                    </button>
 
-                <!-- Quick Prompt Chips -->
-                <div class="space-y-1">
-                  <span class="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">Example Scenario Queries:</span>
-                  <div class="flex flex-wrap gap-1.5 pt-1" id="sim-prompt-chips-container">
-                    <button type="button" class="sim-chip-btn px-2 py-1 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[11px] font-mono text-[#334155] border border-[#CBD5E1] transition-all text-left" data-prompt="What would happen if we remove studentGamificationService.ts?">
-                      ✂️ Remove studentGamificationService.ts
+                    <button type="button" class="sim-archetype-card p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#CBD5E1] text-left transition-all group cursor-pointer" data-type="REMOVE_DEPENDENCY">
+                      <div class="flex items-center gap-1.5 text-xs font-bold text-[#0F172A]">
+                        <span class="material-symbols-outlined text-[16px] text-[#DC2626]">link_off</span>
+                        <span>Decouple / Remove</span>
+                      </div>
+                      <p class="text-[10px] text-[#64748B] mt-0.5 leading-snug">Remove a module or service dependency relationship</p>
                     </button>
-                    <button type="button" class="sim-chip-btn px-2 py-1 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[11px] font-mono text-[#334155] border border-[#CBD5E1] transition-all text-left" data-prompt="What if we modify /AuthContext API contract?">
-                      🔌 Modify /AuthContext API
+
+                    <button type="button" class="sim-archetype-card p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#CBD5E1] text-left transition-all group cursor-pointer" data-type="ADD_DEPENDENCY">
+                      <div class="flex items-center gap-1.5 text-xs font-bold text-[#0F172A]">
+                        <span class="material-symbols-outlined text-[16px] text-[#059669]">add_link</span>
+                        <span>Add Dependency</span>
+                      </div>
+                      <p class="text-[10px] text-[#64748B] mt-0.5 leading-snug">Simulate service A introducing dependency on service B</p>
                     </button>
-                    <button type="button" class="sim-chip-btn px-2 py-1 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[11px] font-mono text-[#334155] border border-[#CBD5E1] transition-all text-left" data-prompt="What happens if gamificationTasksClient.ts fails?">
-                      💥 Failure in gamificationTasksClient
-                    </button>
-                    <button type="button" class="sim-chip-btn px-2 py-1 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[11px] font-mono text-[#334155] border border-[#CBD5E1] transition-all text-left" data-prompt="What if submissions traffic increases 10x?">
-                      📈 10x submissions workload
+
+                    <button type="button" class="sim-archetype-card p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#CBD5E1] text-left transition-all group cursor-pointer" data-type="MODIFY_API">
+                      <div class="flex items-center gap-1.5 text-xs font-bold text-[#0F172A]">
+                        <span class="material-symbols-outlined text-[16px] text-[#7C3AED]">api</span>
+                        <span>Modify API Route</span>
+                      </div>
+                      <p class="text-[10px] text-[#64748B] mt-0.5 leading-snug">Modify endpoint path, contract, or payload format</p>
                     </button>
                   </div>
-                </div>
 
-                <!-- Target Entity Disambiguation Alert (Shown when multiple candidates match) -->
-                <div id="sim-ambiguity-card" class="p-3 bg-[#FEF3C7] border border-[#FDE68A] rounded-xl space-y-2" style="display:none;">
-                  <div class="flex items-center gap-1.5 text-xs font-bold text-[#92400E]">
-                    <span class="material-symbols-outlined text-[16px]">help_outline</span>
-                    <span>Ambiguous Target: Select Recognized Graph Entity</span>
+                  <!-- Natural Language Query Textarea -->
+                  <div class="space-y-1 pt-1">
+                    <label class="block text-[11px] font-semibold text-[#475569]">Natural Language Scenario Inquiry (Optional):</label>
+                    <textarea id="input-sim-nl-query" rows="2" placeholder="e.g. What would happen if we modify payment fee calculation?" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3] transition-all resize-none leading-relaxed"></textarea>
                   </div>
-                  <p class="text-[11px] text-[#78350F]">Multiple artifacts matched your query. Click one to resolve explicitly:</p>
-                  <div id="sim-ambiguity-candidates-list" class="space-y-1 max-h-36 overflow-y-auto"></div>
-                </div>
 
-                <!-- Resolved Target Details Badge -->
-                <div id="sim-resolved-target-badge" class="p-2.5 bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl space-y-1" style="display:none;">
-                  <div class="flex items-center justify-between text-[11px]">
-                    <span class="font-bold text-[#166534] flex items-center gap-1">
-                      <span class="material-symbols-outlined text-[14px]">check_circle</span> Resolved Graph Target:
-                    </span>
-                    <span id="sim-resolved-target-type" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white text-[#15803D] border border-[#86EFAC]">MODULE</span>
-                  </div>
-                  <div id="sim-resolved-target-name" class="font-mono text-xs text-[#0F172A] font-semibold truncate"></div>
-                  <div id="sim-resolved-target-loc" class="text-[10px] text-[#64748B] font-mono truncate"></div>
-                </div>
-
-                <!-- Collapsible Advanced Structural Controls -->
-                <div class="border border-[#E2E8F0] rounded-xl p-3 bg-[#F8FAFC]">
-                  <button id="btn-toggle-advanced-sim" type="button" class="w-full flex items-center justify-between text-xs font-bold text-[#475569] hover:text-[#0F172A]">
-                    <span class="flex items-center gap-1.5">
-                      <span class="material-symbols-outlined text-[16px]">tune</span>
-                      <span>Advanced Mutation Parameters</span>
-                    </span>
-                    <span id="advanced-sim-chevron" class="material-symbols-outlined text-[16px] transition-transform">expand_more</span>
-                  </button>
-
-                  <div id="sim-advanced-controls" class="space-y-3 pt-3 mt-2 border-t border-[#E2E8F0]" style="display:none;">
-                    <div>
-                      <label class="block text-[11px] font-semibold text-[#475569] mb-1">Mutation Type</label>
-                      <select id="select-sim-mutation-type" class="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
-                        <option value="MODIFY_SYMBOL">MODIFY_SYMBOL (Function, Class, Method)</option>
-                        <option value="REMOVE_DEPENDENCY">REMOVE_DEPENDENCY (Decouple relationship)</option>
-                        <option value="ADD_DEPENDENCY">ADD_DEPENDENCY (Add relationship)</option>
-                        <option value="MODIFY_API">MODIFY_API (Route / Endpoint contract)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label class="block text-[11px] font-semibold text-[#475569] mb-1">Target Symbol / Entity</label>
-                      <input id="input-sim-target" type="text" placeholder="e.g. studentGamificationService.ts" class="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
-                    </div>
-
-                    <div id="sim-source-container" style="display:none;">
-                      <label class="block text-[11px] font-semibold text-[#475569] mb-1">Source Entity (Origin)</label>
-                      <input id="input-sim-source" type="text" placeholder="e.g. gamificationClient.ts" class="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
-                    </div>
-
-                    <div id="sim-reltype-container" style="display:none;">
-                      <label class="block text-[11px] font-semibold text-[#475569] mb-1">Relationship Type</label>
-                      <select id="select-sim-reltype" class="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
-                        <option value="DEPENDS_ON">DEPENDS_ON</option>
-                        <option value="CALLS">CALLS</option>
-                        <option value="IMPORTS">IMPORTS</option>
-                        <option value="PERSISTS_TO">PERSISTS_TO</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label class="block text-[11px] font-semibold text-[#475569] mb-1">Scenario Name</label>
-                      <input id="input-sim-name" type="text" placeholder="e.g. Decouple Gamification Service" class="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
+                  <!-- Example chips -->
+                  <div class="space-y-1">
+                    <span class="text-[10px] font-bold text-[#64748B] uppercase tracking-wider">Example Templates:</span>
+                    <div class="flex flex-wrap gap-1.5" id="sim-prompt-chips-container">
+                      <button type="button" class="sim-chip-btn px-2 py-0.5 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[10px] font-mono text-[#334155] border border-[#CBD5E1] transition-all text-left cursor-pointer" data-prompt="What would happen if we remove studentGamificationService.ts?" data-type="REMOVE_DEPENDENCY">
+                        ✂️ Remove Service
+                      </button>
+                      <button type="button" class="sim-chip-btn px-2 py-0.5 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[10px] font-mono text-[#334155] border border-[#CBD5E1] transition-all text-left cursor-pointer" data-prompt="What if we modify /api/v1/auth route contract?" data-type="MODIFY_API">
+                        🔌 Modify API Contract
+                      </button>
+                      <button type="button" class="sim-chip-btn px-2 py-0.5 rounded-md bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[10px] font-mono text-[#334155] border border-[#CBD5E1] transition-all text-left cursor-pointer" data-prompt="What happens if PaymentService.charge fails?" data-type="MODIFY_SYMBOL">
+                        💥 Symbol Mutation
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                <!-- Simulation Action Buttons -->
-                <div class="space-y-2 pt-1">
-                  <button id="btn-run-simulation" class="w-full py-2.5 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all" type="button">
+                <!-- STEP 2: SELECT THE TARGET ENTITY -->
+                <div id="sim-step-2-container" class="space-y-3 pt-2 border-t border-[#F1F5F9]">
+                  <div class="flex items-center justify-between">
+                    <label class="block text-xs font-bold text-[#0F172A]" id="sim-target-label">Step 2 — Select Target Entity *</label>
+                    <span class="text-[10px] text-[#64748B]">Search active twin components</span>
+                  </div>
+
+                  <div class="relative">
+                    <input id="input-sim-target" type="text" placeholder="e.g. PaymentService or router.py" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3] transition-all">
+                    <div id="sim-target-suggestions" class="absolute left-0 right-0 top-full mt-1 bg-white border border-[#CBD5E1] rounded-xl shadow-lg z-30 max-h-48 overflow-y-auto hidden"></div>
+                  </div>
+
+                  <!-- Source Entity (for relationship / dependency mutations) -->
+                  <div id="sim-source-container" style="display:none;" class="space-y-1">
+                    <label class="block text-[11px] font-semibold text-[#475569]">Source Entity (Origin Caller) *</label>
+                    <input id="input-sim-source" type="text" placeholder="e.g. OrderProcessingService" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-1.5 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
+                  </div>
+
+                  <!-- Resolved Target Badge -->
+                  <div id="sim-resolved-target-badge" class="p-2.5 bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl space-y-1" style="display:none;">
+                    <div class="flex items-center justify-between text-[11px]">
+                      <span class="font-bold text-[#166534] flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[14px]">check_circle</span> Resolved Graph Target:
+                      </span>
+                      <button id="sim-clear-target-btn" type="button" class="text-[10px] text-[#DC2626] hover:underline font-semibold cursor-pointer">Change</button>
+                    </div>
+                    <div id="sim-resolved-target-name" class="font-mono text-xs text-[#0F172A] font-semibold truncate"></div>
+                  </div>
+
+                  <!-- Disambiguation list -->
+                  <div id="sim-ambiguity-card" class="p-3 bg-[#FEF3C7] border border-[#FDE68A] rounded-xl space-y-2" style="display:none;">
+                    <div class="flex items-center gap-1.5 text-xs font-bold text-[#92400E]">
+                      <span class="material-symbols-outlined text-[16px]">help_outline</span>
+                      <span>Disambiguation Required: Select Recognized Entity</span>
+                    </div>
+                    <div id="sim-ambiguity-candidates-list" class="space-y-1 max-h-36 overflow-y-auto"></div>
+                  </div>
+                </div>
+
+                <!-- STEP 3: DESCRIBE THE HYPOTHESIS -->
+                <div id="sim-step-3-container" class="space-y-2 pt-2 border-t border-[#F1F5F9]">
+                  <label class="block text-xs font-bold text-[#0F172A]">Step 3 — Scenario Hypothesis &amp; Name</label>
+                  <input id="input-sim-name" type="text" placeholder="e.g. Decouple Payment Gateway from Order Pipeline" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-1.5 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
+                  <p class="text-[10px] text-[#64748B]">Virtual twin isolation guarantees zero mutations to real repositories or files.</p>
+                </div>
+
+                <!-- STEP 4 & 5: REVIEW & EXECUTE -->
+                <div class="space-y-3 pt-2 border-t border-[#F1F5F9]">
+                  <div id="sim-exec-timeline" class="p-3 rounded-xl bg-[#F0F9FF] border border-[#BAE6FD] space-y-2 text-xs text-[#0369A1]" style="display:none;">
+                    <div class="flex items-center gap-2 font-bold text-[#0C4A6E]">
+                      <span class="material-symbols-outlined text-[16px] animate-spin">sync</span>
+                      <span>Running Virtual Twin Simulation...</span>
+                    </div>
+                    <div class="text-[11px] text-[#0284C7] space-y-1">
+                      <div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">check_circle</span> 1. Validating scenario parameters against AST</div>
+                      <div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">check_circle</span> 2. Constructing isolated in-memory twin projection</div>
+                      <div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">check_circle</span> 3. Propagating multi-hop causal changes</div>
+                      <div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">check_circle</span> 4. Evaluating guardrails and affected test cases</div>
+                      <div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">check_circle</span> 5. Assembling deterministic evidence ledger</div>
+                    </div>
+                  </div>
+
+                  <button id="btn-run-simulation" class="w-full py-2.5 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer" type="button">
                     <span class="material-symbols-outlined text-[18px]">bolt</span>
                     <span id="btn-run-simulation-text">Run Evidence-Backed Simulation</span>
                   </button>
-                  <button id="btn-plan-simulation" class="w-full py-1.5 rounded-lg border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-xs font-semibold text-[#475569] flex items-center justify-center gap-1.5 transition-all" type="button">
+                  <button id="btn-plan-simulation" class="w-full py-1.5 rounded-lg border border-[#CBD5E1] bg-[#F8FAFC] hover:bg-[#F1F5F9] text-xs font-semibold text-[#475569] flex items-center justify-center gap-1.5 transition-all cursor-pointer" type="button">
                     <span class="material-symbols-outlined text-[15px]">schema</span>
-                    <span>Parse &amp; Inspect Multi-Agent Plan</span>
+                    <span>Parse &amp; Inspect Target Plan</span>
                   </button>
                 </div>
+                
                 <div id="sim-error-box" class="p-3 rounded-xl bg-[#FFF1F2] border border-[#FECDD3] text-[#BE123C] text-xs font-medium" style="display:none;"></div>
               </div>
 
@@ -1936,6 +2201,41 @@
     </main>
   </div>
   </div> <!-- End #app-shell -->
+
+  <!-- ==================================================================== -->
+  <!-- MODAL: SAFE DISCONNECT CONFIRMATION -->
+  <!-- ==================================================================== -->
+  <div id="modal-disconnect-repo" class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="disconnect-modal-title">
+    <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-[#FEF2F2] text-[#DC2626] flex items-center justify-center">
+            <span class="material-symbols-outlined text-[18px]">link_off</span>
+          </div>
+          <h3 id="disconnect-modal-title" class="font-bold text-sm text-[#0F172A]">Disconnect Codebase Session</h3>
+        </div>
+        <button id="modal-disconnect-close-btn" class="text-[#64748B] hover:text-[#0F172A] p-1 rounded-lg transition-colors" type="button" aria-label="Close dialog">
+          <span class="material-symbols-outlined text-[18px]">close</span>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs text-[#475569] leading-relaxed">
+        <p>Are you sure you want to disconnect from <strong id="disconnect-repo-name-label" class="text-[#0F172A] font-semibold">the active codebase</strong>?</p>
+        <div class="p-3.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl space-y-1.5 text-[11px]">
+          <div class="font-semibold text-[#0F172A] flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[15px] text-[#059669]">verified_user</span>
+            <span>Your Digital Twin Data Remains Preserved</span>
+          </div>
+          <p class="text-[#64748B]">Disconnecting only detaches the current active UI session. All synthesized snapshots, AST call graphs, change impact records, and historical baselines remain securely stored on disk.</p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+        <button id="modal-disconnect-cancel-btn" class="px-4 py-2 rounded-xl bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-xs font-medium transition-colors" type="button">Cancel</button>
+        <button id="modal-disconnect-confirm-btn" class="px-4 py-2 rounded-xl bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-semibold shadow-xs transition-colors" type="button">Disconnect Codebase</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ==================================================================== -->
   <!-- MODAL 1: CONNECT REPOSITORY -->
@@ -2162,6 +2462,14 @@
             <span id="profile-modal-role-text" class="font-medium text-[#0F172A]">Engineer (Full Twin Access)</span>
           </div>
           <div class="flex items-center justify-between py-1.5">
+            <span class="text-[#64748B]">Legal & Privacy</span>
+            <div class="flex items-center gap-2">
+              <a href="/privacy" target="_blank" class="text-[#0071e3] hover:underline">Privacy</a>
+              <span class="text-[#CBD5E1]">•</span>
+              <a href="/terms" target="_blank" class="text-[#0071e3] hover:underline">Terms</a>
+            </div>
+          </div>
+          <div class="flex items-center justify-between py-1.5">
             <span class="text-[#64748B]">Deployment Lifecycle</span>
             <span class="font-medium text-[#64748B]">Not available (Read-only twin)</span>
           </div>
@@ -2169,10 +2477,16 @@
       </div>
 
       <div class="flex items-center justify-between pt-3 border-t border-[#E2E8F0]">
-        <button id="modal-profile-logout-btn" class="px-3.5 py-1.5 rounded-lg bg-[#FEF2F2] hover:bg-[#FEE2E2] text-[#DC2626] text-xs font-semibold transition-colors flex items-center gap-1.5" type="button">
-          <span class="material-symbols-outlined text-[16px]">logout</span>
-          <span>Sign Out</span>
-        </button>
+        <div class="flex items-center gap-2">
+          <button id="modal-profile-logout-btn" class="px-3 py-1.5 rounded-lg bg-[#FEF2F2] hover:bg-[#FEE2E2] text-[#DC2626] text-xs font-semibold transition-colors flex items-center gap-1.5" type="button">
+            <span class="material-symbols-outlined text-[16px]">logout</span>
+            <span>Sign Out</span>
+          </button>
+          <button id="modal-profile-delete-account-btn" class="px-3 py-1.5 rounded-lg border border-[#FCA5A5] hover:bg-[#FEF2F2] text-[#DC2626] text-xs font-semibold transition-colors flex items-center gap-1" type="button">
+            <span class="material-symbols-outlined text-[16px]">delete_forever</span>
+            <span>Delete Account</span>
+          </button>
+        </div>
         <button id="modal-profile-done-btn" class="px-4 py-1.5 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] text-xs font-medium" type="button">Close</button>
       </div>
     </div>

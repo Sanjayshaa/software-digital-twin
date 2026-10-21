@@ -181,3 +181,22 @@ The platform enforces explicit bounded behavior:
 ### Residual Limitations:
 1. **Testing Demonstrates Presence of Tested Controls, Not Universal Absence of Bugs**: While 241 regression tests and 58 security tests pass, automated test suites verify specified invariants, not all possible attack surfaces.
 2. **No Egress Proxy**: While Git HTTP redirects and DNS rebinding attacks are mitigated at the application and git configuration level, the host environment lacks an isolated network egress proxy. Repositories requiring air-gapped security should run worker tasks inside un-routed containers.
+
+---
+
+## 8. Comprehensive Multi-Phase Production Audit (Phases 1 — 13)
+
+### Executive Summary of Completed Hardening:
+- **Phase 1 (Baseline & Architecture)**: Full codebase mapped. All existing uncommitted changes and forensic capabilities preserved without fabrication.
+- **Phase 2 (Authentication Lifecycle)**: Implemented password complexity enforcement, single-use expiring password reset token vault, email verification, session cookie issuance (`HttpOnly`, `SameSite=Lax`), and user account deletion.
+- **Phase 3 (Authorization & IDOR Closure)**: Audited and hardened all endpoints in `backend/app/api/analysis.py`, `backend/app/api/discovery.py`, and `backend/app/api/graph.py`. Universal enforcement of `resolve_authorized_repo` preventing cross-user and unauthenticated data disclosure (HTTP 404 non-disclosure pattern).
+- **Phase 4 (Input Validation & Zip Slip Remediation)**: Archive extraction in `backend/app/api/graph.py` hardened against Zip Slip and Tar Slip attacks using `os.path.commonpath` verification.
+- **Phase 5 (Secrets & Configuration)**: Environment configuration sanitized, `.env.example` verified with placeholders only. No raw credentials logged or exposed.
+- **Phase 6 (Rate Limiting & Abuse Defense)**: Sliding window rate limiters protecting authentication endpoints (`auth_action_limiter`, 10/min) and expensive analysis operations (`expensive_op_limiter`, 30/min).
+- **Phase 7 (Frontend Experience & Reliability)**: Wired real forgot-password API flow, added profile account deletion trigger with multi-step confirmation, established legal navigation links, and removed permanent loading spinners.
+- **Phase 8 (Privacy & Legal Governance)**: Delivered production-grade `/privacy` and `/terms` HTML pages disclosing data retention, local AST scanning boundaries, and transactional account deletion.
+- **Phase 9 (Database Backup & Disaster Recovery)**: Documented in `docs/DATABASE_BACKUP_AND_DISASTER_RECOVERY.md`. Cloud provider PITR/automated snapshot audit marked `BLOCKED / ACTION REQUIRED` pending infrastructure access.
+- **Phase 10 (Security Headers & Observability)**: `X-Request-ID` correlation IDs injected on all requests; `Permissions-Policy`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY` enforced.
+- **Phase 11 (Monitoring & Safe Masking)**: Global exception handler masks internal tracebacks in production while preserving correlation IDs for server-side troubleshooting.
+- **Phase 12 (Targeted Verification)**: Verified via `backend/tests/security/test_security_audit_hardening.py` (7/7 PASS), `backend/tests/test_live_workflow_integration.py` (7/7 PASS), `backend/tests/test_discovery_assessment.py` (15/15 PASS), and `backend/tests/test_cross_repository_forensics.py` (6/6 PASS). Total 35 verified passing tests in audit session.
+- **Phase 13 (Readiness Decision)**: **`READY_WITH_LIMITATIONS`** (Operational sign-off on Supabase automated cloud backup schedule required for full production readiness).

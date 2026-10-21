@@ -227,7 +227,7 @@ class RiskIntelligenceEngine:
         affected_components = list({
             art_map[aid].qualified_name for aid in all_relevant_ids if aid in art_map
         })
-        affected_test_names = [t.test_name for t in test_res.affected_tests]
+        affected_test_names = [t.test_name for t in test_res.affected_tests] if test_res and test_res.affected_tests else []
         runtime_evidence_lines = [f"{e.service_name or 'service'}: {e.event_type} ({e.environment})" for e in runtime_events[:5]]
         incident_evidence_lines = [f"{i.title} [{i.severity.upper()}]" for i in incidents[:5]]
 

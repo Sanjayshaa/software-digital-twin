@@ -2610,3 +2610,103 @@ body.state-workspace-active #header-sync-pill {
   }
 }
 
+/* ============================================================== */
+/* TWINCORE ENTERPRISE DESIGN SYSTEM TOKENS & ACCESSIBILITY       */
+/* ============================================================== */
+
+/* 1. Accessible Focus Rings (WCAG 2.1 AA) */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #0071e3 !important;
+  outline-offset: 2px !important;
+}
+
+/* 2. Reduced-Motion Mode */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 3. Skeleton Loading Shimmers */
+@keyframes shimmerAnim {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: shimmerAnim 1.5s infinite linear;
+  border-radius: 8px;
+}
+
+body.theme-dark .skeleton-shimmer {
+  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+  background-size: 200% 100%;
+}
+
+/* 4. Guided Workflow Stepper Components */
+.workflow-step-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.workflow-step-badge.pending {
+  background-color: #F1F5F9;
+  color: #64748B;
+  border: 1px solid #CBD5E1;
+}
+
+.workflow-step-badge.active {
+  background-color: #0071e3;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 113, 227, 0.3);
+}
+
+.workflow-step-badge.completed {
+  background-color: #059669;
+  color: #ffffff;
+}
+
+.workflow-step-badge.failed {
+  background-color: #DC2626;
+  color: #ffffff;
+}
+
+/* 5. Evidence Tags & Causal Breadcrumbs */
+.evidence-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  border-width: 1px;
+}
+
+/* 6. Clean Card Transitions */
+.twin-interactive-card {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.15s ease;
+}
+
+.twin-interactive-card:hover {
+  border-color: #0071e3;
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+}
+

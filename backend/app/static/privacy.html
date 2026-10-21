@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy — TwinCore</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #0b0f17;
+            color: #cbd5e1;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
+    <header class="border-b border-slate-800 bg-slate-900/60 sticky top-0 z-50 backdrop-blur-md">
+        <div class="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-cyan-400 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">
+                    T
+                </div>
+                <a href="/app" class="font-bold text-lg text-white tracking-tight hover:text-indigo-400 transition-colors">TwinCore</a>
+                <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">Governance</span>
+            </div>
+            <nav class="flex items-center space-x-4 text-sm font-medium">
+                <a href="/app" class="text-slate-400 hover:text-white transition-colors">Digital Twin Console</a>
+                <a href="/terms" class="text-slate-400 hover:text-white transition-colors">Terms of Service</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-6 py-12 flex-1">
+        <div class="glass-panel rounded-2xl p-8 sm:p-12 shadow-2xl">
+            <div class="border-b border-slate-800 pb-6 mb-8">
+                <h1 class="text-3xl font-extrabold text-white tracking-tight">Privacy Policy</h1>
+                <p class="text-sm text-slate-400 mt-2">Effective Date: October 21, 2026 • Document Version: 1.0 (Draft for Governance Review)</p>
+            </div>
+
+            <div class="space-y-8 text-sm leading-relaxed text-slate-300">
+                <section>
+                    <h2 class="text-lg font-semibold text-white mb-3">1. Scope and Architecture Overview</h2>
+                    <p>TwinCore provides automated developer intelligence and deterministic software digital twins by indexing source repositories, building syntax symbol graphs, and modeling change impact. This Privacy Policy discloses the data TwinCore processes, where data resides, and how users can inspect or purge their data.</p>
+                </section>
+
+                <section>
+                    <h2 class="text-lg font-semibold text-white mb-3">2. Information We Collect and Process</h2>
+                    <ul class="list-disc pl-5 space-y-2 text-slate-300">
+                        <li><strong class="text-white">Account Information:</strong> Username, email address, password hash (salted and hashed via PBKDF2-HMAC-SHA256 or identity provider tokens), and role designations.</li>
+                        <li><strong class="text-white">Session Credentials:</strong> Ephemeral session tokens or signed JWT credentials used strictly for stateless authentication.</li>
+                        <li><strong class="text-white">Repository Metadata:</strong> Repository names, remote clone URLs, branch names, Git commit SHAs, author timestamps, and commit messages.</li>
+                        <li><strong class="text-white">Structural Code Signatures:</strong> Abstract Syntax Tree (AST) symbol locations, class/function definitions, typed dependencies, and module relationship maps.</li>
+                        <li><strong class="text-white">Diagnostic Telemetry:</strong> Anonymized HTTP request headers, correlation request IDs (<code class="bg-slate-800 px-1.5 py-0.5 rounded text-indigo-300">X-Request-ID</code>), and aggregated error summaries.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h2 class="text-lg font-semibold text-white mb-3">3. How Source Code is Handled</h2>
+                    <p class="mb-3">TwinCore analyzes source code to build a software digital twin graph:</p>
+                    <ul class="list-disc pl-5 space-y-2 text-slate-300">
+                        <li>Source files acquired during git cloning or archive uploads are analyzed locally within isolated directories.</li>
+                        <li>Source code content is scanned for structure; raw code files are not retained permanently in public stores.</li>
+                        <li>Secret scanning heuristics are executed to prevent recording private API tokens or credentials into evidence stores.</li>
+                        <li><strong class="text-white">External AI Sharing:</strong> TwinCore relies primarily on deterministic local AST analysis. When external language model services are queried for natural language simulation explanations, queries are sanitized and do not transmit full private source code repositories without user authorization.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h2 class="text-lg font-semibold text-white mb-3">4. Data Storage and Retention</h2>
+                    <p>TwinCore stores structured digital twin records, snapshot relationships, and account entities in PostgreSQL/Supabase databases. Data is maintained for as long as your account remains active or until you delete specific repositories or your account.</p>
+                </section>
+
+                <section>
+                    <h2 class="text-lg font-semibold text-white mb-3">5. User Control and Account Deletion</h2>
+                    <p class="mb-3">You maintain control over your repositories and personal data:</p>
+                    <ul class="list-disc pl-5 space-y-2 text-slate-300">
+                        <li><strong class="text-white">Repository Deletion:</strong> You can delete any repository you own at any time via the API or user interface. Deletion cascades to all associated snapshots, structural artifacts, typed relationships, and analysis runs.</li>
+                        <li><strong class="text-white">Complete Account Deletion:</strong> You may permanently delete your account directly through your user profile settings (<code class="bg-slate-800 px-1.5 py-0.5 rounded text-indigo-300">DELETE /api/v1/auth/account</code>). This transactionally purges your user profile, active sessions, and all owned repositories.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h2 class="text-lg font-semibold text-white mb-3">6. Security Measures</h2>
+                    <p>TwinCore implements industry-standard technical and operational safeguards: authenticated session cookies with HttpOnly, SameSite, and Secure flags; multi-tenant row-level authorization; archive traversal protections; rate limiting on authentication and intensive analysis operations; and TLS transport encryption.</p>
+                </section>
+
+                <section>
+                    <h2 class="text-lg font-semibold text-white mb-3">7. Contact and Inquiries</h2>
+                    <p>For privacy inquiries, governance questions, or data removal verification, please contact your TwinCore deployment administrator or engineering lead.</p>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <footer class="border-t border-slate-800 py-6 text-center text-xs text-slate-500">
+        <p>© 2026 TwinCore Platform. All rights reserved. • <a href="/terms" class="hover:text-slate-400 underline">Terms of Service</a> • <a href="/privacy" class="hover:text-slate-400 underline">Privacy Policy</a></p>
+    </footer>
+</body>
+</html>

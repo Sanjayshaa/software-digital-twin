@@ -74,11 +74,11 @@ class ImpactPropagator:
             )
 
         # Artifact lookups
-        art_map_target = {a.id: a for a in target_artifacts}
-        art_qual_map_target = {a.qualified_name: a for a in target_artifacts}
+        art_map_target: Dict[str, StructuralArtifact] = {str(a.id): a for a in target_artifacts}
+        art_qual_map_target: Dict[str, StructuralArtifact] = {str(a.qualified_name): a for a in target_artifacts}
 
-        art_map_base = {a.id: a for a in base_artifacts}
-        art_qual_map_base = {a.qualified_name: a for a in base_artifacts}
+        art_map_base: Dict[str, StructuralArtifact] = {str(a.id): a for a in base_artifacts}
+        art_qual_map_base: Dict[str, StructuralArtifact] = {str(a.qualified_name): a for a in base_artifacts}
 
         # Build symbol placeholder resolution maps
         def _build_placeholder_map(artifacts: List[StructuralArtifact]) -> Dict[str, str]:
@@ -148,6 +148,9 @@ class ImpactPropagator:
                 trigger_id = target_ph_map.get(r.source_artifact_id, r.source_artifact_id)
                 affected_id = target_ph_map.get(r.target_artifact_id, r.target_artifact_id)
 
+            if not trigger_id or not affected_id:
+                continue
+
             if trigger_id not in target_adj:
                 target_adj[trigger_id] = []
             target_adj[trigger_id].append((
@@ -172,6 +175,9 @@ class ImpactPropagator:
                 trigger_id = base_ph_map.get(r.source_artifact_id, r.source_artifact_id)
                 affected_id = base_ph_map.get(r.target_artifact_id, r.target_artifact_id)
 
+            if not trigger_id or not affected_id:
+                continue
+
             if trigger_id not in base_adj:
                 base_adj[trigger_id] = []
             base_adj[trigger_id].append((
@@ -188,8 +194,8 @@ class ImpactPropagator:
         # (root_change_item, current_node_id, current_qual_name, depth, path_qual_names, path_node_ids, accumulated_conf, evidence_list)
         for change in change_set.changes:
             is_removed = change.change_type == ChangeType.REMOVED
-            art_map = art_map_base if is_removed else art_map_target
-            adj_map = base_adj if is_removed else target_adj
+            art_map: Dict[str, StructuralArtifact] = art_map_base if is_removed else art_map_target
+            adj_map: Dict[str, List[Tuple[str, str, float, str, str]]] = base_adj if is_removed else target_adj
 
             root_art = None
             if change.artifact_id and change.artifact_id in art_map:
@@ -208,12 +214,12 @@ class ImpactPropagator:
             min_depth_seen: Dict[str, int] = {root_id: 0}
 
             # Queue entry: (current_id, current_qual, depth, path_quals, path_ids, conf, evidence_chain)
-            queue = [(
-                root_id,
-                root_qual,
+            queue: List[Tuple[str, str, int, List[str], List[str], float, List[str]]] = [(
+                str(root_id),
+                str(root_qual),
                 1,
-                [root_qual],
-                [root_id],
+                [str(root_qual)],
+                [str(root_id)],
                 1.0,
                 [f"{change.change_type.value}: {root_qual}"],
             )]

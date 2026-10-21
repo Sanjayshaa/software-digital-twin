@@ -1,9 +1,13 @@
 import os
 import sys
+import uuid
+import logging
 
 # Ensure backend root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 # Auto-reload trigger for 3D verification audit
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,7 +61,11 @@ async def security_and_governance_middleware(request: Request, call_next):
     Enforces:
     1. Request payload size limits (rejects oversized bodies with 413).
     2. Standard HTTP security headers on all responses.
+    3. Correlation ID (X-Request-ID) tracking across all requests.
     """
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
+
     path = request.url.path
     is_auth_endpoint = path.startswith("/auth") or path.startswith("/api/v1/auth")
     max_allowed_bytes = settings.MAX_AUTH_BODY_BYTES if is_auth_endpoint else settings.MAX_REQUEST_BODY_BYTES
@@ -67,37 +75,56 @@ async def security_and_governance_middleware(request: Request, call_next):
         try:
             content_length = int(content_length_header)
             if content_length > max_allowed_bytes:
-                return JSONResponse(
+                response = JSONResponse(
                     status_code=413,
                     content={
                         "detail": f"Request payload size ({content_length} bytes) exceeds maximum permitted limit ({max_allowed_bytes} bytes).",
                         "code": "PAYLOAD_TOO_LARGE",
                     },
                 )
+                response.headers["X-Request-ID"] = request_id
+                return response
         except ValueError:
-            return JSONResponse(
+            response = JSONResponse(
                 status_code=400,
                 content={"detail": "Invalid Content-Length header.", "code": "INVALID_HEADER"},
             )
+            response.headers["X-Request-ID"] = request_id
+            return response
 
     response = await call_next(request)
 
-    # Standard security headers
+    # Standard security headers and correlation ID
+    response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["X-XSS-Protection"] = "0"
-    response.headers["Content-Security-Policy"] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://fonts.googleapis.com https://fonts.gstatic.com data: blob:; font-src 'self' https://fonts.gstatic.com data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com; frame-ancestors 'none';"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://fonts.googleapis.com https://fonts.gstatic.com data: blob:; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com; "
+        "frame-ancestors 'none';"
+    )
 
     return response
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.exception("Global uncaught exception during %s %s: %s", request.method, request.url.path, exc)
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    logger.exception("[%s] Global uncaught exception during %s %s: %s", request_id, request.method, request.url.path, exc)
     return JSONResponse(
         status_code=500,
-        content={"detail": f"Internal server error: {str(exc)}"},
+        content={
+            "detail": "An internal server error occurred. Please contact system support.",
+            "code": "INTERNAL_SERVER_ERROR",
+            "request_id": request_id,
+        },
+        headers={"X-Request-ID": request_id},
     )
 
 
@@ -107,13 +134,30 @@ if not os.path.exists(static_dir):
 
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# Web UI route
+# Web UI routes
 @app.get("/app", response_class=FileResponse, tags=["Web UI"])
 def serve_ui():
     index_file = os.path.join(static_dir, "index.html")
     if os.path.exists(index_file):
         return FileResponse(index_file)
     return {"message": "Digital Twin Visual UI is being initialized."}
+
+
+@app.get("/privacy", response_class=FileResponse, tags=["Web UI"])
+def serve_privacy():
+    privacy_file = os.path.join(static_dir, "privacy.html")
+    if os.path.exists(privacy_file):
+        return FileResponse(privacy_file)
+    raise HTTPException(status_code=404, detail="Privacy Policy not found.")
+
+
+@app.get("/terms", response_class=FileResponse, tags=["Web UI"])
+def serve_terms():
+    terms_file = os.path.join(static_dir, "terms.html")
+    if os.path.exists(terms_file):
+        return FileResponse(terms_file)
+    raise HTTPException(status_code=404, detail="Terms of Service not found.")
+
 
 @app.get("/login", response_class=FileResponse, tags=["Web UI"])
 @app.get("/signin", response_class=FileResponse, tags=["Web UI"])
@@ -222,7 +266,7 @@ def migrate_legacy_unowned_repositories():
             unowned = db.query(Repository).filter(Repository.owner_id.is_(None), Repository.environment == "USER").all()
             if unowned:
                 for repo in unowned:
-                    repo.environment = "FIXTURE"
+                    setattr(repo, "environment", "FIXTURE")
                 db.commit()
         finally:
             db.close()

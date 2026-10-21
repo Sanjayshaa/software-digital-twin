@@ -129,34 +129,71 @@ class ChangeDetector:
             ),
         ).first()
 
-        canonical_base_id = base_snap.id if base_snap else base_snapshot_id
-        canonical_target_id = target_snap.id if target_snap else target_snapshot_id
+        # 1. Immediate check for identical commit / snapshot selection
+        if base_snapshot_id and target_snapshot_id and base_snapshot_id == target_snapshot_id:
+            return ChangeSet(
+                repository_id=str(repository_id),
+                base_snapshot_id=str(base_snapshot_id),
+                target_snapshot_id=str(target_snapshot_id),
+                status="IDENTICAL_COMMITS",
+                is_verified_zero=True,
+                diff_mode="IDENTICAL",
+                message=f"Baseline and Target refer to the identical revision ({str(base_snapshot_id)[:7]}).",
+                summary={"total_changes": 0, "added": 0, "removed": 0, "modified": 0, "status": "IDENTICAL_COMMITS"},
+            )
 
-        change_set = ChangeSet(
-            repository_id=repository_id,
-            base_snapshot_id=canonical_base_id,
-            target_snapshot_id=canonical_target_id,
+        canonical_base_id = (
+            str(base_snap.id)
+            if (base_snap and isinstance(getattr(base_snap, "id", None), str))
+            else str(base_snapshot_id)
+        )
+        canonical_target_id = (
+            str(target_snap.id)
+            if (target_snap and isinstance(getattr(target_snap, "id", None), str))
+            else str(target_snapshot_id)
+        )
+
+        base_ref = (
+            str(base_snap.commit_hash)
+            if (base_snap and isinstance(getattr(base_snap, "commit_hash", None), str))
+            else str(base_snapshot_id)
+        )
+        target_ref = (
+            str(target_snap.commit_hash)
+            if (target_snap and isinstance(getattr(target_snap, "commit_hash", None), str))
+            else str(target_snapshot_id)
         )
 
         # 2. Check for identical commit / snapshot selection
-        base_ref = base_snap.commit_hash if base_snap else base_snapshot_id
-        target_ref = target_snap.commit_hash if target_snap else target_snapshot_id
+        if (
+            canonical_base_id == canonical_target_id
+            or (base_snap and target_snap and getattr(base_snap, "id", None) == getattr(target_snap, "id", None))
+            or (base_ref and target_ref and base_ref == target_ref)
+        ):
+            return ChangeSet(
+                repository_id=str(repository_id),
+                base_snapshot_id=canonical_base_id,
+                target_snapshot_id=canonical_target_id,
+                status="IDENTICAL_COMMITS",
+                is_verified_zero=True,
+                diff_mode="IDENTICAL",
+                message=f"Baseline and Target refer to the identical revision ({base_ref[:7] if base_ref else 'same'}).",
+                summary={"total_changes": 0, "added": 0, "removed": 0, "modified": 0, "status": "IDENTICAL_COMMITS"},
+            )
 
-        if base_snapshot_id == target_snapshot_id or (base_snap and target_snap and base_snap.id == target_snap.id) or (base_ref and target_ref and base_ref == target_ref):
-            change_set.status = "IDENTICAL_COMMITS"
-            change_set.is_verified_zero = True
-            change_set.diff_mode = "IDENTICAL"
-            change_set.message = f"Baseline and Target refer to the identical revision ({base_ref[:7] if base_ref else 'same'})."
-            change_set.summary = {"total_changes": 0, "added": 0, "removed": 0, "modified": 0, "status": "IDENTICAL_COMMITS"}
-            return change_set
+        change_set = ChangeSet(
+            repository_id=str(repository_id),
+            base_snapshot_id=canonical_base_id,
+            target_snapshot_id=canonical_target_id,
+        )
 
         # 3. Compute Git tree diff if workspace is available
         git_entries: List[Tuple[str, str, Optional[str]]] = []
         git_diff_ok = False
         git_error = None
-        if repo and repo.local_path:
+        if repo and getattr(repo, "local_path", None):
             git_diff_ok, git_entries, git_error = run_git_tree_diff(
-                workspace_path=repo.local_path,
+                workspace_path=str(repo.local_path),
                 base_ref=base_ref,
                 target_ref=target_ref,
             )
@@ -186,7 +223,10 @@ class ChangeDetector:
         symbol_removed_count = 0
         symbol_modified_count = 0
 
-        has_indexed_snapshots = bool(base_snap and target_snap)
+        has_indexed_snapshots = bool(
+            (base_snap and target_snap)
+            or (base_artifacts is not None and target_artifacts is not None)
+        )
 
         if has_indexed_snapshots:
             if base_artifacts is None and base_snap:
@@ -202,8 +242,22 @@ class ChangeDetector:
                     .all()
                 )
 
-            base_arts = base_artifacts or []
-            target_arts = target_artifacts or []
+            # Strict snapshot scoping to prevent cross-commit contamination
+            valid_base_ids = {canonical_base_id, str(base_snapshot_id)}
+            if base_snap and hasattr(base_snap, "id") and isinstance(base_snap.id, str):
+                valid_base_ids.add(base_snap.id)
+            valid_target_ids = {canonical_target_id, str(target_snapshot_id)}
+            if target_snap and hasattr(target_snap, "id") and isinstance(target_snap.id, str):
+                valid_target_ids.add(target_snap.id)
+
+            base_arts = [
+                a for a in (base_artifacts or [])
+                if getattr(a, "snapshot_id", None) in valid_base_ids or (base_snap is None and base_artifacts is not None)
+            ]
+            target_arts = [
+                a for a in (target_artifacts or [])
+                if getattr(a, "snapshot_id", None) in valid_target_ids or (target_snap is None and target_artifacts is not None)
+            ]
 
             base_qual_map: Dict[str, StructuralArtifact] = {a.qualified_name: a for a in base_arts}
             target_qual_map: Dict[str, StructuralArtifact] = {a.qualified_name: a for a in target_arts}

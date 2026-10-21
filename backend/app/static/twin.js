@@ -22,6 +22,9 @@
       if (typeof updateAuthUI === 'function') {
         updateAuthUI(null);
       }
+      if (typeof setAppState === 'function' && token) {
+        setAppState('SESSION_EXPIRED', { message: 'Your session has expired. Please sign in again.' });
+      }
     }
     return res;
   }
@@ -114,6 +117,8 @@
     impactRootId: null,
     viewDimension: '2d',
     lastSimulationResult: null,
+    discoveryAssessmentResult: null,
+    discoveryFindingFilter: 'all',
 
     // Graph Data
     rawGraph: { nodes: [], edges: [], summary: {} },
@@ -216,14 +221,20 @@
     startApplicationStateMachine();
   }
 
-  // Safety watchdog: ensure boot-screen is dismissed even if network requests hang
+  // Failsafe watchdog: if network hangs completely for 10s, show actionable recovery error
   setTimeout(() => {
     if (document.body && document.body.classList.contains('booting')) {
-      console.warn('Boot safety watchdog triggered: force-dismissing boot screen.');
-      document.body.classList.remove('booting');
-      if (typeof updateStateUI === 'function') updateStateUI();
+      console.warn('Boot safety watchdog triggered: network or server communication hung.');
+      if (typeof setAppState === 'function') {
+        setAppState('RECOVERABLE_ERROR', { error: 'Network request timed out during initialization. The server took too long to respond.' });
+      }
+      if (typeof finishBoot === 'function') {
+        finishBoot();
+      } else {
+        document.body.classList.remove('booting');
+      }
     }
-  }, 2500);
+  }, 10000);
 
   if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', bootApplication);
@@ -267,7 +278,36 @@
   }
 
   // --- 1. Navigation & View Switching ---
+  function getInitialRequestedView() {
+    const hash = window.location.hash ? window.location.hash.replace(/^#\/?/, '').split('?')[0].trim() : '';
+    const urlParams = new URLSearchParams(window.location.search);
+    const queryView = urlParams.get('view');
+    const candidate = hash || queryView || localStorage.getItem('selected_view') || 'overview';
+    const validViews = [
+      'overview', 'discovery', 'architecture', 'dependencies', 'components',
+      'changes', 'impact', 'simulation', 'tests', 'incidents', 'runtime', 'evidence', 'ask'
+    ];
+    return validViews.includes(candidate) ? candidate : 'overview';
+  }
+
   function initNavigation() {
+    // Bi-directional browser history and hash navigation
+    window.addEventListener('hashchange', () => {
+      const hashView = window.location.hash ? window.location.hash.replace(/^#\/?/, '').split('?')[0].trim() : '';
+      if (hashView && hashView !== state.currentPrimaryView) {
+        switchPrimaryView(hashView);
+      }
+    });
+
+    window.addEventListener('popstate', (e) => {
+      if (e.state && e.state.view) {
+        switchPrimaryView(e.state.view);
+      } else {
+        const initial = getInitialRequestedView();
+        switchPrimaryView(initial);
+      }
+    });
+
     // Primary View Tabs across sidebar and panels
     const tabs = document.querySelectorAll('.view-tab');
     tabs.forEach(tab => {
@@ -284,7 +324,8 @@
             tests: 'Tests',
             incidents: 'Incidents',
             runtime: 'Runtime Evidence',
-            ask: 'Ask Twin'
+            ask: 'Ask Twin',
+            discovery: 'Discovery & Health'
           };
           const label = viewLabels[view] || view;
           showNotification(`Connect a codebase to explore ${label}.`, 'info');
@@ -418,7 +459,16 @@
   }
 
   function switchPrimaryView(viewName) {
+    if (!viewName) viewName = 'overview';
     state.currentPrimaryView = viewName;
+    try {
+      localStorage.setItem('selected_view', viewName);
+      const currentHash = window.location.hash.replace(/^#\/?/, '').split('?')[0];
+      if (currentHash !== viewName) {
+        window.history.replaceState({ view: viewName, repoId: state.currentRepoId }, '', '#' + viewName);
+      }
+    } catch (_) {}
+
     document.querySelectorAll('.view-tab').forEach(t => {
       const isTarget = t.dataset.view === viewName;
       t.classList.toggle('active', isTarget);
@@ -441,8 +491,17 @@
       return;
     }
 
-    // Show target view panel
-    const targetPanel = document.getElementById(`view-${viewName}`);
+    // Hide no-repo hero when repo is connected
+    const noRepoView = document.getElementById('view-no-repo');
+    if (noRepoView) noRepoView.style.display = 'none';
+
+    // Show target view panel with safe fallback
+    let targetPanel = document.getElementById(`view-${viewName}`);
+    if (!targetPanel) {
+      targetPanel = document.getElementById('view-overview');
+      viewName = 'overview';
+      state.currentPrimaryView = 'overview';
+    }
     if (targetPanel) {
       targetPanel.style.display = 'block';
     }
@@ -478,6 +537,8 @@
       loadSimulationView();
     } else if (viewName === 'ask') {
       setTimeout(() => document.getElementById('ask-query-input')?.focus(), 50);
+    } else if (viewName === 'discovery') {
+      loadDiscoveryView();
     }
   }
 
@@ -566,10 +627,11 @@
       }
     });
 
-    // Disconnect and Resync buttons (only active when repository is connected)
-
-    // Disconnect and Resync buttons
-    document.getElementById('btn-disconnect-repo')?.addEventListener('click', disconnectRepository);
+    // Disconnect and Resync buttons with safe confirmation modal
+    document.getElementById('btn-disconnect-repo')?.addEventListener('click', openDisconnectModal);
+    document.getElementById('modal-disconnect-close-btn')?.addEventListener('click', () => closeModal('modal-disconnect-repo'));
+    document.getElementById('modal-disconnect-cancel-btn')?.addEventListener('click', () => closeModal('modal-disconnect-repo'));
+    document.getElementById('modal-disconnect-confirm-btn')?.addEventListener('click', confirmDisconnectRepository);
     document.getElementById('btn-resync-repo')?.addEventListener('click', resyncRepository);
 
   }
@@ -1172,6 +1234,9 @@
       closeModal('modal-user-profile');
       logoutUser();
     });
+    document.getElementById('modal-profile-delete-account-btn')?.addEventListener('click', () => {
+      deleteAccount();
+    });
 
     let authMode = 'login';
 
@@ -1372,6 +1437,41 @@
     switchPrimaryView('overview');
   }
 
+  async function deleteAccount() {
+    if (!state.user || state.user.is_guest) {
+      alert("Guest sessions do not have a registered account to delete.");
+      return;
+    }
+    const confirmed = confirm(
+      "CRITICAL: Are you sure you want to permanently delete your account?\n\n" +
+      "This action is irreversible. All your ingested repositories, snapshots, " +
+      "AST artifacts, typed relationships, and analysis runs will be permanently purged."
+    );
+    if (!confirmed) return;
+
+    const token = localStorage.getItem('jwt_token');
+    try {
+      const resp = await nativeFetch('/api/v1/auth/account', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        alert("Account deletion failed: " + (err.detail || "Server error"));
+        return;
+      }
+      alert("Your account and all associated Digital Twin data have been permanently deleted.");
+      closeModal('modal-user-profile');
+      await logoutUser();
+      window.location.reload();
+    } catch (e) {
+      alert("Account deletion failed: " + e.message);
+    }
+  }
+
   // --- 4. Deterministic Application State Machine ---
   function normalizeApiError(err, stage = 'Operation') {
     if (!err) return { code: 'UNKNOWN_ERROR', message: 'An unexpected error occurred.', stage, retryable: true };
@@ -1528,30 +1628,91 @@
   }
 
   function setAppState(appState, details = null) {
-    state.appState = appState;
-    const banner = document.getElementById('app-recovery-banner');
+    const canonicalMap = {
+      'BOOT': 'INITIALIZING',
+      'INITIALIZING': 'INITIALIZING',
+      'AUTHENTICATION_CHECK': 'RESTORING_SESSION',
+      'RESTORING_SESSION': 'RESTORING_SESSION',
+      'LOAD_REPOSITORIES': 'LOADING_PROJECT_CONTEXT',
+      'VALIDATE_REPOSITORY': 'LOADING_PROJECT_CONTEXT',
+      'SELECT_REPOSITORY': 'LOADING_PROJECT_CONTEXT',
+      'LOAD_SNAPSHOTS': 'LOADING_PROJECT_CONTEXT',
+      'VALIDATE_SNAPSHOT': 'LOADING_PROJECT_CONTEXT',
+      'LOAD_APPLICATION_DATA': 'LOADING_PROJECT_CONTEXT',
+      'LOADING_PROJECT_CONTEXT': 'LOADING_PROJECT_CONTEXT',
+      'READY': 'READY',
+      'NO_REPOSITORY': 'NO_REPOSITORY',
+      'PARTIAL_AVAILABILITY': 'PARTIAL_AVAILABILITY',
+      'RECOVERABLE_ERROR': 'RECOVERABLE_ERROR',
+      'LOAD_ERROR': 'RECOVERABLE_ERROR',
+      'INVALID_REPOSITORY': 'RECOVERABLE_ERROR',
+      'INVALID_SNAPSHOT': 'RECOVERABLE_ERROR',
+      'SESSION_EXPIRED': 'SESSION_EXPIRED'
+    };
 
+    const resolvedState = canonicalMap[appState] || appState;
+    state.appState = resolvedState;
+
+    // 1. Update boot screen status text dynamically
+    const bootStatusText = document.getElementById('boot-status-text');
+    if (bootStatusText) {
+      if (resolvedState === 'INITIALIZING') {
+        bootStatusText.textContent = 'Initializing TwinCore workspace...';
+      } else if (resolvedState === 'RESTORING_SESSION') {
+        bootStatusText.textContent = 'Restoring session & verifying credentials...';
+      } else if (resolvedState === 'LOADING_PROJECT_CONTEXT') {
+        bootStatusText.textContent = 'Resolving selected repository & revision context...';
+      } else if (resolvedState === 'READY') {
+        bootStatusText.textContent = 'TwinCore workspace ready.';
+      } else if (resolvedState === 'NO_REPOSITORY') {
+        bootStatusText.textContent = 'No repository connected.';
+      } else if (resolvedState === 'PARTIAL_AVAILABILITY') {
+        bootStatusText.textContent = 'TwinCore running with partial availability.';
+      } else if (resolvedState === 'RECOVERABLE_ERROR') {
+        bootStatusText.textContent = 'Initialization error encountered.';
+      } else if (resolvedState === 'SESSION_EXPIRED') {
+        bootStatusText.textContent = 'Session expired. Sign-in required.';
+      }
+    }
+
+    // 2. Manage recovery / notification banner for interactive states
+    const banner = document.getElementById('app-recovery-banner');
     if (banner) {
-      if (appState === 'READY' || appState === 'NO_REPOSITORY' || appState === 'SELECT_REPOSITORY') {
+      if (resolvedState === 'READY' || resolvedState === 'NO_REPOSITORY' || resolvedState === 'INITIALIZING' || resolvedState === 'RESTORING_SESSION') {
         banner.style.display = 'none';
         banner.innerHTML = '';
-      } else if (appState === 'INVALID_REPOSITORY') {
+      } else if (resolvedState === 'PARTIAL_AVAILABILITY') {
         banner.style.display = 'block';
-        banner.className = 'rounded-xl border border-[#FECDD3] bg-[#FFF1F2] p-4 shadow-xs text-[#BE123C] flex items-center justify-between gap-4';
+        banner.className = 'rounded-xl border border-[#FED7AA] bg-[#FFFBEB] p-4 shadow-xs text-[#C2410C] flex items-center justify-between gap-4';
         banner.innerHTML = `
           <div class="flex items-center gap-3">
-            <span class="material-symbols-outlined text-[24px] text-[#E11D48]">warning</span>
+            <span class="material-symbols-outlined text-[24px] text-[#EA580C]">info</span>
             <div>
-              <h4 class="text-xs font-bold text-[#9F1239]">Repository Not Found</h4>
-              <p class="text-[11px] text-[#BE123C] mt-0.5">The repository "${escapeHtml(details?.repoId || '')}" could not be located or is no longer accessible.</p>
+              <h4 class="text-xs font-bold text-[#9A3412]">Partial Availability</h4>
+              <p class="text-[11px] text-[#C2410C] mt-0.5">${escapeHtml(details?.message || details?.error || 'Some workspace context or telemetry could not be loaded. Core functions remain available.')}</p>
+            </div>
+          </div>
+          <button onclick="window.TwinApp.refreshCurrentView ? window.TwinApp.refreshCurrentView() : window.TwinApp.refreshActiveView()" class="px-3 py-1.5 rounded-lg bg-white border border-[#FED7AA] text-[#9A3412] hover:bg-[#FEF3C7] text-xs font-semibold shadow-2xs shrink-0" type="button">
+            Retry Loading
+          </button>
+        `;
+      } else if (resolvedState === 'SESSION_EXPIRED') {
+        banner.style.display = 'block';
+        banner.className = 'rounded-xl border border-[#FED7AA] bg-[#FFFBEB] p-4 shadow-xs text-[#C2410C] flex items-center justify-between gap-4';
+        banner.innerHTML = `
+          <div class="flex items-center gap-3">
+            <span class="material-symbols-outlined text-[24px] text-[#EA580C]">lock_clock</span>
+            <div>
+              <h4 class="text-xs font-bold text-[#9A3412]">Session Expired</h4>
+              <p class="text-[11px] text-[#C2410C] mt-0.5">${escapeHtml(details?.message || 'Your authentication session has expired or is invalid. Please sign in again.')}</p>
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
-            <button onclick="window.TwinApp.startApplicationStateMachine()" class="px-3 py-1.5 rounded-lg bg-white border border-[#FECDD3] text-[#9F1239] hover:bg-[#FFE4E6] text-xs font-semibold shadow-2xs" type="button">
-              View Repositories
+            <button onclick="window.TwinApp.openAuthModal('signin')" class="px-3 py-1.5 rounded-lg bg-[#EA580C] hover:bg-[#C2410C] text-white text-xs font-semibold shadow-xs" type="button">
+              Sign In
             </button>
-            <button onclick="window.TwinApp.openConnectModal()" class="px-3 py-1.5 rounded-lg bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-semibold shadow-xs" type="button">
-              Connect New
+            <button onclick="window.TwinApp.startApplicationStateMachine()" class="px-3 py-1.5 rounded-lg bg-white border border-[#FED7AA] text-[#9A3412] hover:bg-[#FEF3C7] text-xs font-semibold shadow-2xs" type="button">
+              Continue as Guest
             </button>
           </div>
         `;
@@ -1570,19 +1731,19 @@
             Select Snapshot
           </button>
         `;
-      } else if (appState === 'LOAD_ERROR') {
+      } else if (resolvedState === 'RECOVERABLE_ERROR') {
         banner.style.display = 'block';
         banner.className = 'rounded-xl border border-[#FECDD3] bg-[#FFF1F2] p-4 shadow-xs text-[#BE123C] flex items-center justify-between gap-4';
         banner.innerHTML = `
           <div class="flex items-center gap-3">
             <span class="material-symbols-outlined text-[24px] text-[#E11D48]">error</span>
             <div>
-              <h4 class="text-xs font-bold text-[#9F1239]">Digital Twin Load Error</h4>
-              <p class="text-[11px] text-[#BE123C] mt-0.5">${escapeHtml(details?.error || 'A communication failure occurred while connecting to the backend.')}</p>
+              <h4 class="text-xs font-bold text-[#9F1239]">Workspace Initialization Error</h4>
+              <p class="text-[11px] text-[#BE123C] mt-0.5">${escapeHtml(details?.error || details?.message || 'A communication failure occurred while connecting to the backend.')}</p>
             </div>
           </div>
           <button onclick="window.TwinApp.startApplicationStateMachine()" class="px-3 py-1.5 rounded-lg bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-semibold shadow-xs shrink-0" type="button">
-            Retry
+            Retry Initialization
           </button>
         `;
       }
@@ -1601,30 +1762,32 @@
       }
     } catch (_) {}
     document.body.classList.remove('booting');
+
+    // Reliability guard: ensure an active panel is actually rendered visible to prevent white-screen
+    const visiblePanels = Array.from(document.querySelectorAll('.content-view-panel')).filter(p => p.style.display !== 'none');
+    if (visiblePanels.length === 0) {
+      const fallbackView = getInitialRequestedView();
+      switchPrimaryView(fallbackView);
+    }
+
     updateStateUI();
   }
 
   async function startApplicationStateMachine(preferredRepoId = null, preferredSnapId = null) {
     document.body.classList.add('booting');
-    setAppState('BOOT');
+    setAppState('INITIALIZING');
 
     try {
-      // Step 1: RESTORING_SESSION & AUTH CHECK
-      setAppState('AUTHENTICATION_CHECK');
+      // Step 1: RESTORING SESSION & AUTH CHECK
+      setAppState('RESTORING_SESSION');
       await checkAuthentication();
 
-      // If unauthenticated guest, clear any stale selected repo/snap from localStorage
-      if (!state.user) {
-        localStorage.removeItem('selected_repo_id');
-        localStorage.removeItem('selected_snapshot_id');
-      }
-
       const urlParams = new URLSearchParams(window.location.search);
-      const targetRepo = state.user ? (preferredRepoId || urlParams.get('repo') || localStorage.getItem('selected_repo_id')) : null;
-      const targetSnap = state.user ? (preferredSnapId || urlParams.get('snapshot') || localStorage.getItem('selected_snapshot_id')) : null;
+      const targetRepo = preferredRepoId || urlParams.get('repo') || localStorage.getItem('selected_repo_id');
+      const targetSnap = preferredSnapId || urlParams.get('snapshot') || localStorage.getItem('selected_snapshot_id');
 
-      // Step 2: LOAD_REPOSITORIES
-      setAppState('LOAD_REPOSITORIES');
+      // Step 2: LOADING PROJECT CONTEXT
+      setAppState('LOADING_PROJECT_CONTEXT');
       let loadedRepos = [];
       try {
         const res = await apiFetch('/repositories');
@@ -1635,23 +1798,13 @@
         }
       } catch (err) {
         console.error('State machine error loading repositories:', err);
-        setAppState('LOAD_ERROR', { error: err.message });
+        setAppState('RECOVERABLE_ERROR', { error: err.message });
         return;
       }
 
       const validRepos = loadedRepos.filter(r => r.environment !== 'TEST' && r.environment !== 'FIXTURE');
       state.repositories = validRepos;
       populateRepoSelect(validRepos);
-
-      if (!state.user) {
-        state.currentRepoId = null;
-        state.currentSnapshotId = null;
-        setAppState('NO_REPOSITORY');
-        populateSnapshotSelects([]);
-        updateSidebarRepoCard(null);
-        switchPrimaryView('overview');
-        return;
-      }
 
       if (validRepos.length === 0) {
         state.currentRepoId = null;
@@ -1663,41 +1816,38 @@
         return;
       }
 
-      // Step 3: VALIDATE_REPOSITORY
-      setAppState('VALIDATE_REPOSITORY');
+      // Step 3: Validate Repository Selection
+      let matched = null;
       if (targetRepo) {
-        const matched = validRepos.find(r => r.id === targetRepo);
-        if (matched) {
-          state.currentRepoId = matched.id;
-          localStorage.setItem('selected_repo_id', matched.id);
-          const repoSelect = document.getElementById('repo-select');
-          if (repoSelect) repoSelect.value = matched.id;
-          updateSidebarRepoCard(matched);
-        } else {
-          localStorage.removeItem('selected_repo_id');
-          state.currentRepoId = null;
-          state.currentSnapshotId = null;
-          setAppState('SELECT_REPOSITORY');
-          populateSnapshotSelects([]);
-          updateSidebarRepoCard(null);
-          switchPrimaryView('overview');
-          return;
-        }
+        matched = validRepos.find(r => r.id === targetRepo);
+      }
+      if (!matched && validRepos.length > 0) {
+        // Auto-select first available valid repository if none specified or previous not found
+        matched = validRepos[0];
+      }
+
+      if (matched) {
+        state.currentRepoId = matched.id;
+        localStorage.setItem('selected_repo_id', matched.id);
+        const repoSelect = document.getElementById('repo-select');
+        if (repoSelect) repoSelect.value = matched.id;
+        updateSidebarRepoCard(matched);
       } else {
+        localStorage.removeItem('selected_repo_id');
         state.currentRepoId = null;
         state.currentSnapshotId = null;
-        setAppState('SELECT_REPOSITORY');
+        setAppState('NO_REPOSITORY');
         populateSnapshotSelects([]);
         updateSidebarRepoCard(null);
         switchPrimaryView('overview');
         return;
       }
 
-      // Step 4: LOAD_SNAPSHOTS
+      // Step 4: LOAD SNAPSHOTS & REVISION CONTEXT
       await loadSnapshotsForCurrentRepo(targetSnap);
     } catch (fatalErr) {
       console.error('Fatal state machine error during boot:', fatalErr);
-      setAppState('LOAD_ERROR', { error: fatalErr.message });
+      setAppState('RECOVERABLE_ERROR', { error: fatalErr.message });
     } finally {
       await finishBoot();
     }
@@ -1734,34 +1884,35 @@
   }
 
   async function loadSnapshotsForCurrentRepo(targetSnap = null) {
-    setAppState('LOAD_SNAPSHOTS');
+    setAppState('LOADING_PROJECT_CONTEXT');
     const repoId = state.currentRepoId;
     if (!repoId) return;
 
     try {
-      const [snapRes, commitsRes] = await Promise.all([
-        apiFetch(`/repositories/${repoId}/graph/snapshots`),
-        apiFetch(`/repositories/${repoId}/commits`).catch(() => null),
-      ]);
+      const snapRes = await apiFetch(`/repositories/${repoId}/graph/snapshots`);
       if (!snapRes.ok) {
         throw new Error(`Failed to load snapshots for repository (HTTP ${snapRes.status})`);
       }
       state.snapshots = await snapRes.json();
-      if (commitsRes && commitsRes.ok) {
-        state.commitHistoryInfo = await commitsRes.json();
-      } else {
-        state.commitHistoryInfo = null;
-      }
     } catch (err) {
       console.error('State machine error loading snapshots:', err);
-      setAppState('LOAD_ERROR', { error: err.message });
+      setAppState('RECOVERABLE_ERROR', { error: err.message });
       return;
     }
 
     populateSnapshotSelects(state.snapshots, state.commitHistoryInfo);
 
-    // Step 6: VALIDATE_SNAPSHOT
-    setAppState('VALIDATE_SNAPSHOT');
+    // Fetch commit history in background non-blocking so UI rendering is not gated by Git CLI
+    apiFetch(`/repositories/${repoId}/commits`)
+      .then(async (commitsRes) => {
+        if (commitsRes && commitsRes.ok && state.currentRepoId === repoId) {
+          state.commitHistoryInfo = await commitsRes.json();
+          populateSnapshotSelects(state.snapshots, state.commitHistoryInfo);
+        }
+      })
+      .catch(() => {});
+
+    // Validate Snapshot
     const currentRepo = state.repositories.find(r => r.id === repoId);
 
     if (targetSnap) {
@@ -1792,18 +1943,19 @@
 
     configureDiffSelectors();
 
-    // Step 7: LOAD_APPLICATION_DATA
-    setAppState('LOAD_APPLICATION_DATA');
+    // Render Initial View
+    const targetView = getInitialRequestedView();
     try {
       if (state.currentSnapshotId) {
         loadFileTree();
       }
-      await refreshActiveView();
+      switchPrimaryView(targetView);
     } catch (e) {
-      console.warn('Non-fatal error refreshing active view on boot:', e);
+      console.warn('Non-fatal error switching view on boot:', e);
+      switchPrimaryView('overview');
     }
 
-    // Step 8: READY
+    // Workspace is ready
     setAppState('READY');
   }
 
@@ -1823,7 +1975,7 @@
       if (!el) return;
 
       if (metricState === 'LOADING') {
-        el.innerHTML = '<span class="text-xs font-semibold text-[#94A3B8] animate-pulse">LOADING</span>';
+        el.innerHTML = '<span class="inline-block w-8 h-5 bg-[#E2E8F0] rounded animate-pulse"></span>';
       } else if (metricState === 'READY') {
         let val = summary[c.key];
         if (val === undefined && c.fallbackKey) val = summary[c.fallbackKey];
@@ -1832,13 +1984,16 @@
         el.style.color = c.defaultColor;
       } else if (metricState === 'ZERO') {
         el.textContent = '0';
-        el.style.color = c.defaultColor;
-      } else if (metricState === 'BLOCKED') {
-        el.innerHTML = '<span class="text-xs font-bold text-[#94A3B8] tracking-wider">BLOCKED</span>';
+        el.style.color = '#64748B';
+      } else if (metricState === 'BLOCKED' || metricState === 'IDLE') {
+        el.textContent = '—';
+        el.style.color = '#94A3B8';
       } else if (metricState === 'ERROR') {
-        el.innerHTML = '<span class="text-xs font-bold text-[#EF4444] tracking-wider">ERROR</span>';
+        el.textContent = '—';
+        el.style.color = '#EF4444';
       } else if (metricState === 'UNKNOWN') {
-        el.innerHTML = '<span class="text-xs font-bold text-[#64748B] tracking-wider">UNKNOWN</span>';
+        el.textContent = '—';
+        el.style.color = '#94A3B8';
       }
     });
   }
@@ -1850,6 +2005,7 @@
     const anim3dBtn = document.getElementById('btn-impact-visualize-3d');
     const metaSpan = document.getElementById('impact-analysis-meta');
     const tree = document.getElementById('impact-paths-tree');
+    const lifecycleIcon = document.getElementById('impact-lifecycle-icon');
 
     if (!baseSelect || !targetSelect) return false;
 
@@ -1872,8 +2028,15 @@
         runBtn.disabled = true;
         runBtn.classList.add('opacity-50', 'cursor-not-allowed');
       }
-      setImpactMetricCardState('BLOCKED');
-      if (metaSpan) metaSpan.innerHTML = '<span style="color:#64748B;">Select Baseline and Target commits to compare.</span>';
+      setImpactMetricCardState('IDLE');
+      if (lifecycleIcon) {
+        lifecycleIcon.textContent = 'info';
+        lifecycleIcon.className = 'material-symbols-outlined text-[18px] text-[#64748B]';
+      }
+      if (metaSpan) metaSpan.innerHTML = 'Select Baseline and Target revisions above to evaluate differential change impact.';
+      if (tree) {
+        tree.innerHTML = '<div class="p-6 text-center text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl border border-dashed border-[#CBD5E1]">Select distinct Baseline and Target commits in the dropdowns above to trace causal blast radius.</div>';
+      }
       return false;
     }
 
@@ -1882,12 +2045,16 @@
         runBtn.disabled = true;
         runBtn.classList.add('opacity-50', 'cursor-not-allowed');
       }
-      setImpactMetricCardState('BLOCKED');
+      setImpactMetricCardState('IDLE');
+      if (lifecycleIcon) {
+        lifecycleIcon.textContent = 'warning';
+        lifecycleIcon.className = 'material-symbols-outlined text-[18px] text-[#D97706]';
+      }
       if (metaSpan) {
-        metaSpan.innerHTML = `<span style="color:#F59E0B; font-weight:600;">Baseline and Target refer to the same commit (${baseSha.slice(0, 7)}). Please select distinct commits.</span>`;
+        metaSpan.innerHTML = `<span style="color:#D97706; font-weight:600;">Baseline and Target refer to the same commit (${baseSha.slice(0, 7)}). Differential analysis requires two distinct commits.</span>`;
       }
       if (tree) {
-        tree.innerHTML = '<div class="p-6 text-center text-xs text-[#F59E0B] bg-[#FFFBEB] rounded-xl border border-dashed border-[#FDE68A]">Identical commits selected for Baseline and Target. Change Impact requires two distinct states.</div>';
+        tree.innerHTML = '<div class="p-6 text-center text-xs text-[#D97706] bg-[#FFFBEB] rounded-xl border border-dashed border-[#FDE68A]">Identical commits selected for Baseline and Target. Change Impact evaluates differences between two distinct states.</div>';
       }
       return false;
     }
@@ -1897,14 +2064,22 @@
       runBtn.disabled = false;
       runBtn.classList.remove('opacity-50', 'cursor-not-allowed');
     }
-    setImpactMetricCardState('ZERO');
+    setImpactMetricCardState('IDLE');
     const baseIndexed = baseOpt?.dataset.hasSnapshot === 'true';
     const targetIndexed = targetOpt?.dataset.hasSnapshot === 'true';
     let readyMsg = `Ready to analyze impact: <strong>${baseSha.slice(0, 7)}</strong> → <strong>${targetSha.slice(0, 7)}</strong>`;
     if (!baseIndexed || !targetIndexed) {
-      readyMsg += ` <span style="color:#38BDF8;">(Will auto-reconstruct unindexed historical commit from source tree)</span>`;
+      readyMsg += ` <span style="color:#0284C7;">(Will auto-reconstruct unindexed historical commit from source tree)</span>`;
+    }
+    readyMsg += `. Click "Execute Impact" above to trace blast radius.`;
+    if (lifecycleIcon) {
+      lifecycleIcon.textContent = 'play_circle';
+      lifecycleIcon.className = 'material-symbols-outlined text-[18px] text-[#0071e3]';
     }
     if (metaSpan) metaSpan.innerHTML = readyMsg;
+    if (tree) {
+      tree.innerHTML = `<div class="p-6 text-center text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl border border-dashed border-[#CBD5E1]">Pairwise revisions configured (<strong>${baseSha.slice(0, 7)}</strong> → <strong>${targetSha.slice(0, 7)}</strong>). Click "Execute Impact" above to compute causal propagation paths.</div>`;
+    }
     return true;
   }
 
@@ -2093,11 +2268,13 @@
 
   async function selectRepository(repoId) {
     if (!repoId) return;
+    state.requestEpoch = (state.requestEpoch || 0) + 1;
     state.currentRepoId = repoId;
     localStorage.setItem('selected_repo_id', repoId);
     localStorage.removeItem('selected_snapshot_id');
     state.currentSnapshotId = null;
     state.diffSnapshotId = null;
+    state.discoveryAssessmentResult = null;
     const matched = state.repositories.find(r => r.id === repoId);
     if (matched) {
       updateSidebarRepoCard(matched);
@@ -2112,12 +2289,44 @@
 
   async function selectSnapshot(snapId) {
     if (!snapId) return;
+    state.requestEpoch = (state.requestEpoch || 0) + 1;
     state.currentSnapshotId = snapId;
     localStorage.setItem('selected_snapshot_id', snapId);
+    state.discoveryAssessmentResult = null;
     const snapSelect = document.getElementById('snapshot-select');
     if (snapSelect) snapSelect.value = snapId;
     loadFileTree();
     await refreshActiveView();
+  }
+
+  function openDisconnectModal() {
+    if (!state.currentRepoId) {
+      showNotification('No repository currently connected.', 'warning');
+      return;
+    }
+    const repo = state.repositories.find(r => r.id === state.currentRepoId);
+    const repoName = repo ? (repo.name || repo.id) : state.currentRepoId;
+    const nameEl = document.getElementById('disconnect-repo-display-name');
+    if (nameEl) nameEl.textContent = repoName;
+    openModal('modal-disconnect-repo');
+  }
+
+  async function confirmDisconnectRepository() {
+    const confirmBtn = document.getElementById('modal-disconnect-confirm-btn');
+    const originalText = confirmBtn ? confirmBtn.innerHTML : '';
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<span class="material-symbols-outlined text-[15px] animate-spin">sync</span> Disconnecting...';
+    }
+    try {
+      await disconnectRepository();
+    } finally {
+      closeModal('modal-disconnect-repo');
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = originalText;
+      }
+    }
   }
 
   async function disconnectRepository() {
@@ -2312,14 +2521,29 @@
   // --- 4. Overview View Data Loader (Engineering Command Center) ---
   async function loadOverviewData() {
     if (!state.currentRepoId) return;
+    const reqEpoch = state.requestEpoch;
+    const reqRepoId = state.currentRepoId;
 
     try {
       let url = `/repositories/${state.currentRepoId}/overview`;
       if (state.currentSnapshotId) url += `?snapshot_id=${state.currentSnapshotId}`;
 
       const res = await fetch(url);
-      if (!res.ok) return;
+      if (!res.ok) {
+        const flowList = document.getElementById('ov-flow-nodes-list');
+        if (flowList) {
+          flowList.innerHTML = `
+            <div class="w-full p-4 text-center text-xs text-[#DC2626] bg-[#FEF2F2] border border-[#FECACA] rounded-xl space-y-2">
+              <div class="font-bold flex items-center justify-center gap-1.5"><span class="material-symbols-outlined text-[16px]">error</span> Architecture Overview Unavailable</div>
+              <p class="text-[#991B1B]">Could not fetch model overview (HTTP ${res.status}).</p>
+              <button class="px-3.5 py-1.5 rounded-lg bg-[#DC2626] text-white text-[11px] font-semibold hover:bg-[#B91C1C] transition-colors" onclick="window.TwinApp.loadOverviewData()">Retry</button>
+            </div>`;
+        }
+        return;
+      }
+      if (reqEpoch !== state.requestEpoch || reqRepoId !== state.currentRepoId) return;
       const data = await res.json();
+      if (reqEpoch !== state.requestEpoch || reqRepoId !== state.currentRepoId) return;
       state.currentRepoData = data;
 
       // Update Global Twin Context Strip
@@ -2389,6 +2613,7 @@
       const pkgGrid = document.getElementById('ov-packages-grid');
       if (pkgGrid) {
         pkgGrid.innerHTML = '';
+        const rawPkgs = data.architecture_packages || [];
         if (rawPkgs.length === 0) {
           if ((m.files || 0) > 0 && (m.artifacts || 0) === 0) {
             pkgGrid.innerHTML = `
@@ -2436,8 +2661,31 @@
       const flowList = document.getElementById('ov-flow-nodes-list');
       if (flowList) {
         const rawPkgs = data.architecture_packages || [];
-        if (rawPkgs.length === 0) {
-          flowList.innerHTML = '<div class="w-full text-center py-6 text-xs text-[#64748B]">No architectural packages detected in this snapshot.</div>';
+        const isDocRepo = (m.files || 0) > 0 && (m.artifacts || 0) === 0;
+        const isRelsPending = (m.artifacts || 0) > 0 && (m.relationships || 0) === 0;
+
+        if (isDocRepo) {
+          flowList.innerHTML = `
+            <div class="w-full p-4 text-center text-xs text-[#0369A1] bg-[#F0F9FF] border border-[#BAE6FD] rounded-xl space-y-1">
+              <div class="font-bold flex items-center justify-center gap-1.5"><span class="material-symbols-outlined text-[16px]">info</span> Documentation Repository Detected</div>
+              <p class="text-[#64748B]">This repository contains ${m.files} indexed files without programming language AST symbols. Topological flow projection is not applicable.</p>
+            </div>`;
+        } else if (isRelsPending) {
+          flowList.innerHTML = `
+            <div class="w-full p-4 text-center text-xs text-[#92400E] bg-[#FFFBEB] border border-[#FDE68A] rounded-xl space-y-2">
+              <div class="font-bold flex items-center justify-center gap-1.5"><span class="material-symbols-outlined text-[16px]">pending</span> Structural Symbols Discovered (${m.artifacts} entities)</div>
+              <p class="text-[#78350F]">AST symbols have been extracted, but call & import relationships have not been indexed yet (0 relationships). Run Technical Assessment in Project Health or inspect Components to explore symbols.</p>
+              <div class="flex items-center justify-center gap-2 pt-1">
+                <button class="px-3 py-1.5 rounded-lg bg-[#0F172A] text-white text-[11px] font-semibold hover:bg-[#1E293B] transition-colors" onclick="window.TwinApp.switchPrimaryView('discovery')">Run Technical Assessment →</button>
+                <button class="px-3 py-1.5 rounded-lg bg-white border border-[#CBD5E1] text-[#0F172A] text-[11px] font-semibold hover:bg-[#F8FAFC] transition-colors" onclick="window.TwinApp.switchPrimaryView('components')">View Catalog</button>
+              </div>
+            </div>`;
+        } else if (rawPkgs.length === 0) {
+          flowList.innerHTML = `
+            <div class="w-full text-center py-6 text-xs text-[#64748B] bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl space-y-2">
+              <p>No macro architectural packages detected in this snapshot.</p>
+              <button class="px-3 py-1.5 rounded-lg bg-[#0071e3] text-white text-[11px] font-semibold hover:bg-[#005bb5] transition-colors" onclick="window.TwinApp.switchPrimaryView('components')">Inspect Components</button>
+            </div>`;
         } else {
           const topPkgs = rawPkgs.slice(0, 5);
           const icons = ['devices', 'router', 'receipt_long', 'memory', 'database'];
@@ -2589,11 +2837,77 @@
       }
 
       // Compact Twin Controls Metrics
-      // Compact Twin Controls Metrics
+      const isDocRepo = (m.files || 0) > 0 && (m.artifacts || 0) === 0;
+      const isRelsPending = (m.artifacts || 0) > 0 && (m.relationships || 0) === 0;
+
       const causalCovEl = document.getElementById('ov-causal-coverage');
       if (causalCovEl) {
-        causalCovEl.textContent = `${m.relationships || 0} Indexed`;
+        if ((m.relationships || 0) > 0) {
+          causalCovEl.textContent = `${(m.relationships).toLocaleString()} Indexed`;
+          causalCovEl.className = 'font-semibold text-[#059669] bg-[#ECFDF5] px-2 py-0.5 rounded-full border border-[#A7F3D0]/60';
+        } else if (isDocRepo) {
+          causalCovEl.textContent = '0 (Non-Code)';
+          causalCovEl.className = 'font-semibold text-[#64748B] bg-[#F1F5F9] px-2 py-0.5 rounded-full border border-[#CBD5E1]';
+        } else {
+          causalCovEl.textContent = '0 Indexed (Pending)';
+          causalCovEl.className = 'font-semibold text-[#D97706] bg-[#FFFBEB] px-2 py-0.5 rounded-full border border-[#FDE68A]';
+        }
       }
+
+      const graphStatusEl = document.getElementById('ov-graph-status');
+      const graphStatusIcon = document.getElementById('ov-graph-status-icon');
+      if (graphStatusEl) {
+        if (isDocRepo) {
+          graphStatusEl.textContent = 'Documentation (no code AST)';
+          if (graphStatusIcon) {
+            graphStatusIcon.textContent = 'description';
+            graphStatusIcon.className = 'material-symbols-outlined text-[16px] text-[#64748B]';
+          }
+        } else if (isRelsPending) {
+          graphStatusEl.textContent = `Symbols only (${m.artifacts || 0}) · 0 relations`;
+          if (graphStatusIcon) {
+            graphStatusIcon.textContent = 'pending';
+            graphStatusIcon.className = 'material-symbols-outlined text-[16px] text-[#D97706]';
+          }
+        } else if ((m.relationships || 0) > 0) {
+          graphStatusEl.textContent = `Full topology indexed (${(m.relationships).toLocaleString()} relations)`;
+          if (graphStatusIcon) {
+            graphStatusIcon.textContent = 'check_circle';
+            graphStatusIcon.className = 'material-symbols-outlined text-[16px] text-[#059669]';
+          }
+        } else if (!data.has_snapshots) {
+          graphStatusEl.textContent = 'No snapshot generated yet';
+          if (graphStatusIcon) {
+            graphStatusIcon.textContent = 'warning';
+            graphStatusIcon.className = 'material-symbols-outlined text-[16px] text-[#DC2626]';
+          }
+        } else {
+          graphStatusEl.textContent = 'Source model synchronized';
+          if (graphStatusIcon) {
+            graphStatusIcon.textContent = 'sync';
+            graphStatusIcon.className = 'material-symbols-outlined text-[16px] text-[#4F46E5]';
+          }
+        }
+      }
+
+      const nextTitle = document.getElementById('ov-next-action-title');
+      const nextDesc = document.getElementById('ov-next-action-desc');
+      if (nextTitle && nextDesc) {
+        if (isDocRepo) {
+          nextTitle.textContent = 'Non-Code Repository';
+          nextDesc.textContent = 'Contains documentation or configuration files without code AST symbols.';
+        } else if (isRelsPending) {
+          nextTitle.textContent = 'Run Technical Assessment';
+          nextDesc.textContent = 'Index call graphs, dependency trees, and test coverage in Project Health.';
+        } else if ((m.relationships || 0) > 0) {
+          nextTitle.textContent = 'Ready for Blast Radius';
+          nextDesc.textContent = 'Run Change Impact or What-If simulation to predict engineering changes.';
+        } else {
+          nextTitle.textContent = 'Model Synchronized';
+          nextDesc.textContent = 'Explore Components catalog or inspect Architecture Graph.';
+        }
+      }
+
       const driftCountEl = document.getElementById('ov-drift-count');
       if (driftCountEl) {
         if (data.violations && data.violations.length > 0) {
@@ -2707,6 +3021,15 @@
 
     } catch (e) {
       console.error('Error loading overview data', e);
+      const flowList = document.getElementById('ov-flow-nodes-list');
+      if (flowList) {
+        flowList.innerHTML = `
+          <div class="w-full p-4 text-center text-xs text-[#DC2626] bg-[#FEF2F2] border border-[#FECACA] rounded-xl space-y-2">
+            <div class="font-bold flex items-center justify-center gap-1.5"><span class="material-symbols-outlined text-[16px]">error</span> Topology Loader Error</div>
+            <p class="text-[#991B1B]">${escapeHtml(e.message || 'Error communicating with Twin backend')}</p>
+            <button class="px-3.5 py-1.5 rounded-lg bg-[#DC2626] text-white text-[11px] font-semibold hover:bg-[#B91C1C] transition-colors" onclick="window.TwinApp.loadOverviewData()">Retry</button>
+          </div>`;
+      }
     }
   }
 
@@ -4534,6 +4857,7 @@
 
     state.impactAnalysisSeq = (state.impactAnalysisSeq || 0) + 1;
     const currentSeq = state.impactAnalysisSeq;
+    const lifecycleIcon = document.getElementById('impact-lifecycle-icon');
 
     if (impactContainer) impactContainer.style.display = 'block';
     if (runBtn) {
@@ -4542,11 +4866,18 @@
       runBtn.innerHTML = '<span class="material-symbols-outlined text-[15px] animate-spin">refresh</span><span>Analyzing...</span>';
     }
     setImpactMetricCardState('LOADING');
+    if (lifecycleIcon) {
+      lifecycleIcon.textContent = 'sync';
+      lifecycleIcon.className = 'material-symbols-outlined text-[18px] text-[#0071e3] animate-spin';
+    }
     if (metaSpan) {
-      metaSpan.innerHTML = `<span style="color:#a78bfa;">Computing deterministic Change Impact & Blast Radius (depth ≤ ${maxDepth})...</span>`;
+      metaSpan.innerHTML = `Computing deterministic Change Impact & Blast Radius (depth ≤ ${maxDepth})...`;
     }
     if (diffTbody) {
       diffTbody.innerHTML = '<tr><td colspan="5" class="td-loading">⚡ Running deterministic Change Impact & Blast Radius analysis...</td></tr>';
+    }
+    if (tree) {
+      tree.innerHTML = '<div class="p-6 text-center text-xs text-[#0284C7] bg-[#F0F9FF] rounded-xl border border-dashed border-[#BAE6FD]"><div class="flex items-center justify-center gap-2 font-semibold"><span class="material-symbols-outlined text-[16px] animate-spin">sync</span> Tracing dependency graph propagation paths...</div></div>';
     }
 
     try {
@@ -4555,7 +4886,7 @@
       let resolvedTargetId = targetOpt?.dataset.snapshotId || targetSelect.value;
 
       if (!resolvedBaseId || baseOpt?.dataset.hasSnapshot === 'false') {
-        if (metaSpan) metaSpan.innerHTML = `<span style="color:#38bdf8;">Reconstructing historical Twin snapshot for commit ${baseSha.slice(0, 7)} from Git source tree...</span>`;
+        if (metaSpan) metaSpan.innerHTML = `Reconstructing historical Twin snapshot for commit ${baseSha.slice(0, 7)} from Git source tree...`;
         const reconRes = await fetch(`/repositories/${state.currentRepoId}/snapshots/reconstruct`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -4576,7 +4907,7 @@
       }
 
       if (!resolvedTargetId || targetOpt?.dataset.hasSnapshot === 'false') {
-        if (metaSpan) metaSpan.innerHTML = `<span style="color:#38bdf8;">Reconstructing historical Twin snapshot for commit ${targetSha.slice(0, 7)} from Git source tree...</span>`;
+        if (metaSpan) metaSpan.innerHTML = `Reconstructing historical Twin snapshot for commit ${targetSha.slice(0, 7)} from Git source tree...`;
         const reconRes = await fetch(`/repositories/${state.currentRepoId}/snapshots/reconstruct`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -4597,6 +4928,10 @@
       }
 
       // Step B: Execute deterministic Change Impact analysis
+      if (metaSpan) {
+        metaSpan.innerHTML = `Calculating transitive dependency propagation (depth ≤ ${maxDepth})...`;
+      }
+
       const res = await fetch(`/repositories/${state.currentRepoId}/impact-analysis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4622,26 +4957,60 @@
       currentImpactAnalysisResult = data;
 
       if (data.status === 'NOT_READY') {
-        setImpactMetricCardState('BLOCKED');
+        setImpactMetricCardState('IDLE');
         if (anim3dBtn) {
           anim3dBtn.disabled = true;
           anim3dBtn.classList.add('opacity-50', 'cursor-not-allowed');
         }
+        if (lifecycleIcon) {
+          lifecycleIcon.textContent = 'info';
+          lifecycleIcon.className = 'material-symbols-outlined text-[18px] text-[#D97706]';
+        }
         if (metaSpan) {
-          metaSpan.innerHTML = `Status: <strong style="color:#f59e0b;">NOT_READY</strong> | ${escapeHtml(data.message || 'Pairwise Change Impact requires two distinct snapshots.')}`;
+          metaSpan.innerHTML = `Status: <strong style="color:#D97706;">NOT_READY</strong> | ${escapeHtml(data.message || 'Pairwise Change Impact requires two distinct snapshots.')}`;
         }
         if (diffTbody) {
-          diffTbody.innerHTML = `<tr><td colspan="5" class="td-empty" style="color:#f59e0b;font-weight:600;">⚠ NOT_READY: ${escapeHtml(data.message || 'No change detected between selected snapshots.')}</td></tr>`;
+          diffTbody.innerHTML = `<tr><td colspan="5" class="td-empty" style="color:#D97706;font-weight:600;">⚠ NOT_READY: ${escapeHtml(data.message || 'No change detected between selected snapshots.')}</td></tr>`;
+        }
+        if (tree) {
+          tree.innerHTML = `<div class="p-6 text-center text-xs text-[#D97706] bg-[#FFFBEB] rounded-xl border border-dashed border-[#FDE68A]">⚠ NOT_READY: ${escapeHtml(data.message || 'No change detected between selected snapshots.')}</div>`;
         }
         return;
       }
 
       // 1. Update Metrics
       const s = data.summary || {};
-      setImpactMetricCardState('READY', s);
+      const changedCount = s.changed ?? 0;
+      const affectedCount = s.unique_affected ?? s.directly_affected ?? 0;
 
-      if (metaSpan) {
-        metaSpan.innerHTML = `Analysis ID: <strong style="color:var(--text-primary);">${data.analysis_id}</strong> | Execution Time: <strong>${data.execution_time_ms} ms</strong> | Status: <strong style="color:#10b981;">COMPLETED</strong> | Propagation Depth: <strong>${s.max_propagation_depth || 0}</strong>`;
+      if (changedCount === 0 && affectedCount === 0) {
+        // Verified zero downstream impact
+        setImpactMetricCardState('ZERO');
+        if (lifecycleIcon) {
+          lifecycleIcon.textContent = 'verified';
+          lifecycleIcon.className = 'material-symbols-outlined text-[18px] text-[#059669]';
+        }
+        if (metaSpan) {
+          metaSpan.innerHTML = `Analysis ID: <strong>${data.analysis_id}</strong> | Status: <strong style="color:#059669;">VERIFIED ZERO IMPACT</strong> | Execution Time: <strong>${data.execution_time_ms} ms</strong> | Propagation Depth: <strong>${s.max_propagation_depth || 0}</strong>`;
+        }
+        if (tree) {
+          tree.innerHTML = `
+            <div class="p-6 text-center text-xs text-[#059669] bg-[#ECFDF5] rounded-xl border border-dashed border-[#A7F3D0] space-y-1">
+              <div class="font-bold flex items-center justify-center gap-1.5"><span class="material-symbols-outlined text-[16px]">check_circle</span> Clean Isolation Verified</div>
+              <p>Differential comparison verified across revisions. Zero breaking structural dependencies or downstream callers impacted.</p>
+            </div>`;
+        }
+      } else {
+        setImpactMetricCardState('READY', s);
+        if (lifecycleIcon) {
+          lifecycleIcon.textContent = 'check_circle';
+          lifecycleIcon.className = 'material-symbols-outlined text-[18px] text-[#059669]';
+        }
+        if (metaSpan) {
+          metaSpan.innerHTML = `Analysis ID: <strong>${data.analysis_id}</strong> | Status: <strong style="color:#059669;">COMPLETED</strong> | Execution Time: <strong>${data.execution_time_ms} ms</strong> | Propagation Depth: <strong>${s.max_propagation_depth || 0}</strong>`;
+        }
+        // Render Causal Propagation Tree
+        renderCausalPropagationTree(data);
       }
 
       // Enable 3D Animation button
@@ -4654,9 +5023,6 @@
 
       // 2. Render Diff Table
       renderImpactDiffTable(data.changes || []);
-
-      // 3. Render Causal Propagation Tree
-      renderCausalPropagationTree(data);
 
       // 4. Render Evidence & Findings Table
       renderImpactFindingsTable(data.findings || []);
@@ -4673,14 +5039,23 @@
         anim3dBtn.disabled = true;
         anim3dBtn.classList.add('opacity-50', 'cursor-not-allowed');
       }
+      if (lifecycleIcon) {
+        lifecycleIcon.textContent = 'error';
+        lifecycleIcon.className = 'material-symbols-outlined text-[18px] text-[#DC2626]';
+      }
       if (metaSpan) {
-        metaSpan.innerHTML = `<span style="color:#ef4444; font-weight:600;">Error: ${escapeHtml(err.message)}</span>`;
+        metaSpan.innerHTML = `<span style="color:#DC2626; font-weight:600;">Analysis Failed: ${escapeHtml(err.message)}</span>`;
       }
       if (diffTbody) {
-        diffTbody.innerHTML = `<tr><td colspan="5" class="td-empty" style="color:#ef4444;">Analysis failed: ${escapeHtml(err.message)}</td></tr>`;
+        diffTbody.innerHTML = `<tr><td colspan="5" class="td-empty" style="color:#DC2626;">Analysis failed: ${escapeHtml(err.message)}</td></tr>`;
       }
       if (tree) {
-        tree.innerHTML = `<div class="p-6 text-center text-xs text-[#EF4444] bg-[#FEF2F2] rounded-xl border border-dashed border-[#FECACA]">Analysis failed: ${escapeHtml(err.message)}</div>`;
+        tree.innerHTML = `
+          <div class="p-6 text-center text-xs text-[#DC2626] bg-[#FEF2F2] rounded-xl border border-dashed border-[#FECACA] space-y-2">
+            <div class="font-bold flex items-center justify-center gap-1.5"><span class="material-symbols-outlined text-[16px]">error</span> Change Impact Analysis Failed</div>
+            <p class="text-[#991B1B]">${escapeHtml(err.message)}</p>
+            <button class="px-3.5 py-1.5 rounded-lg bg-[#DC2626] text-white font-semibold text-xs hover:bg-[#B91C1C] transition-colors" onclick="window.TwinApp.executeChangeImpactAnalysis()">Retry Analysis</button>
+          </div>`;
       }
     } finally {
       if (runBtn) {
@@ -8361,6 +8736,21 @@
   let candidateSearchTimer = null;
 
   function initSimulationHandlers() {
+    // Guided Archetype scenario cards
+    const archetypeCards = document.querySelectorAll('.sim-archetype-card');
+    archetypeCards.forEach(card => {
+      card.addEventListener('click', () => {
+        archetypeCards.forEach(c => {
+          c.classList.remove('active', 'border-[#0071e3]', 'bg-[#EFF6FF]');
+          c.classList.add('border-[#E2E8F0]', 'bg-[#F8FAFC]');
+        });
+        card.classList.add('active', 'border-[#0071e3]', 'bg-[#EFF6FF]');
+        card.classList.remove('border-[#E2E8F0]', 'bg-[#F8FAFC]');
+        currentSimulationType = card.dataset.type;
+        updateSimulationFormFields();
+      });
+    });
+
     // Mutation type override buttons
     const typeButtons = document.querySelectorAll('.sim-type-btn');
     typeButtons.forEach(btn => {
@@ -8399,9 +8789,14 @@
     // Clear resolved target button
     document.getElementById('sim-clear-target-btn')?.addEventListener('click', () => {
       state.simResolvedTarget = null;
-      document.getElementById('sim-resolved-target-badge')?.classList.add('hidden');
+      const badge = document.getElementById('sim-resolved-target-badge');
+      if (badge) {
+        badge.style.display = 'none';
+        badge.classList.add('hidden');
+      }
       const targetInput = document.getElementById('input-sim-target');
       if (targetInput) targetInput.value = '';
+      hideTargetSuggestions();
       showNotification('Target entity selection cleared.', 'info');
     });
 
@@ -8412,10 +8807,25 @@
         const val = e.target.value.trim();
         if (candidateSearchTimer) clearTimeout(candidateSearchTimer);
         if (val.length >= 2 && state.currentRepoId) {
-          candidateSearchTimer = setTimeout(() => searchTargetCandidates(val), 300);
+          candidateSearchTimer = setTimeout(() => searchTargetCandidates(val), 250);
+        } else {
+          hideTargetSuggestions();
+        }
+      });
+      targetInput.addEventListener('focus', () => {
+        const val = targetInput.value.trim();
+        if (val.length >= 2 && state.currentRepoId) {
+          searchTargetCandidates(val);
         }
       });
     }
+
+    // Close suggestions on outside click
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#input-sim-target') && !e.target.closest('#sim-target-suggestions')) {
+        hideTargetSuggestions();
+      }
+    });
 
     // Run Orchestrated Simulation button
     const runBtn = document.getElementById('btn-run-simulation');
@@ -8436,20 +8846,130 @@
     }
   }
 
+  function hideTargetSuggestions() {
+    const suggestions = document.getElementById('sim-target-suggestions');
+    if (suggestions) {
+      suggestions.classList.add('hidden');
+      suggestions.style.display = 'none';
+      suggestions.innerHTML = '';
+    }
+  }
+
   async function searchTargetCandidates(query) {
     if (!state.currentRepoId) return;
+    const lowerQuery = query.toLowerCase();
+    const candidateMap = new Map();
+
+    // 1. Search local AST nodes
+    if (state.nodes && state.nodes.length > 0) {
+      for (const node of state.nodes) {
+        const name = node.name || node.label || node.id || '';
+        const qName = node.qualified_name || '';
+        if (name.toLowerCase().includes(lowerQuery) || qName.toLowerCase().includes(lowerQuery)) {
+          candidateMap.set(name, {
+            id: node.id || name,
+            name: name,
+            qualified_name: qName,
+            location: node.location || node.file_path || '',
+            artifact_type: node.type || node.kind || 'NODE',
+          });
+          if (candidateMap.size >= 8) break;
+        }
+      }
+    }
+
+    // 2. Search local components
+    if (state.componentsList && state.componentsList.length > 0) {
+      for (const comp of state.componentsList) {
+        const name = comp.name || comp.id || '';
+        if (name.toLowerCase().includes(lowerQuery) && !candidateMap.has(name)) {
+          candidateMap.set(name, {
+            id: comp.id || name,
+            name: name,
+            qualified_name: comp.file_path || '',
+            location: comp.file_path || '',
+            artifact_type: comp.type || 'COMPONENT',
+          });
+          if (candidateMap.size >= 12) break;
+        }
+      }
+    }
+
+    // 3. Fetch server candidates
     try {
       const baseSnap = state.currentSnapshotId || '';
       const res = await fetch(`/repositories/${state.currentRepoId}/scenarios/target-candidates?q=${encodeURIComponent(query)}&base_snapshot_id=${encodeURIComponent(baseSnap)}`);
       if (res.ok) {
-        const candidates = await res.json();
-        if (candidates.length > 0) {
-          renderCandidateList(candidates, 'Select matching entity from knowledge graph:');
+        const serverCandidates = await res.json();
+        if (Array.isArray(serverCandidates)) {
+          for (const sc of serverCandidates) {
+            const name = sc.name || sc.id;
+            if (name && !candidateMap.has(name)) {
+              candidateMap.set(name, sc);
+            }
+          }
         }
       }
-    } catch (err) {
-      console.warn('Candidate search error:', err);
+    } catch (_) {}
+
+    const candidates = Array.from(candidateMap.values()).slice(0, 8);
+    if (candidates.length > 0) {
+      renderTargetSuggestions(candidates);
+    } else {
+      hideTargetSuggestions();
     }
+  }
+
+  function renderTargetSuggestions(candidates) {
+    const suggestions = document.getElementById('sim-target-suggestions');
+    if (!suggestions) return;
+
+    suggestions.innerHTML = candidates.map(c => `
+      <div class="px-3 py-2 hover:bg-[#EFF6FF] cursor-pointer border-b border-[#F1F5F9] last:border-b-0 flex items-center justify-between gap-2 sim-suggestion-item" data-target="${escapeHtml(c.name || c.id)}">
+        <div class="min-w-0">
+          <div class="text-xs font-bold text-[#0F172A] truncate font-mono">${escapeHtml(c.name || c.id)}</div>
+          <div class="text-[10px] text-[#64748B] truncate">${escapeHtml(c.location || c.qualified_name || '')}</div>
+        </div>
+        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-[#F1F5F9] text-[#475569] shrink-0 border border-[#CBD5E1]">
+          ${escapeHtml(c.artifact_type || 'ENTITY')}
+        </span>
+      </div>
+    `).join('');
+
+    suggestions.classList.remove('hidden');
+    suggestions.style.display = 'block';
+
+    suggestions.querySelectorAll('.sim-suggestion-item').forEach(item => {
+      item.onclick = (e) => {
+        e.stopPropagation();
+        const targetVal = item.dataset.target;
+        selectResolvedTarget(targetVal);
+      };
+    });
+  }
+
+  function selectResolvedTarget(targetVal) {
+    state.simResolvedTarget = targetVal;
+    hideTargetSuggestions();
+
+    const card = document.getElementById('sim-ambiguity-card');
+    if (card) {
+      card.style.display = 'none';
+      card.classList.add('hidden');
+    }
+
+    const badge = document.getElementById('sim-resolved-target-badge');
+    const badgeName = document.getElementById('sim-resolved-target-name');
+    if (badge && badgeName) {
+      badge.style.display = 'block';
+      badge.classList.remove('hidden');
+      badgeName.textContent = targetVal;
+    }
+
+    const targetInput = document.getElementById('input-sim-target');
+    if (targetInput) targetInput.value = targetVal;
+
+    showNotification(`Selected target entity: '${targetVal}'`, 'success');
   }
 
   async function planScenarioFromNL(queryText) {
@@ -8503,14 +9023,7 @@
     if (plan.status === 'AMBIGUOUS' && (plan.candidate_entities || []).length > 0) {
       renderCandidateList(plan.candidate_entities, plan.ambiguity_explanation || 'Multiple matching entities found. Select target:');
     } else if (resolvedTarget) {
-      state.simResolvedTarget = resolvedTarget;
-
-      if (card) card.classList.add('hidden');
-      if (badge && badgeName) {
-        badge.classList.remove('hidden');
-        badgeName.textContent = resolvedTarget;
-      }
-      if (targetInput) targetInput.value = resolvedTarget;
+      selectResolvedTarget(resolvedTarget);
 
       // Sync inferred mutation type
       if (plan.inferred_mutation_type) {
@@ -8528,8 +9041,8 @@
 
       showNotification(`Target resolved: '${resolvedTarget}' (${plan.analysis_objective || 'Ready'})`, 'success');
     } else {
-      if (card) card.classList.add('hidden');
-      if (badge) badge.classList.add('hidden');
+      if (card) { card.style.display = 'none'; card.classList.add('hidden'); }
+      if (badge) { badge.style.display = 'none'; badge.classList.add('hidden'); }
       const msg = plan.ambiguity_explanation || (plan.can_execute === false ? 'No matching target entity found in Twin snapshot.' : `Scenario planned: ${plan.analysis_objective || 'Ready'}`);
       showNotification(msg, plan.can_execute === false ? 'warning' : 'info');
     }
@@ -8537,41 +9050,31 @@
 
   function renderCandidateList(candidates, title) {
     const card = document.getElementById('sim-ambiguity-card');
-    const list = document.getElementById('sim-candidate-list');
+    const list = document.getElementById('sim-ambiguity-candidates-list') || document.getElementById('sim-candidate-list');
     if (!card || !list) return;
 
     card.classList.remove('hidden');
-    const titleElem = card.querySelector('div.text-\\[10px\\]');
+    card.style.display = 'block';
+    const titleElem = card.querySelector('div.text-\\[10px\\]') || card.querySelector('div.text-xs');
     if (titleElem && title) titleElem.textContent = title;
 
     list.innerHTML = candidates.slice(0, 10).map(c => `
-      <button class="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-[#CBD5E1] hover:border-[#0071E3] hover:bg-[#EFF6FF] flex items-center justify-between gap-2 transition-colors sim-candidate-btn" data-target="${escapeHtml(c.name || c.id)}">
+      <button type="button" class="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-[#CBD5E1] hover:border-[#0071E3] hover:bg-[#EFF6FF] flex items-center justify-between gap-2 transition-colors sim-candidate-btn" data-target="${escapeHtml(c.name || c.id)}">
         <div class="min-w-0">
           <div class="text-xs font-bold text-[#0F172A] truncate">${escapeHtml(c.name || c.id)}</div>
           <div class="text-[10px] text-[#64748B] font-mono truncate">${escapeHtml(c.location || c.qualified_name || '')}</div>
         </div>
         <span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-[#F1F5F9] text-[#475569] shrink-0 border border-[#E2E8F0]">
-          ${c.artifact_type || 'ARTIFACT'}
+          ${escapeHtml(c.artifact_type || 'ARTIFACT')}
         </span>
       </button>
     `).join('');
 
     list.querySelectorAll('.sim-candidate-btn').forEach(btn => {
-      btn.onclick = () => {
+      btn.onclick = (e) => {
+        e.preventDefault();
         const targetVal = btn.dataset.target;
-        state.simResolvedTarget = targetVal;
-
-        card.classList.add('hidden');
-        const badge = document.getElementById('sim-resolved-target-badge');
-        const badgeName = document.getElementById('sim-resolved-target-name');
-        if (badge && badgeName) {
-          badge.classList.remove('hidden');
-          badgeName.textContent = targetVal;
-        }
-        const targetInput = document.getElementById('input-sim-target');
-        if (targetInput) targetInput.value = targetVal;
-
-        showNotification(`Selected entity: '${targetVal}'`, 'info');
+        selectResolvedTarget(targetVal);
       };
     });
   }
@@ -8698,7 +9201,12 @@
 
     const nlQuery = document.getElementById('input-sim-nl-query')?.value?.trim();
     const manualTarget = document.getElementById('input-sim-target')?.value?.trim();
-    const targetToUse = state.simResolvedTarget || manualTarget;
+    let targetToUse = state.simResolvedTarget || manualTarget;
+
+    // Disallow literal string "undefined", "null", or empty strings
+    if (targetToUse === 'undefined' || targetToUse === 'null' || !targetToUse) {
+      targetToUse = null;
+    }
 
     const errBox = document.getElementById('sim-error-box');
     const runBtn = document.getElementById('btn-run-simulation');
@@ -8707,12 +9215,14 @@
     if (!nlQuery && !targetToUse) {
       if (errBox) {
         errBox.style.display = 'block';
-        errBox.textContent = 'Please enter a scenario question (e.g. "What happens if we remove ...?") or specify a target entity.';
+        errBox.textContent = 'Please enter a scenario hypothesis (e.g. "What happens if we remove ...?") or select a target entity.';
       }
       return;
     }
 
+    const timeline = document.getElementById('sim-exec-timeline');
     if (errBox) errBox.style.display = 'none';
+    if (timeline) timeline.style.display = 'block';
     if (runBtn) runBtn.disabled = true;
     if (runBtnText) runBtnText.textContent = 'Orchestrating Multi-Agent Analysis...';
 
@@ -8727,6 +9237,8 @@
           base_snapshot_id: baseSnap,
           target_override: targetToUse || null,
           mutation_type_override: currentSimulationType || null,
+          explicit_target: targetToUse || null,
+          explicit_type: currentSimulationType || null,
         })
       });
 
@@ -8745,6 +9257,7 @@
       }
       showNotification('Simulation error: ' + err.message, 'error');
     } finally {
+      if (timeline) timeline.style.display = 'none';
       if (runBtn) runBtn.disabled = false;
       if (runBtnText) runBtnText.textContent = 'Run Deterministic Simulation';
     }
@@ -8754,6 +9267,44 @@
     state.lastSimulationResult = data;
     const resultsCard = document.getElementById('sim-results-card');
     const placeholder = document.getElementById('sim-placeholder-card');
+    const errBox = document.getElementById('sim-error-box');
+
+    // Robust unwrap supporting both OrchestratedScenarioResult and raw ScenarioAnalysisResult
+    const sim = data.simulation || data;
+    const plan = data.plan || data.structured_scenario || {};
+    const report = data.report || {};
+    const impact = sim.impact || data.impact || {};
+    const risk = sim.risk || data.risk || {};
+    const comparison = sim.comparison || data.comparison || {};
+    const tests = sim.tests || data.tests || {};
+    const findings = data.findings || sim.findings || report.findings || [];
+    const evidence = sim.evidence || data.evidence || [];
+    const assumptions = sim.assumptions || data.assumptions || report.assumptions_and_prerequisites || [];
+    const unknowns = sim.unknowns || data.unknowns || report.unknowns_and_limitations || [];
+
+    // Check for explicit failure or unexecutable plan
+    if (sim.status === 'FAILED' || (plan.can_execute === false && (!sim.proposed_changes || sim.proposed_changes.length === 0))) {
+      if (placeholder) placeholder.style.display = 'none';
+      if (resultsCard) resultsCard.style.display = 'none';
+      if (errBox) {
+        errBox.style.display = 'block';
+        const failureReason = sim.error_message || plan.ambiguity_explanation || 'Simulation could not be executed for the specified target.';
+        errBox.innerHTML = `
+          <div class="flex items-start gap-2">
+            <span class="material-symbols-outlined text-red-600 text-[18px] shrink-0 mt-0.5">error</span>
+            <div>
+              <div class="font-bold text-red-800 text-xs">Simulation Target Resolution Failure</div>
+              <div class="text-xs text-red-700 mt-0.5">${escapeHtml(failureReason)}</div>
+              ${plan.candidate_entities && plan.candidate_entities.length > 0 ? `<div class="text-[11px] text-red-600 mt-1">Suggested candidates: ${plan.candidate_entities.map(c => `<code>${escapeHtml(c)}</code>`).join(', ')}</div>` : ''}
+            </div>
+          </div>
+        `;
+      }
+      showNotification('Simulation failed: Target could not be resolved or executed.', 'error');
+      return;
+    }
+
+    if (errBox) errBox.style.display = 'none';
     if (placeholder) placeholder.style.display = 'none';
     if (resultsCard) resultsCard.style.display = 'block';
 
@@ -8764,25 +9315,25 @@
     const questionElem = document.getElementById('sim-res-question');
     const whyElem = document.getElementById('sim-res-explanation');
 
-    const originalQ = data.structured_scenario?.original_question || data.original_question || 'Hypothetical Scenario';
-    const title = data.name || data.structured_scenario?.title || 'Scenario Result';
-    const mutationsCount = (data.proposed_changes || []).length;
-    const affectedCount = (data.impact?.affected_components || []).length;
+    const originalQ = plan.user_query || plan.original_question || data.original_question || report.original_question || 'Hypothetical Scenario';
+    const title = sim.name || plan.analysis_objective || report.title || 'Scenario Result';
+    const mutationsCount = (sim.proposed_changes || data.proposed_changes || []).length;
+    const affectedCount = (impact.affected_components || []).length;
 
     if (nameElem) nameElem.innerHTML = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] mr-1.5 uppercase">SIMULATED</span> ${escapeHtml(title)}`;
     if (subElem) subElem.textContent = `${mutationsCount} mutation(s) • ${affectedCount} affected component(s) (Isolated Virtual Twin — 0 commits mutated)`;
-    if (timeElem) timeElem.textContent = `${data.execution_time_ms || 0}ms`;
+    if (timeElem) timeElem.textContent = `${data.execution_time_ms || sim.execution_time_ms || 0}ms`;
     if (questionElem) questionElem.textContent = `"${escapeHtml(originalQ)}"`;
-    if (whyElem) whyElem.textContent = data.risk?.explanation || 'Scenario analysis complete.';
+    if (whyElem) whyElem.textContent = risk.explanation || plan.analysis_objective || 'Scenario analysis complete.';
 
     // 4 Bento metrics
-    const totalImpactNodes = (data.impact?.affected_components || []).length + (data.impact?.affected_apis || []).length;
+    const totalImpactNodes = (impact.affected_components || []).length + (impact.affected_apis || []).length;
     const impactElem = document.getElementById('sim-metric-impact');
     const depthElem = document.getElementById('sim-metric-depth');
     if (impactElem) impactElem.textContent = `${totalImpactNodes} nodes`;
-    if (depthElem) depthElem.textContent = `Max depth: ${data.impact?.max_propagation_depth ?? 0}`;
+    if (depthElem) depthElem.textContent = `Max depth: ${impact.max_propagation_depth ?? 0}`;
 
-    const newViolationsCount = (data.comparison?.new_guardrail_violations || []).length;
+    const newViolationsCount = (comparison.new_guardrail_violations || []).length;
     const guardrailElem = document.getElementById('sim-metric-guardrails');
     const guardrailSub = document.getElementById('sim-metric-guardrails-sub');
     if (guardrailElem) {
@@ -8793,7 +9344,7 @@
 
     const riskElem = document.getElementById('sim-metric-risk');
     const riskScore = document.getElementById('sim-metric-risk-score');
-    const riskCategory = data.risk?.scenario_risk_category || 'LOW';
+    const riskCategory = risk.scenario_risk_category || 'LOW';
     if (riskElem) {
       riskElem.textContent = riskCategory;
       if (riskCategory === 'HIGH' || riskCategory === 'CRITICAL') {
@@ -8804,14 +9355,14 @@
         riskElem.className = 'text-lg font-bold text-[#10B981] mt-0.5';
       }
     }
-    if (riskScore) riskScore.textContent = `Score: ${data.risk?.overall_score ?? 0} / 100 (${data.risk?.confidence_level || 'HIGH'})`;
+    if (riskScore) riskScore.textContent = `Score: ${risk.overall_score ?? 0} / 100 (${risk.confidence_level || 'HIGH'})`;
 
-    const totalTests = (data.tests?.directly_affected_tests || []).length + (data.tests?.indirectly_affected_tests || []).length;
+    const totalTests = (tests.directly_affected_tests || []).length + (tests.indirectly_affected_tests || []).length;
     const testElem = document.getElementById('sim-metric-tests');
     const testUnknown = document.getElementById('sim-metric-tests-unknown');
     if (testElem) testElem.textContent = `${totalTests} tests`;
     if (testUnknown) {
-      const unk = data.tests?.unknown_coverage_count ?? 0;
+      const unk = tests.unknown_coverage_count ?? 0;
       testUnknown.textContent = `${unk} unknown coverage`;
       testUnknown.className = unk > 0 ? 'text-[11px] text-[#D97706] font-medium' : 'text-[11px] text-[#64748B]';
     }
@@ -8819,22 +9370,25 @@
     // Engine Routing Banner (Logical Multi-Agent Roles)
     const routingList = document.getElementById('sim-engine-routing-list');
     if (routingList) {
-      const roles = data.engine_routing?.roles_executed || [];
-      if (roles.length === 0) {
+      const rawRoles = data.engine_routing?.roles_executed || data.orchestration_roles_executed || [];
+      if (rawRoles.length === 0) {
         routingList.innerHTML = '<span class="text-[11px] text-[#64748B] italic">Deterministic What-If Engine executed.</span>';
       } else {
-        routingList.innerHTML = roles.map(r => {
+        routingList.innerHTML = rawRoles.map(r => {
+          const roleName = typeof r === 'string' ? r : (r.role || 'ROLE');
+          const engineName = typeof r === 'string' ? 'Deterministic Engine' : (r.engine || 'Engine');
+          const status = typeof r === 'string' ? 'VERIFIED' : (r.status || 'VERIFIED');
           let pill = 'bg-[#DCFCE7] text-[#15803D] border-[#BBF7D0]';
-          if (r.status === 'NOT_EVALUATED') {
+          if (status === 'NOT_EVALUATED') {
             pill = 'bg-[#FEF3C7] text-[#92400E] border-[#FDE68A]';
-          } else if (r.status === 'SYNTHESIZED') {
+          } else if (status === 'SYNTHESIZED') {
             pill = 'bg-[#EFF6FF] text-[#1D4ED8] border-[#BFDBFE]';
           }
           return `
             <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-medium ${pill}">
-              <span class="font-bold">${escapeHtml(r.role)}:</span>
-              <span class="opacity-80">${escapeHtml(r.engine)}</span>
-              <span class="text-[9px] uppercase font-bold tracking-wider opacity-60">(${r.status})</span>
+              <span class="font-bold">${escapeHtml(roleName)}:</span>
+              <span class="opacity-80">${escapeHtml(engineName)}</span>
+              <span class="text-[9px] uppercase font-bold tracking-wider opacity-60">(${status})</span>
             </div>
           `;
         }).join('');
@@ -8844,7 +9398,6 @@
     // Audited Findings & Actionable Recommendations
     const findingsList = document.getElementById('sim-findings-list');
     if (findingsList) {
-      const findings = data.findings || [];
       if (findings.length === 0) {
         findingsList.innerHTML = '<div class="text-xs text-[#94A3B8] italic p-3 text-center">No risk or architecture findings identified for this scenario.</div>';
       } else {
@@ -8914,7 +9467,7 @@
     const addedElem = document.getElementById('sim-comp-added');
     const removedElem = document.getElementById('sim-comp-removed');
 
-    const addedList = data.comparison?.added_relationships || [];
+    const addedList = comparison.added_relationships || [];
     if (addedElem) {
       if (addedList.length === 0) {
         addedElem.innerHTML = '<span class="text-[#94A3B8] italic">No relationships added</span>';
@@ -8927,7 +9480,7 @@
       }
     }
 
-    const removedList = data.comparison?.removed_relationships || [];
+    const removedList = comparison.removed_relationships || [];
     if (removedElem) {
       if (removedList.length === 0) {
         removedElem.innerHTML = '<span class="text-[#94A3B8] italic">No relationships removed</span>';
@@ -8943,7 +9496,7 @@
     // Separated Evidence Ledger
     const evidenceLedger = document.getElementById('sim-evidence-ledger');
     if (evidenceLedger) {
-      const items = data.evidence || [];
+      const items = evidence || [];
       if (items.length === 0) {
         evidenceLedger.innerHTML = '<div class="text-[11px] text-[#94A3B8] italic">No evidence generated for this scenario.</div>';
       } else {
@@ -8980,7 +9533,7 @@
     // Assumptions & Unknowns
     const assumptionsList = document.getElementById('sim-assumptions-list');
     if (assumptionsList) {
-      const allAssumptions = [...(data.assumptions || []), ...(data.unknowns || []).map(u => `Coverage unknown: ${u}`)];
+      const allAssumptions = [...(assumptions || []), ...(unknowns || []).map(u => `Coverage unknown: ${u}`)];
       if (allAssumptions.length === 0) {
         assumptionsList.innerHTML = '<li>Baseline assumptions stationary.</li>';
       } else {
@@ -8995,7 +9548,7 @@
       return;
     }
 
-    let markdown = state.lastSimulationResult.report_markdown;
+    let markdown = state.lastSimulationResult.report?.markdown_content || state.lastSimulationResult.report_markdown || state.lastSimulationResult.markdown_content;
     const scenarioId = state.lastSimulationResult.scenario_id || `sim_${Date.now()}`;
 
     if (!markdown && state.currentRepoId && state.lastSimulationResult.scenario_id) {
@@ -9003,7 +9556,7 @@
         const res = await fetch(`/repositories/${state.currentRepoId}/scenarios/${state.lastSimulationResult.scenario_id}/report`);
         if (res.ok) {
           const reportJson = await res.json();
-          markdown = reportJson.report_markdown;
+          markdown = reportJson.markdown_content || reportJson.report_markdown;
         }
       } catch (err) {
         console.warn('Could not fetch report markdown:', err);
@@ -9035,6 +9588,511 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  // ==============================================================
+  // PROJECT DISCOVERY & TECHNICAL HEALTH ASSESSMENT (PHASE 9)
+  // ==============================================================
+
+  async function loadDiscoveryView() {
+    if (!state.currentRepoId) return;
+    const reqEpoch = state.requestEpoch;
+    const reqRepoId = state.currentRepoId;
+
+    // Setup filter listeners
+    const filterContainer = document.getElementById('disc-finding-filters');
+    if (filterContainer && !filterContainer._hasDiscoveryListeners) {
+      filterContainer._hasDiscoveryListeners = true;
+      filterContainer.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const filter = btn.dataset.filter || 'all';
+          filterDiscoveryFindings(filter);
+        });
+      });
+    }
+
+    // If already loaded in memory, render
+    if (state.discoveryAssessmentResult) {
+      renderAssessmentResult(state.discoveryAssessmentResult);
+      return;
+    }
+
+    // Try fetching existing assessment from backend
+    try {
+      const res = await apiFetch(`/repositories/${state.currentRepoId}/discovery/assessment`);
+      if (reqEpoch !== state.requestEpoch || reqRepoId !== state.currentRepoId) return;
+      if (res.ok) {
+        const data = await res.json();
+        if (reqEpoch !== state.requestEpoch || reqRepoId !== state.currentRepoId) return;
+        if (data && data.assessment_id) {
+          state.discoveryAssessmentResult = data;
+          renderAssessmentResult(data);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load existing discovery assessment:', err);
+    }
+
+    if (reqEpoch !== state.requestEpoch || reqRepoId !== state.currentRepoId) return;
+    // Render un-evaluated initial state
+    renderUnEvaluatedDiscoveryState();
+  }
+
+  function renderUnEvaluatedDiscoveryState() {
+    const statusBadge = document.getElementById('disc-status-badge');
+    if (statusBadge) {
+      statusBadge.textContent = 'NOT_EVALUATED';
+      statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#F1F5F9] text-[#475569] border border-[#CBD5E1] uppercase';
+    }
+
+    const preBanner = document.getElementById('disc-pre-assessment-banner');
+    if (preBanner) preBanner.style.display = 'block';
+
+    const revBadge = document.getElementById('disc-active-revision-badge');
+    if (revBadge) {
+      const snapHash = (state.currentSnapshotData?.commit_hash && state.currentSnapshotData?.commit_hash !== 'HEAD')
+        ? state.currentSnapshotData.commit_hash.slice(0, 7)
+        : (state.currentSnapshotId ? state.currentSnapshotId.slice(0, 7) : 'HEAD');
+      const branch = state.currentSnapshotData?.branch_name || 'main';
+      revBadge.textContent = `${branch} · ${snapHash}`;
+    }
+
+    const errBox = document.getElementById('disc-error-box');
+    if (errBox) errBox.classList.add('hidden');
+
+    const alertText = document.getElementById('disc-completeness-text');
+    if (alertText) {
+      alertText.textContent = 'Select a repository revision and click "Run Technical Assessment" to begin discovery.';
+    }
+
+    const overall = document.getElementById('disc-overall-health');
+    if (overall) overall.textContent = 'Overall: — / 100';
+
+    const discMetric = document.getElementById('disc-metric-discovered');
+    if (discMetric) discMetric.textContent = '— / —';
+
+    const discCov = document.getElementById('disc-metric-coverage');
+    if (discCov) discCov.textContent = '0.0% AST Coverage';
+
+    const discSym = document.getElementById('disc-metric-symbols');
+    if (discSym) discSym.textContent = '—';
+
+    const discRel = document.getElementById('disc-metric-relationships');
+    if (discRel) discRel.textContent = '—';
+
+    const discTests = document.getElementById('disc-metric-tests');
+    if (discTests) discTests.textContent = '— / —';
+
+    const discTestsRatio = document.getElementById('disc-metric-tests-ratio');
+    if (discTestsRatio) discTestsRatio.textContent = 'Verified test coverage';
+
+    const dimGrid = document.getElementById('disc-dimensions-grid');
+    if (dimGrid) {
+      dimGrid.innerHTML = `
+        <div class="p-6 rounded-xl border border-[#E2E8F0] bg-white shadow-xs text-xs text-[#94A3B8] text-center col-span-3 py-8 space-y-2">
+          <p class="italic">Assessment not yet executed for this revision.</p>
+          <p class="text-[11px] text-[#64748B]">Click "Run Technical Assessment" above to evaluate all 9 architectural dimensions.</p>
+        </div>`;
+    }
+
+    const findingsList = document.getElementById('disc-findings-list');
+    if (findingsList) {
+      findingsList.innerHTML = `
+        <div class="text-xs text-[#94A3B8] italic p-6 text-center border border-dashed border-[#CBD5E1] rounded-xl">
+          Assessment not yet executed. Run technical assessment to detect structural defects.
+        </div>`;
+    }
+
+    const roadmapList = document.getElementById('disc-roadmap-list');
+    if (roadmapList) {
+      roadmapList.innerHTML = `
+        <div class="text-xs text-[#94A3B8] italic p-6 text-center border border-dashed border-[#CBD5E1] rounded-xl">
+          Roadmap will synthesize automatically once technical assessment completes.
+        </div>`;
+    }
+  }
+
+  async function runTechnicalAssessment() {
+    if (!state.currentRepoId) {
+      showNotification('Connect a repository before running technical assessment.', 'warning');
+      return;
+    }
+
+    const btn = document.getElementById('btn-run-assessment');
+    const btnText = document.getElementById('btn-run-assessment-text');
+    const statusBadge = document.getElementById('disc-status-badge');
+    const errBox = document.getElementById('disc-error-box');
+
+    if (btn) btn.disabled = true;
+    if (btnText) btnText.textContent = 'Assessing Repository...';
+    if (errBox) errBox.classList.add('hidden');
+    if (statusBadge) {
+      statusBadge.textContent = 'ANALYZING...';
+      statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-300 uppercase animate-pulse';
+    }
+
+    try {
+      let url = `/repositories/${state.currentRepoId}/discovery/assess`;
+      if (state.currentSnapshotId) {
+        url += `?snapshot_id=${encodeURIComponent(state.currentSnapshotId)}`;
+      }
+
+      const res = await apiFetch(url, { method: 'POST' });
+      if (!res.ok) {
+        let errDetail = 'Failed to execute technical assessment';
+        try {
+          const errData = await res.json();
+          if (errData && errData.detail) errDetail = errData.detail;
+        } catch (_) {}
+        throw new Error(errDetail);
+      }
+
+      const data = await res.json();
+      state.discoveryAssessmentResult = data;
+      renderAssessmentResult(data);
+      showNotification('Technical assessment completed successfully.', 'success');
+    } catch (err) {
+      console.warn('Technical assessment error:', err);
+      if (errBox) {
+        errBox.textContent = `Assessment Failed: ${err.message || 'Unknown error'}`;
+        errBox.classList.remove('hidden');
+      }
+      if (statusBadge) {
+        statusBadge.textContent = 'FAILED';
+        statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#FEF2F2] text-[#DC2626] border border-[#FECACA] uppercase';
+      }
+      showNotification(`Technical assessment failed: ${err.message}`, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+      if (btnText) btnText.textContent = 'Run Technical Assessment';
+    }
+  }
+
+  function renderAssessmentResult(data) {
+    if (!data) return;
+
+    const preBanner = document.getElementById('disc-pre-assessment-banner');
+    if (preBanner) preBanner.style.display = 'none';
+
+    // 1. Status Badge
+    const statusBadge = document.getElementById('disc-status-badge');
+    if (statusBadge) {
+      const st = data.status || 'UNKNOWN';
+      statusBadge.textContent = st;
+      if (st === 'COMPLETE') {
+        statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] uppercase';
+      } else if (st === 'PARTIAL') {
+        statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#FFFBEB] text-[#D97706] border border-[#FDE68A] uppercase';
+      } else if (st === 'UNSUPPORTED') {
+        statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#F8FAFC] text-[#64748B] border border-[#CBD5E1] uppercase';
+      } else {
+        statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#FEF2F2] text-[#DC2626] border border-[#FECACA] uppercase';
+      }
+    }
+
+    // 2. Metrics & Completeness
+    const comp = data.completeness || {};
+    const discMetric = document.getElementById('disc-metric-discovered');
+    if (discMetric) {
+      discMetric.textContent = `${comp.files_analyzed || 0} / ${comp.files_discovered || 0}`;
+    }
+
+    const discCov = document.getElementById('disc-metric-coverage');
+    if (discCov) {
+      discCov.textContent = `${comp.code_coverage_pct || 0}% AST Coverage`;
+    }
+
+    const discSym = document.getElementById('disc-metric-symbols');
+    if (discSym) {
+      discSym.textContent = (comp.symbols_extracted || 0).toLocaleString();
+    }
+
+    const discRel = document.getElementById('disc-metric-relationships');
+    if (discRel) {
+      discRel.textContent = (comp.relationships_extracted || 0).toLocaleString();
+    }
+
+    const discTests = document.getElementById('disc-metric-tests');
+    if (discTests) {
+      discTests.textContent = `${comp.tests_linked || 0} / ${comp.tests_discovered || 0}`;
+    }
+
+    const discTestsRatio = document.getElementById('disc-metric-tests-ratio');
+    if (discTestsRatio) {
+      discTestsRatio.textContent = `Coverage Ratio: ${(comp.test_to_component_ratio || 0).toFixed(2)}`;
+    }
+
+    const alertText = document.getElementById('disc-completeness-text');
+    if (alertText) {
+      alertText.textContent = comp.notes || (data.status === 'UNSUPPORTED'
+        ? 'Repository contains non-code or unsupported files. Deep AST analysis unavailable.'
+        : `Analysis verified across ${comp.files_analyzed || 0} files and ${comp.relationships_extracted || 0} relationships.`);
+    }
+
+    // 3. Overall Health Score
+    const overall = document.getElementById('disc-overall-health');
+    if (overall) {
+      if (data.overall_health_score !== null && data.overall_health_score !== undefined) {
+        overall.textContent = `Overall: ${data.overall_health_score} / 100`;
+        if (data.overall_health_score >= 80) {
+          overall.className = 'text-xs font-bold text-[#059669] bg-[#ECFDF5] px-2.5 py-1 rounded-lg border border-[#A7F3D0]';
+        } else if (data.overall_health_score >= 50) {
+          overall.className = 'text-xs font-bold text-[#D97706] bg-[#FFFBEB] px-2.5 py-1 rounded-lg border border-[#FDE68A]';
+        } else {
+          overall.className = 'text-xs font-bold text-[#DC2626] bg-[#FEF2F2] px-2.5 py-1 rounded-lg border border-[#FECACA]';
+        }
+      } else {
+        overall.textContent = 'Overall: N/A';
+        overall.className = 'text-xs font-bold text-[#64748B] bg-[#F1F5F9] px-2.5 py-1 rounded-lg border border-[#CBD5E1]';
+      }
+    }
+
+    // 4. Dimensional Scorecard
+    const dimGrid = document.getElementById('disc-dimensions-grid');
+    if (dimGrid) {
+      const scores = data.dimensional_scores || [];
+      if (scores.length === 0) {
+        dimGrid.innerHTML = `
+          <div class="p-4 rounded-xl border border-[#E2E8F0] bg-white shadow-xs text-xs text-[#94A3B8] italic text-center col-span-3 py-8">
+            No dimensional scores evaluated.
+          </div>`;
+      } else {
+        dimGrid.innerHTML = scores.map(dim => {
+          const score = dim.score !== null && dim.score !== undefined ? dim.score : '—';
+          let scoreColor = 'text-[#059669] bg-[#ECFDF5] border-[#A7F3D0]';
+          let barBg = 'bg-[#059669]';
+          if (score < 50) {
+            scoreColor = 'text-[#DC2626] bg-[#FEF2F2] border-[#FECACA]';
+            barBg = 'bg-[#DC2626]';
+          } else if (score < 80) {
+            scoreColor = 'text-[#D97706] bg-[#FFFBEB] border-[#FDE68A]';
+            barBg = 'bg-[#D97706]';
+          }
+          const numScore = typeof score === 'number' ? score : 0;
+
+          return `
+            <div class="p-4 rounded-xl border border-[#E2E8F0] bg-white shadow-xs space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-[#0F172A]">${escapeHtml(dim.dimension_name)}</span>
+                <span class="text-xs font-extrabold px-2 py-0.5 rounded border ${scoreColor}">${score}/100</span>
+              </div>
+              <div class="w-full bg-[#E2E8F0] h-1.5 rounded-full overflow-hidden">
+                <div class="${barBg} h-1.5 rounded-full" style="width: ${numScore}%"></div>
+              </div>
+              <p class="text-[11px] text-[#64748B] leading-relaxed">${escapeHtml(dim.rationale)}</p>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // 5. Findings
+    renderFindingsList(data.findings || []);
+
+    // 6. Advisory Remediation Roadmap
+    const roadmapList = document.getElementById('disc-roadmap-list');
+    if (roadmapList) {
+      const recs = data.roadmap_recommendations || [];
+      if (recs.length === 0) {
+        roadmapList.innerHTML = `
+          <div class="text-xs text-[#059669] bg-[#ECFDF5] border border-[#A7F3D0] p-4 rounded-xl text-center">
+            No active remediation recommendations required. Repository health parameters are within normal thresholds.
+          </div>`;
+      } else {
+        roadmapList.innerHTML = recs.map(r => {
+          let prioBadge = 'bg-slate-100 text-slate-800 border-slate-300';
+          if (r.priority === 'P0_IMMEDIATE') {
+            prioBadge = 'bg-red-50 text-red-800 border-red-300';
+          } else if (r.priority === 'P1_HIGH') {
+            prioBadge = 'bg-orange-50 text-orange-800 border-orange-300';
+          } else if (r.priority === 'P2_MEDIUM') {
+            prioBadge = 'bg-blue-50 text-blue-800 border-blue-300';
+          }
+
+          const comps = (r.affected_components || []).map(c =>
+            `<span class="px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155] border border-[#CBD5E1] text-[10px] font-mono">${escapeHtml(c)}</span>`
+          ).join(' ');
+
+          const prereqs = (r.prerequisites || []).map(p =>
+            `<li class="text-[10px] text-[#64748B]">${escapeHtml(p)}</li>`
+          ).join('');
+
+          return `
+            <div class="p-4 rounded-xl border border-[#E2E8F0] bg-white shadow-xs space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${prioBadge}">
+                  ${escapeHtml(r.priority.replace('_', ' '))}
+                </span>
+                <span class="text-[10px] font-medium text-[#64748B]">Confidence: ${(r.confidence * 100).toFixed(0)}%</span>
+              </div>
+              <h4 class="text-xs font-bold text-[#0F172A]">${escapeHtml(r.title)}</h4>
+              <p class="text-[11px] text-[#475569] leading-relaxed">${escapeHtml(r.technical_rationale)}</p>
+              
+              <div class="space-y-1 pt-1 border-t border-[#F1F5F9]">
+                <div class="text-[10px] font-semibold text-[#0F172A]">Expected Benefit:</div>
+                <div class="text-[11px] text-[#059669]">${escapeHtml(r.expected_benefit)}</div>
+              </div>
+
+              ${comps ? `
+                <div class="space-y-1">
+                  <div class="text-[10px] font-semibold text-[#0F172A]">Affected Components:</div>
+                  <div class="flex flex-wrap gap-1">${comps}</div>
+                </div>
+              ` : ''}
+
+              <div class="space-y-1">
+                <div class="text-[10px] font-semibold text-[#0F172A]">Verification Criteria:</div>
+                <div class="text-[11px] text-[#475569] font-mono bg-[#F8FAFC] p-2 rounded border border-[#E2E8F0]">${escapeHtml(r.verification_criteria)}</div>
+              </div>
+
+              ${prereqs ? `
+                <div class="space-y-0.5">
+                  <div class="text-[10px] font-semibold text-[#64748B]">Prerequisites:</div>
+                  <ul class="list-disc pl-4">${prereqs}</ul>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        }).join('');
+      }
+    }
+  }
+
+  function filterDiscoveryFindings(filterType) {
+    state.discoveryFindingFilter = filterType;
+    const filterContainer = document.getElementById('disc-finding-filters');
+    if (filterContainer) {
+      filterContainer.querySelectorAll('.filter-btn').forEach(btn => {
+        const isActive = btn.dataset.filter === filterType;
+        btn.classList.toggle('active', isActive);
+        if (isActive) {
+          btn.className = 'px-2 py-0.5 text-[10px] font-bold rounded bg-[#0F172A] text-white filter-btn active';
+        } else {
+          btn.className = 'px-2 py-0.5 text-[10px] font-bold rounded bg-[#F1F5F9] text-[#475569] filter-btn';
+        }
+      });
+    }
+
+    if (state.discoveryAssessmentResult) {
+      renderFindingsList(state.discoveryAssessmentResult.findings || []);
+    }
+  }
+
+  function renderFindingsList(findings) {
+    const findingsList = document.getElementById('disc-findings-list');
+    if (!findingsList) return;
+
+    const filter = state.discoveryFindingFilter || 'all';
+    let filtered = findings;
+    if (filter === 'critical') {
+      filtered = findings.filter(f => f.severity === 'CRITICAL' || f.severity === 'HIGH');
+    } else if (filter === 'medium') {
+      filtered = findings.filter(f => f.severity === 'MEDIUM');
+    }
+
+    if (filtered.length === 0) {
+      if ((findings || []).length === 0) {
+        findingsList.innerHTML = `
+          <div class="text-xs text-[#059669] bg-[#ECFDF5] border border-[#A7F3D0] p-6 text-center rounded-xl font-medium">
+            ✓ Clean Architecture: 0 structural violations, circular dependencies, or test coverage deficits detected.
+          </div>`;
+      } else {
+        findingsList.innerHTML = `
+          <div class="text-xs text-[#64748B] italic p-6 text-center border border-dashed border-[#CBD5E1] rounded-xl">
+            No findings matching the selected filter (${filter}).
+          </div>`;
+      }
+      return;
+    }
+
+    findingsList.innerHTML = filtered.map(f => {
+      let sevBadge = 'bg-slate-100 text-slate-800 border-slate-300';
+      if (f.severity === 'CRITICAL') {
+        sevBadge = 'bg-red-100 text-red-900 border-red-300';
+      } else if (f.severity === 'HIGH') {
+        sevBadge = 'bg-orange-100 text-orange-900 border-orange-300';
+      } else if (f.severity === 'MEDIUM') {
+        sevBadge = 'bg-amber-100 text-amber-900 border-amber-300';
+      } else if (f.severity === 'LOW') {
+        sevBadge = 'bg-blue-100 text-blue-900 border-blue-300';
+      }
+
+      const evRefs = (f.evidence_references || []).map(r =>
+        `<span class="px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155] border border-[#CBD5E1] text-[10px] font-mono">${escapeHtml(r)}</span>`
+      ).join(' ');
+
+      return `
+        <div class="p-3.5 rounded-xl border border-[#E2E8F0] bg-white shadow-xs space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${sevBadge}">
+              ${escapeHtml(f.severity)}
+            </span>
+            <span class="text-[10px] font-mono text-[#64748B]">${escapeHtml(f.id)}</span>
+          </div>
+
+          <div class="space-y-0.5">
+            <div class="text-xs font-bold text-[#0F172A] font-mono">${escapeHtml(f.affected_entity || 'Repository')}</div>
+            <div class="text-[10px] text-[#64748B]">Category: <span class="font-medium text-[#334155]">${escapeHtml(f.category)}</span> &bull; Detected via: <span class="font-medium text-[#334155]">${escapeHtml(f.detection_method)}</span></div>
+          </div>
+
+          <p class="text-[11px] text-[#334155] leading-relaxed">${escapeHtml(f.rationale)}</p>
+
+          ${evRefs ? `
+            <div class="pt-1">
+              <div class="text-[10px] font-semibold text-[#64748B]">Evidence:</div>
+              <div class="flex flex-wrap gap-1 mt-0.5">${evRefs}</div>
+            </div>
+          ` : ''}
+
+          <div class="pt-1.5 border-t border-[#F1F5F9] flex items-center justify-between text-[10px]">
+            <span class="text-[#0071e3] font-medium flex items-center gap-1">
+              <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+              ${escapeHtml(f.recommended_next_action || 'Inspect component dependencies')}
+            </span>
+            <span class="text-[#94A3B8]">Confidence: ${(f.confidence * 100).toFixed(0)}%</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function downloadAssessmentReport() {
+    if (!state.currentRepoId) {
+      showNotification('Select a repository first.', 'warning');
+      return;
+    }
+
+    try {
+      showNotification('Generating technical assessment report...', 'info');
+      const res = await apiFetch(`/repositories/${state.currentRepoId}/discovery/report`);
+      if (!res.ok) {
+        throw new Error('Failed to retrieve assessment report');
+      }
+
+      const data = await res.json();
+      const markdown = data.report_markdown;
+      if (!markdown) {
+        throw new Error('Report content is empty');
+      }
+
+      const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const repoName = (state.currentRepoData?.name || 'repository').replace(/[^a-zA-Z0-9_-]/g, '_');
+      link.setAttribute('download', `twincore-technical-assessment-${repoName}.md`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      showNotification('Technical assessment report downloaded successfully.', 'success');
+    } catch (err) {
+      console.error('Download report error:', err);
+      showNotification(`Failed to export report: ${err.message}`, 'error');
+    }
   }
 
   window.TwinApp = {
@@ -9081,6 +10139,18 @@
     inspectScenario,
     Twin3D,
     openCommandPalette: () => window.openCommandPalette?.(),
+    loadDiscoveryView,
+    runTechnicalAssessment,
+    filterDiscoveryFindings,
+    downloadAssessmentReport,
+    openDisconnectModal,
+    confirmDisconnectRepository,
+    openModal,
+    closeModal,
+    selectResolvedTarget,
+    setAppState,
+    refreshActiveView,
+    refreshCurrentView: refreshActiveView,
   };
 
 })();

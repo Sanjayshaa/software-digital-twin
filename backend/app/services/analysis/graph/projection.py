@@ -268,7 +268,7 @@ class TwinGraphProjection:
                 elif atype == "MODULE":
                     deg = full_graph.degree(nid)
                     is_hub = deg >= 2
-                    is_entry = bool(art.location and any(ep in art.location.lower() for ep in ("app.", "main.", "index.", "server.", "route", "controller", "api", "router")))
+                    is_entry = bool(art.location) and any(ep in (art.location or "").lower() for ep in ("app.", "main.", "index.", "server.", "route", "controller", "api", "router"))
                     if is_hub or is_entry:
                         filtered_node_ids.add(nid)
             elif level == 2:
@@ -519,12 +519,14 @@ class TwinGraphProjection:
 
         if proc_defs:
             for p in proc_defs:
+                p_steps = getattr(p, "steps", None) or []
+                p_steps_count = len(p_steps) if isinstance(p_steps, (list, tuple, set)) else 0
                 processes_list.append({
                     "id": p.id,
                     "name": p.name,
                     "description": p.description,
                     "type": p.process_type,
-                    "steps_count": len(p.steps),
+                    "steps_count": p_steps_count,
                 })
                 for step in p.steps:
                     nodes.append({
@@ -768,8 +770,8 @@ class TwinGraphProjection:
         Follows reverse dependency edges (callers and importers) to identify
         all downstream components, APIs, tests, and processes affected by a change.
         """
-        art_map = {a.id: a for a in artifacts}
-        art_qual_map = {a.qualified_name: a for a in artifacts}
+        art_map: Dict[str, Any] = {str(a.id): a for a in artifacts}
+        art_qual_map: Dict[str, Any] = {str(a.qualified_name): a for a in artifacts}
 
         # Resolve root ID
         root_id = root_artifact_id
@@ -811,7 +813,8 @@ class TwinGraphProjection:
                 affected_node_ids.add(pred)
                 edge_data = rev_graph.get_edge_data(curr, pred)
                 rel_type = edge_data.get("rel_type", "CALLS") if edge_data else "DEPENDS_ON"
-                curr_name = art_map.get(curr).name if curr in art_map else "Component"
+                curr_art = art_map.get(curr) if curr in art_map else None
+                curr_name = getattr(curr_art, "name", "Component") if curr_art else "Component"
 
                 reason = f"Depends on {curr_name} via {rel_type} (depth {d})"
                 if pred not in details:
@@ -874,7 +877,7 @@ class TwinGraphProjection:
         return snap.id if snap else None
 
     def _classify_level(self, artifact_type: str) -> int:
-        atype = str(artifact_type).upper()
+        atype = (artifact_type or "").upper()
         if atype in ("PACKAGE", "DIRECTORY", "MODULE"):
             return 1
         elif atype in ("CLASS", "INTERFACE", "SERVICE", "DATABASE_TABLE", "TEST_SUITE"):

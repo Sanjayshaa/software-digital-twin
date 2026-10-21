@@ -547,19 +547,34 @@ async def upload_project_archive(
                     )
                 buffer.write(chunk)
 
-        # Safe extraction to prevent Zip Slip
+        # Safe extraction to prevent Zip Slip and Tar Slip
+        extract_dir_abs = os.path.abspath(extract_dir)
         if filename.lower().endswith(".zip"):
             with zipfile.ZipFile(archive_path, "r") as zf:
                 for member in zf.infolist():
-                    target_path = os.path.abspath(os.path.join(extract_dir, member.filename))
-                    if not target_path.startswith(os.path.abspath(extract_dir)):
+                    target_path = os.path.abspath(os.path.join(extract_dir_abs, member.filename))
+                    if os.path.commonpath([target_path, extract_dir_abs]) != extract_dir_abs:
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Archive contains unsafe path traversal members."
                         )
                 zf.extractall(extract_dir)
+        elif filename.lower().endswith((".tar.gz", ".tgz", ".tar")):
+            import tarfile
+            with tarfile.open(archive_path, "r:*") as tf:
+                for member in tf.getmembers():
+                    target_path = os.path.abspath(os.path.join(extract_dir_abs, member.name))
+                    if os.path.commonpath([target_path, extract_dir_abs]) != extract_dir_abs:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Archive contains unsafe path traversal members."
+                        )
+                tf.extractall(extract_dir)
         else:
-            shutil.unpack_archive(archive_path, extract_dir)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported archive format. Supported formats: .zip, .tar.gz, .tgz, .tar"
+            )
 
         if os.path.exists(archive_path):
             os.remove(archive_path)
@@ -638,6 +653,82 @@ async def upload_project_archive(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Archive processing failed: {str(exc)}",
         )
+
+
+@router.delete("/{repository_id}", response_model=Dict[str, Any])
+def delete_repository(
+    repository_id: str,
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """
+    Safely and transactionally deletes an ingested repository, its snapshots,
+    artifacts, relationships, evidence, analysis runs, scenarios, and local cloned workspaces.
+    Enforces that only the authorized owner or an admin can delete the repository.
+    """
+    repo = _resolve_repo(db, repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository '{repository_id}' not found.",
+        )
+
+    # Check ownership or admin
+    if principal and not principal.is_admin and repo.owner_id and repo.owner_id != principal.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not authorized to delete this repository.",
+        )
+
+    from app.models.entities import (
+        Evidence,
+        SimulationScenario,
+        HistoricalChange,
+        ProjectTechnology,
+        ProjectCapability,
+    )
+
+    snapshots = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).all()
+    snapshot_ids = [s.id for s in snapshots]
+
+    if snapshot_ids:
+        db.query(ArtifactRelationship).filter(
+            (ArtifactRelationship.snapshot_id.in_(snapshot_ids))
+        ).delete(synchronize_session=False)
+
+        db.query(StructuralArtifact).filter(
+            StructuralArtifact.snapshot_id.in_(snapshot_ids)
+        ).delete(synchronize_session=False)
+
+    db.query(Evidence).filter_by(project_id=repo.project_id).delete(synchronize_session=False)
+    db.query(AnalysisRun).filter_by(repository_id=repo.id).delete(synchronize_session=False)
+    db.query(SimulationScenario).filter_by(repository_id=repo.id).delete(synchronize_session=False)
+    db.query(HistoricalChange).filter_by(repository_id=repo.id).delete(synchronize_session=False)
+    db.query(ProjectTechnology).filter_by(project_id=repo.project_id).delete(synchronize_session=False)
+    db.query(ProjectCapability).filter_by(project_id=repo.project_id).delete(synchronize_session=False)
+    db.query(RepositorySnapshot).filter_by(repository_id=repo.id).delete(synchronize_session=False)
+
+    # Clean up local filesystem clone if in temporary or uploads folder
+    local_path = repo.local_path
+    if local_path and os.path.exists(local_path):
+        norm_path = os.path.abspath(local_path)
+        if "data/repos" in norm_path or "tmp" in norm_path or "temp" in norm_path:
+            try:
+                import shutil
+                shutil.rmtree(norm_path, ignore_errors=True)
+            except Exception:
+                pass
+
+    repo_name = repo.name
+    db.delete(repo)
+    db.commit()
+
+    return {
+        "status": "DELETED",
+        "repository_id": repository_id,
+        "name": repo_name,
+        "message": f"Repository '{repo_name}' and all associated Digital Twin data successfully deleted.",
+    }
 
 
 @router.get("/{repository_id}/overview", response_model=Dict[str, Any])

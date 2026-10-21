@@ -119,6 +119,92 @@ login_rate_limiter = LoginRateLimiter(
 )
 
 
+class SlidingWindowRateLimiter:
+    """
+    In-memory, thread-safe sliding window rate limiter for general endpoint protection.
+    """
+    def __init__(self, max_requests: int, window_seconds: int):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._lock = threading.Lock()
+        self._history: Dict[str, list] = {}
+
+    def is_rate_limited(self, key: str) -> Tuple[bool, int]:
+        now = time.time()
+        with self._lock:
+            timestamps = self._history.get(key, [])
+            valid_ts = [t for t in timestamps if now - t < self.window_seconds]
+            self._history[key] = valid_ts
+            if len(valid_ts) >= self.max_requests:
+                oldest = valid_ts[0]
+                remaining = int(self.window_seconds - (now - oldest))
+                return True, max(1, remaining)
+            valid_ts.append(now)
+            return False, 0
+
+    def reset(self) -> None:
+        with self._lock:
+            self._history.clear()
+
+
+auth_action_limiter = SlidingWindowRateLimiter(max_requests=10, window_seconds=60)
+expensive_op_limiter = SlidingWindowRateLimiter(max_requests=30, window_seconds=60)
+
+
+def create_secure_random_token(length_bytes: int = 32) -> str:
+    """Generates a high-entropy URL-safe token for password resets or email verification."""
+    return secrets.token_urlsafe(length_bytes)
+
+
+class AuthTokenStore:
+    """
+    Thread-safe, expiring, single-use token vault for password resets and email verifications.
+    Avoids requiring unauthorized DDL mutations on hosted database schemas.
+    """
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._reset_tokens: Dict[str, Dict[str, Any]] = {}
+        self._verify_tokens: Dict[str, Dict[str, Any]] = {}
+
+    def set_reset_token(self, token: str, user_id: str, expires_in_seconds: int = 900) -> None:
+        with self._lock:
+            self._reset_tokens[token] = {
+                "user_id": user_id,
+                "expires_at": time.time() + expires_in_seconds,
+            }
+
+    def consume_reset_token(self, token: str) -> Optional[str]:
+        now = time.time()
+        with self._lock:
+            data = self._reset_tokens.pop(token, None)
+            if data and data["expires_at"] > now:
+                return data["user_id"]
+            return None
+
+    def set_verification_token(self, token: str, user_id: str, expires_in_seconds: int = 86400) -> None:
+        with self._lock:
+            self._verify_tokens[token] = {
+                "user_id": user_id,
+                "expires_at": time.time() + expires_in_seconds,
+            }
+
+    def consume_verification_token(self, token: str) -> Optional[str]:
+        now = time.time()
+        with self._lock:
+            data = self._verify_tokens.pop(token, None)
+            if data and data["expires_at"] > now:
+                return data["user_id"]
+            return None
+
+    def clear(self) -> None:
+        with self._lock:
+            self._reset_tokens.clear()
+            self._verify_tokens.clear()
+
+
+auth_token_store = AuthTokenStore()
+
+
 # ====================================================================
 # 3. PASSWORD HASHING (PBKDF2-HMAC-SHA256)
 # ====================================================================
@@ -305,17 +391,24 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_current_user_optional(
+    request: Request = None,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
 ) -> Optional[AuthenticatedPrincipal]:
     """
-    Extracts authenticated user from Authorization Bearer token if present.
+    Extracts authenticated user from Authorization Bearer token or HttpOnly cookie if present.
     Returns None if no token provided.
     Raises HTTPException(401) if token is provided but invalid/expired.
     """
-    if not credentials or not credentials.credentials:
+    raw_token = None
+    if credentials and credentials.credentials:
+        raw_token = credentials.credentials
+    elif request and hasattr(request, "cookies") and request.cookies.get("access_token"):
+        raw_token = request.cookies.get("access_token")
+
+    if not raw_token:
         return None
 
-    payload = decode_access_token(credentials.credentials)
+    payload = decode_access_token(raw_token)
     return AuthenticatedPrincipal(
         user_id=payload.get("sub", ""),
         username=payload.get("username", "anonymous"),

@@ -40,10 +40,17 @@ class ProposedMutation(BaseModel):
     mutation_id: str = Field(..., description="Unique identifier for this mutation")
     mutation_type: MutationType = Field(..., description="Type of proposed structural mutation")
     target: str = Field(..., description="Target symbol, component, API endpoint, or destination entity")
+    target_entity: Optional[str] = Field(None, description="Target entity identifier")
     source: Optional[str] = Field(None, description="Source entity for dependency or relationship mutations")
     relationship_type: Optional[str] = Field(None, description="Relationship type (e.g., CALLS, IMPORTS, DEPENDS_ON)")
     description: Optional[str] = Field(None, description="Human explanation of what is proposed")
     parameters: Dict[str, Any] = Field(default_factory=dict, description="Additional parameters (e.g., new signature, HTTP method)")
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.target_entity and self.target:
+            self.target_entity = self.target
+        elif not self.target and self.target_entity:
+            self.target = self.target_entity
 
 
 class ScenarioValidationResult(BaseModel):
