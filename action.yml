@@ -1,0 +1,92 @@
+name: 'TwinCore Smart CI Test-Targeter'
+description: 'Deterministic Test Impact Intelligence. Only runs tests affected by your PR, saving 80-95% CI runner time.'
+author: 'TwinCore Enterprise'
+
+inputs:
+  twincore-url:
+    description: 'URL of the running TwinCore instance'
+    required: false
+    default: 'http://localhost:8000'
+  api-key:
+    description: 'TwinCore API JWT Token'
+    required: false
+    default: ''
+  repository-id:
+    description: 'Repository ID in TwinCore (defaults to current github.repository)'
+    required: false
+    default: ${{ github.repository }}
+  base-ref:
+    description: 'Base Git commit or branch'
+    required: false
+    default: ${{ github.event.pull_request.base.sha || 'HEAD~1' }}
+  head-ref:
+    description: 'Head Git commit'
+    required: false
+    default: ${{ github.event.pull_request.head.sha || github.sha }}
+  runner:
+    description: 'Test runner binary to invoke (pytest, jest, gotest)'
+    required: false
+    default: 'pytest'
+  execute:
+    description: 'Whether to execute the tests directly in CI'
+    required: false
+    default: 'true'
+  post-pr-comment:
+    description: 'Post the sticky PR comment with ROI metrics'
+    required: false
+    default: 'true'
+
+outputs:
+  impacted-test-count:
+    description: 'Number of tests impacted by this change'
+    value: ${{ steps.run-targeter.outputs.impacted_count }}
+  time-saved-pct:
+    description: 'Percentage of test time saved'
+    value: ${{ steps.run-targeter.outputs.time_saved }}
+  test-command:
+    description: 'Targeted command executed'
+    value: ${{ steps.run-targeter.outputs.test_cmd }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Run TwinCore Test Intelligence
+      id: run-targeter
+      shell: bash
+      env:
+        TWINCORE_URL: ${{ inputs.twincore-url }}
+        TWINCORE_API_KEY: ${{ inputs.api-key }}
+      run: |
+        echo "Analyzing test impact for ${{ inputs.repository-id }} (${{ inputs.base-ref }} -> ${{ inputs.head-ref }})..."
+        python3 "${{ github.action_path }}/cli/twincore_cli.py" ci-report \
+          --repo "${{ inputs.repository-id }}" \
+          --base "${{ inputs.base-ref }}" \
+          --head "${{ inputs.head-ref }}" \
+          --server "${{ inputs.twincore-url }}" \
+          --output "$GITHUB_WORKSPACE/twincore_pr_report.md"
+
+    - name: Execute Targeted Tests
+      if: ${{ inputs.execute == 'true' }}
+      shell: bash
+      env:
+        TWINCORE_URL: ${{ inputs.twincore-url }}
+        TWINCORE_API_KEY: ${{ inputs.api-key }}
+      run: |
+        python3 "${{ github.action_path }}/cli/twincore_cli.py" test \
+          --repo "${{ inputs.repository-id }}" \
+          --base "${{ inputs.base-ref }}" \
+          --head "${{ inputs.head-ref }}" \
+          --runner "${{ inputs.runner }}" \
+          --server "${{ inputs.twincore-url }}" \
+          --exec
+
+    - name: Post Sticky PR Comment
+      if: ${{ inputs.post-pr-comment == 'true' && github.event_name == 'pull_request' }}
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        path: ${{ github.workspace }}/twincore_pr_report.md

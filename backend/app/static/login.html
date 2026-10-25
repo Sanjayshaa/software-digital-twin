@@ -100,20 +100,20 @@
         <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-sm group-hover:bg-primary-container transition-colors">
           <span class="material-symbols-outlined text-on-primary text-[20px]">hub</span>
         </div>
-        <span class="font-headline font-semibold text-base tracking-tight text-on-surface">Software Twin</span>
+        <span class="font-headline font-semibold text-base tracking-tight text-on-surface">TwinCore</span>
       </a>
       
       <div class="flex items-center gap-2 sm:gap-3">
         <div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-on-surface-variant text-xs font-medium border border-outline-variant/30">
-          <span class="material-symbols-outlined text-primary text-[14px]">verified_user</span>
-          <span>SOC 2 Type II</span>
+          <span class="material-symbols-outlined text-primary text-[14px]">account_tree</span>
+          <span>AST Code Twin</span>
         </div>
         <div class="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-on-surface-variant text-xs font-medium border border-outline-variant/30">
-          <span class="material-symbols-outlined text-primary text-[14px]">lock</span>
-          <span>End-to-End Encrypted</span>
+          <span class="material-symbols-outlined text-primary text-[14px]">shield</span>
+          <span>Isolated Sandboxes</span>
         </div>
-        <a href="/app" class="px-3 py-1 rounded-full text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors">
-          Guest Sandbox
+        <a href="/app" class="px-3 py-1 rounded-full text-xs font-medium text-primary hover:text-on-surface hover:bg-surface-container transition-colors">
+          Explore Demo Twin
         </a>
       </div>
     </div>
@@ -151,14 +151,14 @@
             </div>
 
             <h1 id="page-heading" class="font-headline font-semibold text-2xl sm:text-[28px] tracking-tight text-on-surface">
-              Sign in to Software Digital Twin
+              Sign in to TwinCore
             </h1>
             <p id="page-subheading" class="font-body text-sm text-on-surface-variant mt-2 max-w-sm leading-relaxed">
               Access your living codebase model, change impact simulations, and incident intelligence.
             </p>
           </div>
 
-          <!-- OAuth & SSO Buttons -->
+          <!-- OAuth & SSO Buttons (Accurate Capabilities, No Fake Redirects) -->
           <div class="flex flex-col gap-3">
             <button class="group relative w-full h-11 px-4 rounded-full bg-inverse-surface text-inverse-on-surface font-label font-medium text-sm flex items-center justify-between shadow-sm hover:opacity-95 transition-all active:scale-[0.99]" id="btn-github" type="button">
               <div class="flex items-center gap-3">
@@ -167,15 +167,15 @@
                 </svg>
                 <span>Continue with GitHub</span>
               </div>
-              <span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant text-[11px] font-mono font-medium">⌘ + G</span>
+              <span class="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-mono font-medium">Config Required</span>
             </button>
 
             <button class="w-full h-11 px-4 rounded-full bg-surface-container-low text-on-surface font-label font-medium text-sm flex items-center justify-between hover:bg-surface-container transition-colors active:scale-[0.99] border border-outline-variant/30" id="btn-sso" type="button">
               <div class="flex items-center gap-3">
                 <span class="material-symbols-outlined text-primary text-[19px]">domain_verification</span>
-                <span>Continue with SSO / SAML</span>
+                <span>Enterprise SSO / SAML</span>
               </div>
-              <span class="text-xs text-on-surface-variant font-normal">Okta • Azure • Google</span>
+              <span class="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[10px] font-mono font-medium">Enterprise Only</span>
             </button>
           </div>
 
@@ -183,18 +183,18 @@
           <div class="relative my-7 flex items-center justify-center">
             <div class="w-full h-px bg-surface-container-high"></div>
             <span class="absolute px-3 bg-surface-container-lowest text-[11px] font-label font-medium uppercase tracking-wider text-outline">
-              Or sign in with work email
+              Or sign in with email &amp; password
             </span>
           </div>
 
           <!-- Error Alert Box -->
-          <div id="auth-error-box" class="mb-4 p-3 bg-error-container/60 border border-error/30 rounded-xl text-xs text-on-error-container flex items-start gap-2" style="display: none;">
+          <div id="auth-error-box" class="mb-4 p-3 bg-error-container/60 border border-error/30 rounded-xl text-xs text-on-error-container flex items-start gap-2" role="alert" style="display: none;">
             <span class="material-symbols-outlined text-error text-[18px] shrink-0">error</span>
             <span id="auth-error-text" class="leading-relaxed">Invalid credentials.</span>
           </div>
 
           <!-- Info / Success Alert Box -->
-          <div id="auth-info-box" class="mb-4 p-3 bg-surface-container border border-primary/20 rounded-xl text-xs text-primary flex items-start gap-2" style="display: none;">
+          <div id="auth-info-box" class="mb-4 p-3 bg-surface-container border border-primary/20 rounded-xl text-xs text-primary flex items-start gap-2" role="status" style="display: none;">
             <span class="material-symbols-outlined text-primary text-[18px] shrink-0">info</span>
             <span id="auth-info-text" class="leading-relaxed"></span>
           </div>
@@ -224,7 +224,7 @@
                   <span class="material-symbols-outlined text-[16px]">close</span>
                 </button>
               </div>
-              <p class="text-[11px] text-on-surface-variant mt-1.5 ml-1">Use your organization GitHub, username, or corporate email.</p>
+              <p class="text-[11px] text-on-surface-variant mt-1.5 ml-1">Use your registered username or organization email address.</p>
             </div>
 
             <!-- Password Field -->
@@ -233,9 +233,9 @@
                 <label class="text-xs font-label font-medium text-on-surface" for="account-password">
                   Password
                 </label>
-                <a id="btn-forgot-password" class="text-xs font-label font-medium text-primary hover:text-primary-container transition-colors cursor-pointer" href="#">
+                <button id="btn-forgot-password-trigger" class="text-xs font-label font-medium text-primary hover:text-primary-container transition-colors cursor-pointer" type="button">
                   Forgot password?
-                </a>
+                </button>
               </div>
               <div class="relative flex items-center">
                 <span class="absolute left-3.5 material-symbols-outlined text-outline text-[18px] pointer-events-none">lock</span>
@@ -253,13 +253,13 @@
                 <div class="w-4 h-4 rounded bg-surface-container-high peer-checked:bg-primary flex items-center justify-center transition-colors">
                   <span class="material-symbols-outlined text-on-primary text-[13px] opacity-0 peer-checked:opacity-100 transition-opacity">check</span>
                 </div>
-                <span class="text-xs text-on-surface-variant font-body">Remember workstation (30 days)</span>
+                <span class="text-xs text-on-surface-variant font-body">Remember workstation</span>
               </label>
 
-              <div class="flex items-center gap-1.5 self-start sm:self-auto px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[11px] font-label border border-outline-variant/30">
-                <span class="material-symbols-outlined text-primary text-[14px]">key</span>
-                <span>WebAuthn supported</span>
-              </div>
+              <button id="btn-show-matrix" class="flex items-center gap-1.5 self-start sm:self-auto px-2.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[11px] font-label border border-outline-variant/30 hover:bg-surface-container-high transition-colors" type="button">
+                <span class="material-symbols-outlined text-primary text-[14px]">tune</span>
+                <span>Provider Matrix</span>
+              </button>
             </div>
 
             <!-- Submit Button -->
@@ -271,77 +271,72 @@
             </div>
           </form>
 
-          <!-- Alternative Auth Modes -->
-          <div class="mt-6 flex flex-col items-center gap-3">
-            <div class="flex items-center gap-4 text-xs font-label">
-              <button id="btn-passkey" class="text-primary hover:text-primary-container transition-colors flex items-center gap-1" type="button">
-                <span class="material-symbols-outlined text-[15px]">passkey</span>
-                <span>Sign in with a Passkey</span>
+          <!-- Account Verification & Recovery Links -->
+          <div class="mt-6 flex flex-col items-center gap-3 border-t border-surface-container-high pt-4">
+            <div class="flex items-center gap-3 text-xs font-label">
+              <button id="btn-verify-email-modal" class="text-primary hover:text-primary-container transition-colors flex items-center gap-1" type="button">
+                <span class="material-symbols-outlined text-[15px]">mark_email_read</span>
+                <span>Verify Email</span>
               </button>
               <span class="text-outline-variant">•</span>
-              <button id="btn-magic-link" class="text-on-surface-variant hover:text-on-surface transition-colors flex items-center gap-1" type="button">
-                <span class="material-symbols-outlined text-[15px]">magic_button</span>
-                <span>Use magic link</span>
+              <button id="btn-reset-password-modal" class="text-on-surface-variant hover:text-on-surface transition-colors flex items-center gap-1" type="button">
+                <span class="material-symbols-outlined text-[15px]">password</span>
+                <span>Reset with Token</span>
               </button>
             </div>
-
-            <button id="btn-org-url" class="text-xs text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1 font-body" type="button">
-              <span>Need custom workspace? Sign in with organization URL</span>
-              <span class="material-symbols-outlined text-[13px]">north_east</span>
-            </button>
           </div>
 
           <!-- Bottom Switcher Box -->
           <div class="mt-6 pt-5 bg-surface-container-low rounded-xl p-3 text-center border border-outline-variant/20">
             <p id="bottom-prompt" class="text-xs text-on-surface-variant">
               Don't have an account? 
-              <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Start a free trial</button>
+              <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Register new account</button>
               <span class="text-outline-variant mx-1.5">•</span>
-              <a class="text-on-surface font-medium hover:underline" href="/app">Explore sandbox</a>
+              <a class="text-on-surface font-medium hover:underline" href="/app">Explore demo</a>
             </p>
           </div>
         </div>
 
-        <!-- 4 Security Feature Badges Grid -->
+        <!-- 4 Verifiable Architecture & Security Badges Grid -->
         <div class="w-full max-w-4xl mt-12 mb-4">
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div class="p-4 rounded-xl bg-surface-container-low flex items-start gap-3 border border-outline-variant/20">
               <div class="p-2 rounded-lg bg-surface-container text-primary">
-                <span class="material-symbols-outlined text-[20px]">verified</span>
+                <span class="material-symbols-outlined text-[20px]">account_tree</span>
               </div>
               <div>
-                <h4 class="text-xs font-headline font-semibold text-on-surface">SOC 2 Type II</h4>
-                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Continuous compliance monitoring &amp; verification</p>
+                <h4 class="text-xs font-headline font-semibold text-on-surface">Tree-Sitter AST Analysis</h4>
+                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Deterministic syntax parsing &amp; call-graph extraction</p>
               </div>
             </div>
 
             <div class="p-4 rounded-xl bg-surface-container-low flex items-start gap-3 border border-outline-variant/20">
               <div class="p-2 rounded-lg bg-surface-container text-primary">
-                <span class="material-symbols-outlined text-[20px]">memory</span>
+                <span class="material-symbols-outlined text-[20px]">shield</span>
               </div>
               <div>
-                <h4 class="text-xs font-headline font-semibold text-on-surface">Zero Code Retention</h4>
-                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">ASTs analyzed ephemerally in volatile memory</p>
+                <h4 class="text-xs font-headline font-semibold text-on-surface">Repository Isolation</h4>
+                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Analyzed in local sandboxes without third-party exposure</p>
               </div>
             </div>
 
             <div class="p-4 rounded-xl bg-surface-container-low flex items-start gap-3 border border-outline-variant/20">
               <div class="p-2 rounded-lg bg-surface-container text-primary">
-                <span class="material-symbols-outlined text-[20px]">visibility_lock</span>
+                <span class="material-symbols-outlined text-[20px]">key</span>
               </div>
               <div>
-                <h4 class="text-xs font-headline font-semibold text-on-surface">Read-Only Scopes</h4>
-                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Minimal GitHub permissions, zero write hooks</p>
+                <h4 class="text-xs font-headline font-semibold text-on-surface">In-Flight Token Safety</h4>
+                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Access tokens &amp; PATs used strictly in-flight; never stored</p>
               </div>
             </div>
 
             <div class="p-4 rounded-xl bg-surface-container-low flex items-start gap-3 border border-outline-variant/20">
               <div class="p-2 rounded-lg bg-surface-container text-primary">
-                <span class="material-symbols-outlined text-[20px]">enhanced_encryption</span>
+                <span class="material-symbols-outlined text-[20px]">lock</span>
               </div>
               <div>
-                <h4 class="text-xs font-headline font-semibold text-on-surface">E2E Session Vault</h4>
-                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Per-tenant hardware security module encryption</p>
+                <h4 class="text-xs font-headline font-semibold text-on-surface">JWT Session Governance</h4>
+                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Signed HMAC-SHA256 session tokens with server-side revocation</p>
               </div>
             </div>
           </div>
@@ -352,9 +347,9 @@
               <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
               <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
             </span>
-            <span class="font-medium text-on-surface">All TwinCore Engine Clusters Operational</span>
+            <span class="font-medium text-on-surface">TwinCore Backend &amp; Database Connected</span>
             <span class="text-outline-variant">•</span>
-            <span class="font-mono text-[11px]">Region: us-east (p99 latency 14ms)</span>
+            <span class="font-mono text-[11px]">API Version: 0.1.0</span>
           </div>
         </div>
 
@@ -368,15 +363,15 @@
   <footer class="w-full bg-surface-container-low/60 backdrop-blur-md py-6 border-t border-outline-variant/20">
     <div class="w-full max-w-7xl mx-auto px-6 lg:px-12 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-on-surface-variant">
       <div class="flex items-center gap-2 font-normal">
-        <span>© 2025 Software Digital Twin Platform Inc.</span>
+        <span>© 2026 TwinCore Platform. All rights reserved.</span>
         <span class="text-outline-variant">•</span>
-        <span>Enterprise Grade Isolation</span>
+        <span>Developer Intelligence Platform</span>
       </div>
       <nav class="flex items-center gap-6">
-        <a class="hover:text-on-surface transition-colors cursor-pointer" onclick="showModalInfo('Compliance', 'SOC 2 Type II certified. ISO/IEC 27001 compliant architecture. Multi-tenant zero-trust isolation enforced at the database and AST engine boundaries.')">Compliance</a>
+        <a class="hover:text-on-surface transition-colors cursor-pointer" onclick="showProviderMatrixModal()">Provider Capability Matrix</a>
         <a class="hover:text-on-surface transition-colors cursor-pointer" href="/privacy" target="_blank">Privacy Policy</a>
         <a class="hover:text-on-surface transition-colors cursor-pointer" href="/terms" target="_blank">Terms of Service</a>
-        <a class="hover:text-on-surface transition-colors cursor-pointer" onclick="showModalInfo('Security Overview', 'End-to-end encrypted sessions with PBKDF2-HMAC-SHA256 password hashing, signed JWT Bearer credentials, and automated token revocation.')">Security Overview</a>
+        <a class="hover:text-on-surface transition-colors cursor-pointer" onclick="showModalInfo('Security Architecture', 'Authentication is enforced via salted PBKDF2-HMAC-SHA256 password hashing, signed JWT Bearer credentials, rate-limited endpoints, and server-side token revocation.')">Security Architecture</a>
       </nav>
     </div>
   </footer>
@@ -397,6 +392,170 @@
     </div>
   </div>
 
+  <!-- Provider Capability Matrix Modal -->
+  <div id="matrix-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display: none;">
+    <div class="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-surface-container-high pb-3">
+        <div class="flex items-center gap-2.5">
+          <span class="material-symbols-outlined text-primary text-[22px]">tune</span>
+          <div>
+            <h3 class="font-headline font-semibold text-base text-on-surface">Authentication Provider Capability Matrix</h3>
+            <p class="text-[11px] text-on-surface-variant">Live audit of supported, tested, and unconfigured identity mechanisms.</p>
+          </div>
+        </div>
+        <button onclick="document.getElementById('matrix-modal').style.display='none'" class="text-outline hover:text-on-surface p-1 rounded-lg" type="button">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-surface-container text-on-surface-variant font-semibold uppercase tracking-wider border-b border-outline-variant/20">
+            <tr>
+              <th class="p-2.5">Provider / Feature</th>
+              <th class="p-2.5">Implementation Status</th>
+              <th class="p-2.5">Operational State</th>
+              <th class="p-2.5">Required Configuration</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-surface-container-high text-on-surface">
+            <tr>
+              <td class="p-2.5 font-semibold">Email &amp; Password</td>
+              <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-100 text-emerald-800">IMPLEMENTED &amp; TESTED</span></td>
+              <td class="p-2.5 text-emerald-700 font-medium">✓ Active</td>
+              <td class="p-2.5 text-on-surface-variant text-[11px]">PBKDF2-HMAC-SHA256, rate-limited</td>
+            </tr>
+            <tr>
+              <td class="p-2.5 font-semibold">Password Reset Flow</td>
+              <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-100 text-emerald-800">IMPLEMENTED &amp; TESTED</span></td>
+              <td class="p-2.5 text-emerald-700 font-medium">✓ Active</td>
+              <td class="p-2.5 text-on-surface-variant text-[11px]">Single-use tokens, 15 min expiry</td>
+            </tr>
+            <tr>
+              <td class="p-2.5 font-semibold">Email Verification</td>
+              <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-100 text-emerald-800">IMPLEMENTED &amp; TESTED</span></td>
+              <td class="p-2.5 text-emerald-700 font-medium">✓ Active</td>
+              <td class="p-2.5 text-on-surface-variant text-[11px]">Registration confirmation tokens</td>
+            </tr>
+            <tr>
+              <td class="p-2.5 font-semibold">Session Governance &amp; Logout</td>
+              <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-100 text-emerald-800">IMPLEMENTED &amp; TESTED</span></td>
+              <td class="p-2.5 text-emerald-700 font-medium">✓ Active</td>
+              <td class="p-2.5 text-on-surface-variant text-[11px]">HttpOnly cookie + token blacklist</td>
+            </tr>
+            <tr>
+              <td class="p-2.5 font-semibold">GitHub OAuth App</td>
+              <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-100 text-amber-800">NOT CONFIGURED</span></td>
+              <td class="p-2.5 text-amber-700 font-medium">⚠ Setup Required</td>
+              <td class="p-2.5 text-on-surface-variant text-[11px]"><code>GITHUB_CLIENT_ID</code> &amp; Secret in env</td>
+            </tr>
+            <tr>
+              <td class="p-2.5 font-semibold">Enterprise SSO (SAML 2.0 / OIDC)</td>
+              <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-100 text-amber-800">NOT CONFIGURED</span></td>
+              <td class="p-2.5 text-amber-700 font-medium">⚠ Enterprise Setup</td>
+              <td class="p-2.5 text-on-surface-variant text-[11px]">Identity Provider SAML/OIDC metadata</td>
+            </tr>
+            <tr>
+              <td class="p-2.5 font-semibold">WebAuthn / Passkeys</td>
+              <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-700">UNAVAILABLE</span></td>
+              <td class="p-2.5 text-slate-500 font-medium">○ Inactive</td>
+              <td class="p-2.5 text-on-surface-variant text-[11px]">FIDO2 Relying Party credentials</td>
+            </tr>
+            <tr>
+              <td class="p-2.5 font-semibold">Magic Sign-in Links</td>
+              <td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-700">UNAVAILABLE</span></td>
+              <td class="p-2.5 text-slate-500 font-medium">○ Inactive</td>
+              <td class="p-2.5 text-on-surface-variant text-[11px]">Transactional SMTP relay</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex justify-end pt-2">
+        <button onclick="document.getElementById('matrix-modal').style.display='none'" class="px-4 py-2 rounded-full bg-primary-container text-on-primary text-xs font-medium hover:bg-primary transition-colors" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dedicated Forgot Password Modal -->
+  <div id="forgot-modal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display: none;">
+    <div class="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-surface-container-high pb-3">
+        <h3 class="font-headline font-semibold text-base text-on-surface">Reset Your Password</h3>
+        <button onclick="document.getElementById('forgot-modal').style.display='none'" class="text-outline hover:text-on-surface p-1 rounded-lg" type="button">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
+      <p class="text-xs text-on-surface-variant leading-relaxed">
+        Enter your registered email address. If an active account matches, password reset instructions and single-use token will be generated.
+      </p>
+      <form id="forgot-form" class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-on-surface mb-1" for="forgot-email">Account Email</label>
+          <input class="w-full h-10 px-3 rounded-lg bg-surface-container-low text-on-surface text-sm border border-outline-variant/30 focus:border-primary-container focus:outline-none" id="forgot-email" type="email" placeholder="alex@company.com" required/>
+        </div>
+        <div id="forgot-result-box" class="p-2.5 rounded-lg bg-surface-container text-xs text-on-surface hidden"></div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button onclick="document.getElementById('forgot-modal').style.display='none'" type="button" class="px-3.5 py-1.5 rounded-full border border-outline-variant/30 text-xs text-on-surface hover:bg-surface-container">Cancel</button>
+          <button id="btn-forgot-submit" type="submit" class="px-4 py-1.5 rounded-full bg-primary-container text-on-primary text-xs font-medium hover:bg-primary">Generate Reset Token</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Dedicated Reset Password Modal -->
+  <div id="reset-modal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display: none;">
+    <div class="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-surface-container-high pb-3">
+        <h3 class="font-headline font-semibold text-base text-on-surface">Update Password with Reset Token</h3>
+        <button onclick="document.getElementById('reset-modal').style.display='none'" class="text-outline hover:text-on-surface p-1 rounded-lg" type="button">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
+      <form id="reset-form" class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-on-surface mb-1" for="reset-token">Reset Token</label>
+          <input class="w-full h-10 px-3 font-mono rounded-lg bg-surface-container-low text-on-surface text-xs border border-outline-variant/30 focus:border-primary-container focus:outline-none" id="reset-token" type="text" placeholder="32-character token" required/>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-on-surface mb-1" for="reset-new-password">New Password</label>
+          <input class="w-full h-10 px-3 rounded-lg bg-surface-container-low text-on-surface text-sm border border-outline-variant/30 focus:border-primary-container focus:outline-none" id="reset-new-password" type="password" placeholder="At least 8 characters with letter & number" required/>
+        </div>
+        <div id="reset-result-box" class="p-2.5 rounded-lg bg-surface-container text-xs text-on-surface hidden"></div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button onclick="document.getElementById('reset-modal').style.display='none'" type="button" class="px-3.5 py-1.5 rounded-full border border-outline-variant/30 text-xs text-on-surface hover:bg-surface-container">Cancel</button>
+          <button id="btn-reset-submit" type="submit" class="px-4 py-1.5 rounded-full bg-primary-container text-on-primary text-xs font-medium hover:bg-primary">Update Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Dedicated Email Verification Modal -->
+  <div id="verify-modal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display: none;">
+    <div class="bg-surface-container-lowest border border-outline-variant/30 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-surface-container-high pb-3">
+        <h3 class="font-headline font-semibold text-base text-on-surface">Confirm Email Verification</h3>
+        <button onclick="document.getElementById('verify-modal').style.display='none'" class="text-outline hover:text-on-surface p-1 rounded-lg" type="button">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
+      <p class="text-xs text-on-surface-variant leading-relaxed">
+        Submit the verification token generated during registration to confirm ownership of your email address.
+      </p>
+      <form id="verify-form" class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-on-surface mb-1" for="verify-token-input">Verification Token</label>
+          <input class="w-full h-10 px-3 font-mono rounded-lg bg-surface-container-low text-on-surface text-xs border border-outline-variant/30 focus:border-primary-container focus:outline-none" id="verify-token-input" type="text" placeholder="Paste registration token" required/>
+        </div>
+        <div id="verify-result-box" class="p-2.5 rounded-lg bg-surface-container text-xs text-on-surface hidden"></div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button onclick="document.getElementById('verify-modal').style.display='none'" type="button" class="px-3.5 py-1.5 rounded-full border border-outline-variant/30 text-xs text-on-surface hover:bg-surface-container">Cancel</button>
+          <button id="btn-verify-submit" type="submit" class="px-4 py-1.5 rounded-full bg-primary-container text-on-primary text-xs font-medium hover:bg-primary">Confirm Email</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- ==================================================================== -->
   <!-- JAVASCRIPT AUTHENTICATION & INTERACTION MACHINE -->
   <!-- ==================================================================== -->
@@ -405,6 +564,10 @@
       document.getElementById('info-modal-title').textContent = title;
       document.getElementById('info-modal-body').textContent = body;
       document.getElementById('info-modal').style.display = 'flex';
+    }
+
+    function showProviderMatrixModal() {
+      document.getElementById('matrix-modal').style.display = 'flex';
     }
 
     (function() {
@@ -468,24 +631,23 @@
         hideAlerts();
 
         if (isRegisterMode) {
-          pageHeading.textContent = 'Create your Digital Twin Account';
-          pageSubheading.textContent = 'Join enterprise engineering teams simulating change impact and code architecture.';
+          pageHeading.textContent = 'Create your TwinCore Account';
+          pageSubheading.textContent = 'Join engineering teams evaluating change impact, architecture, and living software twins.';
           usernameContainer.style.display = 'block';
           usernameInput.required = true;
           labelEmail.textContent = 'Work Email *';
           emailInput.placeholder = 'alex@company.com';
           emailInput.type = 'email';
           submitBtnText.textContent = 'Create Account & Sign In';
-          switchModeBtn.textContent = 'Sign in instead';
           bottomPrompt.innerHTML = `
             Already have an account? 
             <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Sign in</button>
             <span class="text-outline-variant mx-1.5">•</span>
-            <a class="text-on-surface font-medium hover:underline" href="/app">Explore sandbox</a>
+            <a class="text-on-surface font-medium hover:underline" href="/app">Explore demo</a>
           `;
           document.getElementById('btn-switch-mode').addEventListener('click', () => toggleMode(false));
         } else {
-          pageHeading.textContent = 'Sign in to Software Digital Twin';
+          pageHeading.textContent = 'Sign in to TwinCore';
           pageSubheading.textContent = 'Access your living codebase model, change impact simulations, and incident intelligence.';
           usernameContainer.style.display = 'none';
           usernameInput.required = false;
@@ -494,9 +656,9 @@
           submitBtnText.textContent = 'Sign In';
           bottomPrompt.innerHTML = `
             Don't have an account? 
-            <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Start a free trial</button>
+            <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Register new account</button>
             <span class="text-outline-variant mx-1.5">•</span>
-            <a class="text-on-surface font-medium hover:underline" href="/app">Explore sandbox</a>
+            <a class="text-on-surface font-medium hover:underline" href="/app">Explore demo</a>
           `;
           document.getElementById('btn-switch-mode').addEventListener('click', () => toggleMode(true));
         }
@@ -547,6 +709,21 @@
             showError('Please enter your password.');
             passwordInput.focus();
             return;
+          }
+
+          if (isRegisterMode) {
+            if (password.length < 8) {
+              showError('Password must be at least 8 characters long.');
+              passwordInput.focus();
+              return;
+            }
+            const hasLetter = /[a-zA-Z]/.test(password);
+            const hasDigitOrSpecial = /[\d\W_]/.test(password);
+            if (!hasLetter || !hasDigitOrSpecial) {
+              showError('Password must contain at least one letter and at least one number or special character.');
+              passwordInput.focus();
+              return;
+            }
           }
 
           submitBtn.disabled = true;
@@ -603,7 +780,7 @@
               const urlParams = new URLSearchParams(window.location.search);
               const redirectUrl = urlParams.get('redirect') || '/app';
               window.location.replace(redirectUrl);
-            }, 600);
+            }, 500);
 
           } catch (err) {
             console.error('Authentication error:', err);
@@ -618,99 +795,152 @@
         });
       }
 
-      // Continue with GitHub Button & ⌘ + G Shortcut
-      const ghBtn = document.getElementById('btn-github');
-      if (ghBtn) {
-        ghBtn.addEventListener('click', () => {
-          showModalInfo(
-            'Continue with GitHub',
-            'To connect your GitHub account or analyze repositories, you can sign in directly with your GitHub credentials or proceed into the Digital Twin workspace to connect any public or private repository using secure in-flight tokens.'
-          );
-        });
-      }
+      // Truthful Provider Configuration Handlers
+      document.getElementById('btn-github')?.addEventListener('click', () => {
+        showModalInfo(
+          'GitHub OAuth Configuration Required',
+          'GitHub OAuth login requires a registered GitHub OAuth Application with GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET configured in your TwinCore deployment. To analyze public or private GitHub repositories without OAuth login, sign in with email/password and enter your repository URL in the workspace.'
+        );
+      });
 
-      // SSO / SAML Button
-      const ssoBtn = document.getElementById('btn-sso');
-      if (ssoBtn) {
-        ssoBtn.addEventListener('click', () => {
-          showModalInfo(
-            'Enterprise Single Sign-On (SSO / SAML)',
-            'Digital Twin supports SAML 2.0 and OIDC integrations for Okta, Microsoft Azure AD, Google Workspace, and PingFederate. Please contact your organization security administrator for your enterprise workspace URL.'
-          );
-        });
-      }
+      document.getElementById('btn-sso')?.addEventListener('click', () => {
+        showModalInfo(
+          'Enterprise Single Sign-On (SSO / SAML)',
+          'SAML 2.0 and OIDC integrations (Okta, Microsoft Entra ID, PingFederate) require enterprise identity provider metadata configured by your systems administrator. For standard workspaces, please authenticate via Email & Password.'
+        );
+      });
 
-      // Passkey Button
-      const passkeyBtn = document.getElementById('btn-passkey');
-      if (passkeyBtn) {
-        passkeyBtn.addEventListener('click', () => {
-          showModalInfo(
-            'WebAuthn & Passkeys',
-            'Hardware security keys (YubiKey) and platform biometrics (Touch ID / Windows Hello) are supported for zero-trust passwordless authentication.'
-          );
-        });
-      }
+      document.getElementById('btn-show-matrix')?.addEventListener('click', showProviderMatrixModal);
 
-      // Magic Link Button
-      const magicBtn = document.getElementById('btn-magic-link');
-      if (magicBtn) {
-        magicBtn.addEventListener('click', () => {
-          const emailVal = emailInput.value.trim();
-          if (!emailVal || !emailVal.includes('@')) {
-            showError('Please enter your work email address in the field above to receive a magic link.');
-            emailInput.focus();
-            return;
+      // Dedicated Forgot Password Trigger
+      document.getElementById('btn-forgot-password-trigger')?.addEventListener('click', () => {
+        const modal = document.getElementById('forgot-modal');
+        const emailField = document.getElementById('forgot-email');
+        if (emailInput && emailInput.value) emailField.value = emailInput.value.trim();
+        modal.style.display = 'flex';
+      });
+
+      // Forgot Password Form Submit
+      document.getElementById('forgot-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('forgot-email').value.trim();
+        const resBox = document.getElementById('forgot-result-box');
+        const submitBtn = document.getElementById('btn-forgot-submit');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Generating...';
+        try {
+          const res = await fetch('/api/v1/auth/forgot-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+          });
+          const data = await res.json();
+          resBox.classList.remove('hidden');
+          if (data.reset_token) {
+            resBox.innerHTML = `
+              <div class="text-emerald-700 font-semibold mb-1">✓ Reset Token Generated (Development Environment):</div>
+              <div class="font-mono bg-white p-2 rounded border border-outline-variant/30 select-all text-xs break-all">${data.reset_token}</div>
+              <button type="button" class="mt-2 text-xs text-primary font-semibold hover:underline" onclick="document.getElementById('forgot-modal').style.display='none'; document.getElementById('reset-token').value='${data.reset_token}'; document.getElementById('reset-modal').style.display='flex';">
+                Proceed to Reset Password →
+              </button>
+            `;
+          } else {
+            resBox.textContent = data.message || 'If an account matches that email, reset instructions have been dispatched.';
           }
-          showInfo(`Magic sign-in link dispatched to ${emailVal}. Please check your corporate inbox.`);
-        });
-      }
-
-      // Forgot Password Button
-      const forgotBtn = document.getElementById('btn-forgot-password');
-      if (forgotBtn) {
-        forgotBtn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          const emailVal = emailInput.value.trim();
-          if (!emailVal) {
-            showInfo('Please enter your work email in the field above to receive password reset instructions.');
-            emailInput.focus();
-            return;
-          }
-          try {
-            forgotBtn.textContent = 'Requesting...';
-            const res = await fetch('/api/v1/auth/forgot-password', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: emailVal })
-            });
-            const data = await res.json();
-            showInfo(data.message || `If an account with that email exists, reset instructions have been dispatched.`);
-          } catch (err) {
-            showInfo('Unable to request password reset right now. Please try again later.');
-          } finally {
-            forgotBtn.textContent = 'Forgot password?';
-          }
-        });
-      }
-
-      // Organization URL Button
-      const orgBtn = document.getElementById('btn-org-url');
-      if (orgBtn) {
-        orgBtn.addEventListener('click', () => {
-          showModalInfo(
-            'Custom Organization Workspace',
-            'If your team hosts a dedicated on-premise or VPC cluster (e.g. twin.internal.yourcompany.com), enter your tenant subdomain or connect via your corporate reverse proxy.'
-          );
-        });
-      }
-
-      // Global Keyboard Shortcut: ⌘ + G for GitHub
-      window.addEventListener('keydown', (e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
-          e.preventDefault();
-          if (ghBtn) ghBtn.click();
+        } catch (err) {
+          resBox.classList.remove('hidden');
+          resBox.textContent = 'Failed to generate reset token. Please try again.';
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Generate Reset Token';
         }
       });
+
+      // Dedicated Reset Password Trigger
+      document.getElementById('btn-reset-password-modal')?.addEventListener('click', () => {
+        document.getElementById('reset-modal').style.display = 'flex';
+      });
+
+      // Reset Password Form Submit
+      document.getElementById('reset-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const token = document.getElementById('reset-token').value.trim();
+        const newPassword = document.getElementById('reset-new-password').value;
+        const resBox = document.getElementById('reset-result-box');
+        const submitBtn = document.getElementById('btn-reset-submit');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Updating...';
+        try {
+          const res = await fetch('/api/v1/auth/reset-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, new_password: newPassword })
+          });
+          const data = await res.json();
+          resBox.classList.remove('hidden');
+          if (res.ok) {
+            resBox.className = 'p-2.5 rounded-lg bg-emerald-50 text-emerald-800 text-xs border border-emerald-200';
+            resBox.textContent = data.message || 'Password successfully updated! You can now sign in.';
+            setTimeout(() => {
+              document.getElementById('reset-modal').style.display = 'none';
+              showInfo('Password updated successfully. Please sign in with your new password.');
+            }, 1200);
+          } else {
+            resBox.className = 'p-2.5 rounded-lg bg-rose-50 text-rose-800 text-xs border border-rose-200';
+            resBox.textContent = data.detail || 'Password reset failed.';
+          }
+        } catch (err) {
+          resBox.classList.remove('hidden');
+          resBox.className = 'p-2.5 rounded-lg bg-rose-50 text-rose-800 text-xs border border-rose-200';
+          resBox.textContent = 'Error connecting to reset service: ' + err.message;
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Update Password';
+        }
+      });
+
+      // Dedicated Verify Email Trigger
+      document.getElementById('btn-verify-email-modal')?.addEventListener('click', () => {
+        document.getElementById('verify-modal').style.display = 'flex';
+      });
+
+      // Verify Email Form Submit
+      document.getElementById('verify-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const token = document.getElementById('verify-token-input').value.trim();
+        const resBox = document.getElementById('verify-result-box');
+        const submitBtn = document.getElementById('btn-verify-submit');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Verifying...';
+        try {
+          const res = await fetch('/api/v1/auth/verify-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token })
+          });
+          const data = await res.json();
+          resBox.classList.remove('hidden');
+          if (res.ok) {
+            resBox.className = 'p-2.5 rounded-lg bg-emerald-50 text-emerald-800 text-xs border border-emerald-200';
+            resBox.textContent = data.message || 'Email verified successfully!';
+            setTimeout(() => {
+              document.getElementById('verify-modal').style.display = 'none';
+              showInfo('Email address verified successfully. You may continue into your workspace.');
+            }, 1200);
+          } else {
+            resBox.className = 'p-2.5 rounded-lg bg-rose-50 text-rose-800 text-xs border border-rose-200';
+            resBox.textContent = data.detail || 'Email verification failed.';
+          }
+        } catch (err) {
+          resBox.classList.remove('hidden');
+          resBox.className = 'p-2.5 rounded-lg bg-rose-50 text-rose-800 text-xs border border-rose-200';
+          resBox.textContent = 'Error verifying email: ' + err.message;
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Confirm Email';
+        }
+      });
+
     })();
   </script>
 </body>

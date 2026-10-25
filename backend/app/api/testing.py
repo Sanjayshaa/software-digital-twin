@@ -120,7 +120,29 @@ def run_test_impact_analysis(
             config=config,
         )
         from fastapi.encoders import jsonable_encoder
-        return jsonable_encoder(result)
+        data = jsonable_encoder(result)
+
+        # Enrich with Smart CI Targeter commands and ROI Metrics
+        from app.services.testing.ci_exporter import (
+            generate_ci_test_commands,
+            compute_ci_roi_metrics,
+            generate_pr_markdown_summary,
+        )
+        
+        affected = data.get("affected_tests", [])
+        total_tests = data.get("summary", {}).get("total_catalog_tests", len(affected))
+        ci_cmds = generate_ci_test_commands(affected)
+        roi = compute_ci_roi_metrics(total_tests, len(affected))
+        data["ci_commands"] = ci_cmds
+        data["roi_metrics"] = roi
+        data["pr_markdown"] = generate_pr_markdown_summary(
+            repository_name=repo.name,
+            base_ref=base_snap.commit_hash or base_snap.id,
+            head_ref=target_snap.commit_hash or target_snap.id,
+            impact_data=data,
+        )
+
+        return data
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

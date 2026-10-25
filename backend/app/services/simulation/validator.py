@@ -196,8 +196,17 @@ class ScenarioValidator:
             # 4. REMOVE_DEPENDENCY
             elif mut.mutation_type == MutationType.REMOVE_DEPENDENCY:
                 if not mut.source:
-                    errors.append(f"REMOVE_DEPENDENCY mutation '{mut.mutation_id}' requires a 'source' entity.")
+                    # Single-target decouple / component removal
+                    tgt_art, tgt_ambig = resolve_entity(mut.target)
+                    if tgt_ambig:
+                        errors.append(tgt_ambig)
+                    elif not tgt_art:
+                        unknown_entities.append(mut.target)
+                        errors.append(f"Unknown target entity '{mut.target}' to decouple/remove.")
+                    else:
+                        validated.append(mut)
                     continue
+
                 src_art, src_ambig = resolve_entity(mut.source)
                 tgt_art, tgt_ambig = resolve_entity(mut.target)
 
@@ -219,6 +228,28 @@ class ScenarioValidator:
                         errors.append(f"Cannot remove non-existent dependency: No relationship exists from '{src_art.qualified_name}' to '{tgt_art.qualified_name}'.")
                     else:
                         validated.append(mut)
+
+            # 5. REMOVE_COMPONENT & SERVICE_OUTAGE
+            elif mut.mutation_type in (MutationType.REMOVE_COMPONENT, MutationType.SERVICE_OUTAGE):
+                tgt_art, tgt_ambig = resolve_entity(mut.target)
+                if tgt_ambig:
+                    errors.append(tgt_ambig)
+                elif not tgt_art:
+                    unknown_entities.append(mut.target)
+                    errors.append(f"Unknown target entity '{mut.target}' for {mut.mutation_type.value}. Entity does not exist in the base Digital Twin.")
+                else:
+                    validated.append(mut)
+
+            # 6. SCHEMA_MIGRATION
+            elif mut.mutation_type == MutationType.SCHEMA_MIGRATION:
+                tgt_art, tgt_ambig = resolve_entity(mut.target)
+                if tgt_ambig:
+                    errors.append(tgt_ambig)
+                elif not tgt_art:
+                    unknown_entities.append(mut.target)
+                    errors.append(f"Unknown schema/table entity '{mut.target}'. Entity does not exist in the base Digital Twin.")
+                else:
+                    validated.append(mut)
 
             # 5. MODIFY_COMPONENT_RELATIONSHIP
             elif mut.mutation_type == MutationType.MODIFY_COMPONENT_RELATIONSHIP:

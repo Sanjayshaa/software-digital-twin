@@ -26,8 +26,10 @@ from app.api.testing import router as testing_router
 from app.api.risk import router as risk_router
 from app.api.simulation import router as simulation_router
 from app.api.auth import router as auth_router
+from app.api.github import router as github_router
 from app.api.twin_knowledge import router as twin_knowledge_router
 from app.api.evaluation import router as evaluation_router
+from app.api.demo import router as demo_router
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -167,6 +169,14 @@ def serve_login():
         return FileResponse(login_file)
     return RedirectResponse(url="/app")
 
+
+@app.get("/demo", response_class=FileResponse, tags=["Web UI"])
+def serve_demo():
+    index_file = os.path.join(static_dir, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return RedirectResponse(url="/app#demo")
+
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     from fastapi.responses import Response
@@ -206,8 +216,11 @@ app.include_router(twin_knowledge_router, prefix="/api/v1")
 app.include_router(twin_knowledge_router)
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(auth_router)
+app.include_router(github_router, prefix="/api/v1")
+app.include_router(github_router)
 app.include_router(evaluation_router, prefix="/api/v1")
 app.include_router(evaluation_router)
+app.include_router(demo_router)
 
 
 @app.on_event("startup")

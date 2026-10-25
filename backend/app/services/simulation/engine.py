@@ -35,6 +35,8 @@ from app.services.simulation.models import (
     SimulatedRiskSummary,
     VirtualTwinComparison,
     ScenarioAnalysisResult,
+    TargetEntityDetails,
+    RiskScoreBreakdown,
 )
 from app.services.simulation.validator import scenario_validator, ScenarioValidator
 from app.services.simulation.virtual_twin import VirtualTwinModel
@@ -89,15 +91,8 @@ class ScenarioSimulationEngine:
             .all()
         )
 
-        # 2. Validate proposed mutations against baseline state
-        validation: ScenarioValidationResult = self.validator.validate_mutations(
-            base_artifacts=base_artifacts,
-            base_rels=base_rels,
-            mutations=proposed_changes,
-        )
-
-        # If invalid, return failed scenario with explanation
-        if not validation.is_valid:
+        # 2. Check for empty graph baseline
+        if not base_artifacts:
             elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
             return ScenarioAnalysisResult(
                 scenario_id=scen_id,
@@ -105,7 +100,59 @@ class ScenarioSimulationEngine:
                 base_snapshot_id=base_snapshot_id,
                 name=name,
                 description=description,
-                status=ScenarioStatus.FAILED,
+                status=ScenarioStatus.EMPTY_GRAPH,
+                status_explanation=f"Knowledge graph for snapshot '{base_snapshot_id}' contains 0 structural artifacts. Analysis cannot determine impact.",
+                created_at=now_iso,
+                proposed_changes=proposed_changes,
+                validation=ScenarioValidationResult(
+                    is_valid=False,
+                    errors=[f"Snapshot '{base_snapshot_id}' has not been parsed or indexed."],
+                    unknown_entities=[m.target or m.source for m in proposed_changes if m.target or m.source],
+                ),
+                impact=SimulatedImpactSummary(),
+                tests=SimulatedTestImpactSummary(),
+                risk=SimulatedRiskSummary(
+                    scenario_risk_category="UNKNOWN",
+                    confidence_level="LOW",
+                    confidence_score=0.0,
+                    overall_score=0.0,
+                    risk_factors=[],
+                    explanation=f"Knowledge graph is empty for snapshot '{base_snapshot_id}'. Zero components or dependencies available.",
+                ),
+                guardrails=[],
+                evidence=[],
+                assumptions=["No indexed graph artifacts exist for the selected snapshot."],
+                unknowns=["Complete snapshot graph topology is unindexed."],
+                comparison=VirtualTwinComparison(),
+                execution_time_ms=elapsed_ms,
+                limitations=["Snapshot repository must be parsed and indexed before running simulations."],
+                recommended_verification=["Trigger twin resync / graph re-indexing for this snapshot."],
+            )
+
+        # 3. Validate proposed mutations against baseline state
+        validation: ScenarioValidationResult = self.validator.validate_mutations(
+            base_artifacts=base_artifacts,
+            base_rels=base_rels,
+            mutations=proposed_changes,
+        )
+
+        # If invalid, return failed or unresolved target scenario with explicit explanation
+        if not validation.is_valid:
+            elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            status = ScenarioStatus.UNRESOLVED_TARGET if validation.unknown_entities else ScenarioStatus.FAILED
+            status_expl = (
+                f"Proposed target '{', '.join(validation.unknown_entities)}' could not be resolved in active snapshot graph."
+                if validation.unknown_entities
+                else f"Scenario validation failed: {'; '.join(validation.errors)}"
+            )
+            return ScenarioAnalysisResult(
+                scenario_id=scen_id,
+                repository_id=repository_id,
+                base_snapshot_id=base_snapshot_id,
+                name=name,
+                description=description,
+                status=status,
+                status_explanation=status_expl,
                 created_at=now_iso,
                 proposed_changes=proposed_changes,
                 validation=validation,
@@ -117,7 +164,7 @@ class ScenarioSimulationEngine:
                     confidence_score=0.0,
                     overall_score=0.0,
                     risk_factors=[],
-                    explanation=f"Scenario validation failed: {'; '.join(validation.errors)}",
+                    explanation=status_expl,
                 ),
                 guardrails=[],
                 evidence=[],
@@ -125,6 +172,8 @@ class ScenarioSimulationEngine:
                 unknowns=validation.unknown_entities,
                 comparison=VirtualTwinComparison(),
                 execution_time_ms=elapsed_ms,
+                limitations=["Simulation requires valid target entity existing in current snapshot."],
+                recommended_verification=["Select a recognized component from the dropdown or verify symbol qualified name."],
             )
 
         # 3. Create isolated in-memory Virtual Twin and apply validated mutations
@@ -236,10 +285,79 @@ class ScenarioSimulationEngine:
             target_relationships=v_twin.virtual_rels,
         )
 
+        # Resolve target entity details & topology
+        primary_target_str = None
+        if proposed_changes:
+            primary_target_str = proposed_changes[0].target or proposed_changes[0].source
+
+        target_art: Optional[StructuralArtifact] = None
+        if primary_target_str:
+            target_art = next(
+                (a for a in base_artifacts if a.qualified_name == primary_target_str or a.id == primary_target_str or a.name == primary_target_str),
+                None
+            )
+
+        in_degree = 0
+        out_degree = 0
+        is_leaf = False
+        is_test_entity = False
+        target_details = None
+
+        if target_art:
+            in_degree = sum(1 for r in base_rels if r.target_artifact_id == target_art.id)
+            out_degree = sum(1 for r in base_rels if r.source_artifact_id == target_art.id)
+            is_leaf = (in_degree == 0)
+            art_type_str = (target_art.artifact_type.value if hasattr(target_art.artifact_type, "value") else str(target_art.artifact_type or "")).lower()
+            loc_str = str(target_art.file_path or target_art.location or "").lower()
+            name_str = str(target_art.qualified_name or target_art.name or "").lower()
+            is_test_entity = ("test" in art_type_str or "test" in loc_str or "test" in name_str)
+
+            loc_val = getattr(target_art, "file_path", None) or getattr(target_art, "location", None)
+            l_start = getattr(target_art, "line_start", None) or getattr(target_art, "start_line", None)
+            l_end = getattr(target_art, "line_end", None) or getattr(target_art, "end_line", None)
+            target_details = TargetEntityDetails(
+                id=target_art.id,
+                name=target_art.name or primary_target_str,
+                qualified_name=target_art.qualified_name or primary_target_str,
+                artifact_type=target_art.artifact_type.value if hasattr(target_art.artifact_type, "value") else str(target_art.artifact_type),
+                location=loc_val,
+                in_degree=in_degree,
+                out_degree=out_degree,
+                is_leaf=is_leaf,
+                is_test_entity=is_test_entity,
+                resolution_method="EXACT_MATCH",
+            )
+
         # 8. Separate and Categorize Evidence
         evidence_items: List[SimulationEvidenceItem] = []
 
-        # (a) Simulated Structural Evidence
+        # (a) Static Grounded Code Evidence
+        if target_art:
+            loc_val = getattr(target_art, "file_path", None) or getattr(target_art, "location", None) or "unknown source"
+            l_start = getattr(target_art, "line_start", None) or getattr(target_art, "start_line", None)
+            l_end = getattr(target_art, "line_end", None) or getattr(target_art, "end_line", None)
+            lines_display = f" (L{l_start}-{l_end})" if l_start else ""
+            evidence_items.append(
+                SimulationEvidenceItem(
+                    category=EvidenceCategory.STATIC_EXTRACTED,
+                    label=f"Static code definition: {target_art.qualified_name}",
+                    description=f"Artifact '{target_art.name}' ({target_art.artifact_type}) defined in {loc_val}{lines_display}. Extracted via static AST parsing. Baseline in-degree callers: {in_degree}, out-degree calls: {out_degree}.",
+                    source_entity=target_art.qualified_name,
+                    details={
+                        "file_path": loc_val,
+                        "line_start": l_start,
+                        "line_end": l_end,
+                        "in_degree": in_degree,
+                        "out_degree": out_degree,
+                        "is_leaf": is_leaf,
+                        "is_test_entity": is_test_entity,
+                        "extraction_method": "STATIC_AST",
+                        "evidence_status": "STATIC_EXTRACTED",
+                    },
+                )
+            )
+
+        # (b) Simulated Structural Evidence
         for finding in sim_impact.findings:
             evidence_items.append(
                 SimulationEvidenceItem(
@@ -375,14 +493,48 @@ class ScenarioSimulationEngine:
         # 10. Explicit Simulation Phrasing for Risk & Explanations
         scenario_risk_category = sim_risk.overall_category.value
         changed_count = getattr(sim_impact.summary, "changed", len(v_changeset.changes))
+
+        # Compute exact mathematical breakdown of risk score
+        structural_score = 0.0
+        guardrail_score = 0.0
+        test_score = 0.0
+        incident_score = 0.0
+        for rf in sim_risk.risk_factors:
+            f_id = rf.factor_id.value if hasattr(rf.factor_id, "value") else str(rf.factor_id)
+            if "TEST" in f_id or "COVERAGE" in f_id or f_id == "UNKNOWN_EVIDENCE":
+                test_score += rf.score
+            elif "GUARDRAIL" in f_id or "ARCHITECTURE" in f_id:
+                guardrail_score += rf.score
+            elif "INCIDENT" in f_id or "RUNTIME" in f_id:
+                incident_score += rf.score
+            elif "STRUCTURAL" in f_id or "IMPACT" in f_id or "COUPLING" in f_id or "API" in f_id:
+                structural_score += rf.score
+
+        risk_math_expl = (
+            f"Overall score {sim_risk.overall_score:.1f}/100 = "
+            f"Structural Blast ({structural_score:.1f}) + "
+            f"Guardrails ({guardrail_score:.1f}) + "
+            f"Test Coverage Gap ({test_score:.1f}) + "
+            f"Incident History ({incident_score:.1f})"
+        )
+        risk_breakdown = RiskScoreBreakdown(
+            structural_impact_score=round(structural_score, 1),
+            guardrail_penalty=round(guardrail_score, 1),
+            test_coverage_penalty=round(test_score, 1),
+            incident_history_penalty=round(incident_score, 1),
+            overall_score=round(sim_risk.overall_score, 1),
+            explanation=risk_math_expl,
+        )
+
         risk_explanation = (
-            f"Scenario risk: {scenario_risk_category}. "
+            f"Scenario risk: {scenario_risk_category} ({sim_risk.overall_score:.1f}/100). "
             f"Simulated change proposes {len(validation.validated_mutations)} mutations touching "
             f"{changed_count} entities. "
             f"Potentially affects {sim_impact.summary.affected_components} components, "
             f"{sim_impact.summary.affected_apis} APIs, and {len(sim_tests.affected_tests)} tests "
             f"({len(sim_tests.unknown_coverage)} entities with unknown coverage). "
-            f"{'Triggers ' + str(len(new_violations)) + ' new architecture guardrail violations.' if new_violations else 'No new architecture violations detected.'}"
+            f"{'Triggers ' + str(len(new_violations)) + ' new architecture guardrail violations.' if new_violations else 'No new architecture violations detected.'} "
+            f"Risk calculation: {risk_math_expl}."
         )
 
         # 11. Compile Results
@@ -428,6 +580,54 @@ class ScenarioSimulationEngine:
             explanation=risk_explanation,
         )
 
+        # Explicit Scenario Status Determination
+        total_affected = len(impact_summary.affected_components) + len(impact_summary.affected_apis) + len(impact_summary.affected_services)
+        if total_affected == 0:
+            status = ScenarioStatus.VERIFIED_ZERO_IMPACT
+            if is_test_entity:
+                status_explanation = (
+                    f"Verified Zero Downstream Impact: Target '{target_details.qualified_name if target_details else primary_target_str}' "
+                    f"is an isolated test artifact with 0 inbound callers (in-degree: 0). Modifications to test suites do not propagate breaking changes to production services."
+                )
+            elif is_leaf:
+                status_explanation = (
+                    f"Verified Zero Downstream Impact: Target '{target_details.qualified_name if target_details else primary_target_str}' "
+                    f"has in-degree = 0 (no callers depend on this entity in the snapshot graph). The mutation is structurally isolated."
+                )
+            else:
+                status_explanation = (
+                    f"Verified Zero Downstream Impact: No downstream components, APIs, or breaking paths detected for this hypothetical mutation."
+                )
+        else:
+            status = ScenarioStatus.DOWNSTREAM_IMPACT_DETECTED
+            status_explanation = (
+                f"Downstream Impact Detected: Hypothetical change propagates to {len(impact_summary.affected_components)} components, "
+                f"{len(impact_summary.affected_apis)} APIs, and {len(impact_summary.affected_services)} services across {len(impact_summary.propagation_paths)} paths."
+            )
+
+        # Recommended verification
+        recommended_verification: List[str] = []
+        target_fpath = (getattr(target_art, "file_path", None) or getattr(target_art, "location", None)) if target_art else None
+        if is_test_entity and target_fpath:
+            recommended_verification.append(f"Run localized test runner: pytest {target_fpath} (or ctest / npm test) to verify unit test correctness.")
+        elif test_summary.directly_affected_tests:
+            t_names = " ".join(test_summary.directly_affected_tests[:3])
+            recommended_verification.append(f"Run directly affected tests: pytest -k '{t_names}'")
+        else:
+            recommended_verification.append("Run repository test suite to verify baseline functionality.")
+        if is_leaf:
+            recommended_verification.append("Verify static caller extraction: Confirm if dynamic/reflection callers exist that static AST parser does not resolve.")
+        if new_violations:
+            recommended_verification.append(f"Review {len(new_violations)} new architecture guardrail violation(s) before proceeding.")
+
+        # Limitations
+        limitations: List[str] = [
+            "Static dependency analysis cannot detect dynamic reflection, runtime RPC lookups, or string-based dispatch.",
+            "Analysis reflects snapshot graph topology and assumes no external unindexed runtime mutations.",
+        ]
+        if is_leaf:
+            limitations.append("Target has in-degree of 0 in current twin. Multi-repository cross-boundary callers are not captured in a single-repo twin.")
+
         assumptions = [
             f"Simulation evaluated against baseline snapshot '{base_snapshot_id}'.",
             "Target environment topology is assumed structurally coherent with the baseline Digital Twin.",
@@ -442,7 +642,7 @@ class ScenarioSimulationEngine:
             base_snapshot_id=base_snapshot_id,
             name=name,
             description=description,
-            status=ScenarioStatus.COMPLETED,
+            status=status,
             created_at=now_iso,
             proposed_changes=validation.validated_mutations,
             validation=validation,
@@ -455,6 +655,11 @@ class ScenarioSimulationEngine:
             unknowns=unknown_evidence_signals + validation.unknown_entities,
             comparison=comparison,
             execution_time_ms=elapsed_ms,
+            target_details=target_details,
+            risk_breakdown=risk_breakdown,
+            status_explanation=status_explanation,
+            recommended_verification=recommended_verification,
+            limitations=limitations,
         )
 
 

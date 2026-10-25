@@ -179,6 +179,46 @@ class VirtualTwinModel:
                     )
                 )
 
+        elif mut.mutation_type in (MutationType.REMOVE_COMPONENT, MutationType.SERVICE_OUTAGE) or (
+            mut.mutation_type == MutationType.REMOVE_DEPENDENCY and not mut.source
+        ):
+            tgt = self._resolve(mut.target)
+            if tgt:
+                # Disconnect all relationships touching this component
+                touching_rels = [
+                    r for r in self.virtual_rels
+                    if r.source_artifact_id == tgt.id or r.target_artifact_id == tgt.id
+                ]
+                for r in touching_rels:
+                    if r in self.virtual_rels:
+                        self.virtual_rels.remove(r)
+                    src_art = self.art_by_id.get(r.source_artifact_id)
+                    tgt_art = self.art_by_id.get(r.target_artifact_id)
+                    self.removed_relationships.append({
+                        "source": src_art.qualified_name if src_art else r.source_artifact_id,
+                        "target": tgt_art.qualified_name if tgt_art else r.target_artifact_id,
+                        "relationship_type": r.relationship_type,
+                        "mutation_id": mut.mutation_id,
+                    })
+
+                if tgt in self.virtual_artifacts:
+                    self.virtual_artifacts.remove(tgt)
+
+                is_outage = mut.mutation_type == MutationType.SERVICE_OUTAGE
+                self.virtual_changes.append(
+                    ChangeItem(
+                        change_type=ChangeType.REMOVED,
+                        artifact_id=tgt.id,
+                        symbol_name=tgt.name,
+                        qualified_name=tgt.qualified_name,
+                        artifact_type=tgt.artifact_type,
+                        source_file=(tgt.location or tgt.name).split(":")[0],
+                        evidence=[
+                            f"Simulated {'service outage / failure' if is_outage else 'component removal'}: '{tgt.qualified_name}'"
+                        ],
+                    )
+                )
+
         elif mut.mutation_type == MutationType.REMOVE_DEPENDENCY:
             src = self._resolve(mut.source)
             tgt = self._resolve(mut.target)
@@ -208,6 +248,22 @@ class VirtualTwinModel:
                         artifact_type=src.artifact_type,
                         source_file=(src.location or src.name).split(":")[0],
                         evidence=[f"Proposed removed dependency from '{tgt.qualified_name}'"],
+                    )
+                )
+
+        elif mut.mutation_type == MutationType.SCHEMA_MIGRATION:
+            art = self._resolve(mut.target)
+            if art:
+                art.source_hash = f"{art.source_hash or 'hash'}_schema_mutated"
+                self.virtual_changes.append(
+                    ChangeItem(
+                        change_type=ChangeType.MODIFIED,
+                        artifact_id=art.id,
+                        symbol_name=art.name,
+                        qualified_name=art.qualified_name,
+                        artifact_type=art.artifact_type,
+                        source_file=(art.location or art.name).split(":")[0],
+                        evidence=[mut.description or f"Proposed database schema migration on '{art.qualified_name}'"],
                     )
                 )
 

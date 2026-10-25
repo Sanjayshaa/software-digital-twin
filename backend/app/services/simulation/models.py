@@ -16,14 +16,45 @@ class MutationType(str, Enum):
     REMOVE_DEPENDENCY = "REMOVE_DEPENDENCY"
     MODIFY_API = "MODIFY_API"
     MODIFY_COMPONENT_RELATIONSHIP = "MODIFY_COMPONENT_RELATIONSHIP"
+    SERVICE_OUTAGE = "SERVICE_OUTAGE"
+    REMOVE_COMPONENT = "REMOVE_COMPONENT"
+    SCHEMA_MIGRATION = "SCHEMA_MIGRATION"
 
 
 class ScenarioStatus(str, Enum):
     DRAFT = "DRAFT"
     ANALYZING = "ANALYZING"
     COMPLETED = "COMPLETED"
+    VERIFIED_ZERO_IMPACT = "VERIFIED_ZERO_IMPACT"
+    DOWNSTREAM_IMPACT_DETECTED = "DOWNSTREAM_IMPACT_DETECTED"
+    UNRESOLVED_TARGET = "UNRESOLVED_TARGET"
+    EMPTY_GRAPH = "EMPTY_GRAPH"
+    MISSING_SNAPSHOT = "MISSING_SNAPSHOT"
+    PARTIAL_ANALYSIS = "PARTIAL_ANALYSIS"
     FAILED = "FAILED"
     EXPIRED = "EXPIRED"
+
+
+class TargetEntityDetails(BaseModel):
+    id: Optional[str] = None
+    name: str
+    qualified_name: str
+    artifact_type: str = "COMPONENT"
+    location: Optional[str] = None
+    in_degree: int = 0
+    out_degree: int = 0
+    is_leaf: bool = False
+    is_test_entity: bool = False
+    resolution_method: str = "EXACT"
+
+
+class RiskScoreBreakdown(BaseModel):
+    structural_impact_score: float = 0.0
+    guardrail_penalty: float = 0.0
+    test_coverage_penalty: float = 0.0
+    incident_history_penalty: float = 0.0
+    overall_score: float = 0.0
+    explanation: str = ""
 
 
 class EvidenceCategory(str, Enum):
@@ -31,6 +62,7 @@ class EvidenceCategory(str, Enum):
     OBSERVED_RUNTIME = "OBSERVED_RUNTIME"
     HISTORICAL_INCIDENT = "HISTORICAL_INCIDENT"
     UNKNOWN_EVIDENCE = "UNKNOWN_EVIDENCE"
+    STATIC_EXTRACTED = "STATIC_EXTRACTED"
 
 
 class ProposedMutation(BaseModel):
@@ -151,6 +183,11 @@ class ScenarioAnalysisResult(BaseModel):
     unknowns: List[str] = Field(default_factory=list)
     comparison: VirtualTwinComparison
     execution_time_ms: float = 0.0
+    target_details: Optional[TargetEntityDetails] = None
+    risk_breakdown: Optional[RiskScoreBreakdown] = None
+    status_explanation: Optional[str] = None
+    recommended_verification: List[str] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
 
 
 class CreateScenarioRequest(BaseModel):

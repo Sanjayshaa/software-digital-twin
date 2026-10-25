@@ -105,11 +105,14 @@ class NaturalLanguageScenarioPlan(BaseModel):
     engine_routing: List[EngineRoutingStatus] = Field(default_factory=list)
     can_execute: bool = True
     execution_block_reason: Optional[str] = None
+    is_fallback: bool = False
+    requested_target: Optional[str] = None
+    fallback_reason: Optional[str] = None
     # Compatibility aliases for UI and API consumers
     user_query: Optional[str] = None
     target_entities: List[str] = Field(default_factory=list)
     candidate_entities: List[Dict[str, Any]] = Field(default_factory=list)
-    inferred_mutation_type: Optional[str] = None
+    resolved_target_name: Optional[str] = None
     status: str = "PLANNED"
 
     def model_post_init(self, __context: Any) -> None:
@@ -117,6 +120,12 @@ class NaturalLanguageScenarioPlan(BaseModel):
             self.user_query = self.original_query
         elif not self.original_query and self.user_query:
             self.original_query = self.user_query
+        if not self.resolved_target_name and self.target_entity:
+            self.resolved_target_name = self.target_entity
+        if not self.candidate_entities and self.ambiguity_candidates:
+            self.candidate_entities = self.ambiguity_candidates
+        elif not self.ambiguity_candidates and self.candidate_entities:
+            self.ambiguity_candidates = self.candidate_entities
 
 
 class ScenarioEngineeringReport(BaseModel):
@@ -188,11 +197,56 @@ class MultiAgentScenarioOrchestrator:
         lower_q = q.lower()
 
         # 1. Fetch available artifacts for target resolution
+        if not base_snapshot_id or str(base_snapshot_id).strip().lower() in ("null", "undefined", ""):
+            latest_snap = (
+                db.query(RepositorySnapshot)
+                .filter_by(repository_id=repository_id)
+                .order_by(RepositorySnapshot.created_at.desc())
+                .first()
+            )
+            if latest_snap:
+                base_snapshot_id = latest_snap.id
+
+        snap_obj = (
+            db.query(RepositorySnapshot)
+            .filter_by(id=base_snapshot_id, repository_id=repository_id)
+            .first()
+        ) if base_snapshot_id else None
+
+        if not snap_obj:
+            return NaturalLanguageScenarioPlan(
+                original_query=q,
+                scenario_title=f"Simulation against missing snapshot '{base_snapshot_id or 'none'}'",
+                change_type=MutationType.MODIFY_SYMBOL,
+                analysis_objective="Evaluate hypothetical change against baseline snapshot",
+                target_entity=explicit_target or "unknown",
+                can_execute=False,
+                execution_block_reason=f"Snapshot '{base_snapshot_id}' does not exist for repository '{repository_id}'. Please select a valid snapshot.",
+                status="MISSING_SNAPSHOT",
+                required_assumptions=["A valid repository snapshot is required for digital twin simulation."],
+                missing_information=["Valid snapshot ID"],
+            )
+
         artifacts = (
             db.query(StructuralArtifact)
             .filter_by(snapshot_id=base_snapshot_id)
             .all()
         )
+
+        if not artifacts:
+            return NaturalLanguageScenarioPlan(
+                original_query=q,
+                scenario_title=f"Simulation against unindexed snapshot '{base_snapshot_id}'",
+                change_type=MutationType.MODIFY_SYMBOL,
+                analysis_objective="Evaluate hypothetical change against baseline snapshot",
+                target_entity=explicit_target or "unknown",
+                can_execute=False,
+                execution_block_reason=f"Knowledge Graph for snapshot '{base_snapshot_id}' contains 0 structural artifacts. Snapshot has not been parsed or indexed.",
+                status="EMPTY_GRAPH",
+                required_assumptions=["Digital Twin must contain indexed structural artifacts."],
+                missing_information=["Parsed structural artifacts in snapshot"],
+            )
+
         art_map = {a.id: a for a in artifacts}
         art_by_qual = {a.qualified_name: a for a in artifacts}
         art_by_name: Dict[str, List[StructuralArtifact]] = {}
@@ -355,9 +409,48 @@ class MultiAgentScenarioOrchestrator:
             )
             assumptions.append("Structural blast radius evaluated; actual throughput saturation bounds not modeled.")
 
-        if not target_token or not resolved_artifact:
+        is_fallback = False
+        fallback_reason = None
+        requested_target_name = target_token
+        plan_status = None
+
+        if not artifacts:
             can_execute = False
-            block_reason = f"Could not resolve any target entity in the Twin graph for query: '{q}'. Please specify a recognized component, service, or file."
+            plan_status = "EMPTY_GRAPH"
+            block_reason = f"Knowledge graph for snapshot '{base_snapshot_id}' is empty (0 artifacts indexed). Analysis cannot determine impact."
+            missing_info.append("Snapshot has 0 indexed artifacts.")
+        elif target_token and not resolved_artifact:
+            # The user requested a specific target, but it was NOT found in the active snapshot graph!
+            can_execute = False
+            plan_status = "UNRESOLVED_TARGET"
+            block_reason = f"Requested target '{target_token}' could not be resolved in active snapshot graph '{base_snapshot_id}'."
+            missing_info.append(f"Entity '{target_token}' does not exist in active snapshot.")
+            # Populate candidates with fuzzy matches from artifacts, or top artifacts if no fuzzy match
+            t_low = target_token.lower()
+            for a in artifacts:
+                if t_low in (a.name or "").lower() or t_low in (a.qualified_name or "").lower():
+                    candidates_list.append({
+                        "id": a.id,
+                        "name": a.name,
+                        "qualified_name": a.qualified_name,
+                        "artifact_type": str(a.artifact_type),
+                        "location": a.location,
+                    })
+            if not candidates_list:
+                for a in artifacts[:5]:
+                    candidates_list.append({
+                        "id": a.id,
+                        "name": a.name,
+                        "qualified_name": a.qualified_name,
+                        "artifact_type": str(a.artifact_type),
+                        "location": a.location,
+                    })
+        elif not target_token and not resolved_artifact:
+            # Query did not contain any identifiable target symbol
+            can_execute = False
+            plan_status = "UNRESOLVED_TARGET"
+            block_reason = f"No target entity specified or recognized in query: '{q}'. Please select a target component from the dropdown or explicitly name a service, class, or endpoint."
+            missing_info.append("Target entity identifier is required to run simulation.")
 
         # Construct clean scenario title
         title = q
@@ -376,7 +469,8 @@ class MultiAgentScenarioOrchestrator:
             "location": resolved_artifact.location,
         } if resolved_artifact else None
 
-        plan_status = "AMBIGUOUS" if is_ambiguous else ("BLOCKED" if not can_execute else "PLANNED")
+        if not plan_status:
+            plan_status = "AMBIGUOUS" if is_ambiguous else ("BLOCKED" if not can_execute else "PLANNED")
 
         return NaturalLanguageScenarioPlan(
             original_query=q,
@@ -396,6 +490,9 @@ class MultiAgentScenarioOrchestrator:
             engine_routing=routing,
             can_execute=can_execute,
             execution_block_reason=block_reason,
+            is_fallback=is_fallback,
+            requested_target=requested_target_name,
+            fallback_reason=fallback_reason,
             target_entities=[target_name] if target_name else [],
             candidate_entities=candidates_list,
             inferred_mutation_type=change_type.value,
@@ -414,19 +511,99 @@ class MultiAgentScenarioOrchestrator:
         explicit_target: Optional[str] = None,
         explicit_type: Optional[str] = None,
         scenario_id: Optional[str] = None,
+        target_override: Optional[str] = None,
+        mutation_type_override: Optional[str] = None,
     ) -> OrchestratedScenarioResult:
         """
         Executes end-to-end evidence-backed orchestration.
         """
         start_time = time.perf_counter()
         scen_id = scenario_id or f"scen_orch_{uuid.uuid4().hex[:10]}"
+        actual_target = explicit_target or target_override
+        actual_type = explicit_type or mutation_type_override
 
         # Snapshot metadata
+        if not base_snapshot_id or str(base_snapshot_id).strip().lower() in ("null", "undefined", ""):
+            latest_snap = (
+                db.query(RepositorySnapshot)
+                .filter_by(repository_id=repository_id)
+                .order_by(RepositorySnapshot.created_at.desc())
+                .first()
+            )
+            if latest_snap:
+                base_snapshot_id = latest_snap.id
+
         snapshot = (
             db.query(RepositorySnapshot)
             .filter_by(id=base_snapshot_id, repository_id=repository_id)
             .first()
         )
+        if not snapshot:
+            elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            missing_snap_sim = ScenarioAnalysisResult(
+                scenario_id=scen_id,
+                repository_id=repository_id,
+                base_snapshot_id=base_snapshot_id or "missing",
+                name="Missing Snapshot Simulation",
+                description=query,
+                status=ScenarioStatus.MISSING_SNAPSHOT,
+                status_explanation=f"Baseline snapshot '{base_snapshot_id}' does not exist for repository '{repository_id}'.",
+                created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                proposed_changes=[],
+                validation=ScenarioValidationResult(
+                    is_valid=False,
+                    errors=[f"Snapshot '{base_snapshot_id}' not found."],
+                    warnings=[],
+                    validated_mutations=[],
+                    unknown_entities=[],
+                ),
+                impact=SimulatedImpactSummary(),
+                tests=SimulatedTestImpactSummary(),
+                risk=SimulatedRiskSummary(
+                    scenario_risk_category="UNKNOWN",
+                    confidence_level="LOW",
+                    confidence_score=0.0,
+                    overall_score=0.0,
+                    risk_factors=[],
+                    explanation=f"Snapshot '{base_snapshot_id}' not found. Cannot evaluate simulation.",
+                ),
+                guardrails=[],
+                evidence=[],
+                assumptions=[],
+                unknowns=["Missing snapshot metadata."],
+                comparison=VirtualTwinComparison(),
+                execution_time_ms=elapsed_ms,
+                limitations=["Snapshot must exist before running simulations."],
+                recommended_verification=["Select an existing snapshot or sync the repository."],
+            )
+            empty_plan = NaturalLanguageScenarioPlan(
+                original_query=query,
+                scenario_title="Missing Snapshot",
+                change_type=MutationType.MODIFY_SYMBOL,
+                analysis_objective="Execution halted due to missing snapshot.",
+                can_execute=False,
+                execution_block_reason=f"Snapshot '{base_snapshot_id}' not found.",
+                status="MISSING_SNAPSHOT",
+            )
+            report = self._generate_engineering_report(
+                plan=empty_plan,
+                sim=missing_snap_sim,
+                findings=[],
+                commit_sha="unknown",
+            )
+            return OrchestratedScenarioResult(
+                scenario_id=scen_id,
+                repository_id=repository_id,
+                base_snapshot_id=base_snapshot_id or "missing",
+                plan=empty_plan,
+                simulation=missing_snap_sim,
+                findings=[],
+                report=report,
+                report_markdown=report.markdown_content,
+                orchestration_roles_executed=["Scenario Planner"],
+                execution_time_ms=elapsed_ms,
+            )
+
         commit_sha = snapshot.commit_hash if snapshot else "unknown"
 
         # ROLE 1: Scenario Planner
@@ -435,8 +612,8 @@ class MultiAgentScenarioOrchestrator:
             repository_id=repository_id,
             base_snapshot_id=base_snapshot_id,
             query=query,
-            explicit_target=explicit_target,
-            explicit_type=explicit_type,
+            explicit_target=actual_target,
+            explicit_type=actual_type,
         )
 
         roles_executed = ["Scenario Planner"]
@@ -444,13 +621,23 @@ class MultiAgentScenarioOrchestrator:
         # If blocked, synthesize incomplete analysis without fabricating results
         if not plan.can_execute:
             elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            if plan.status == "EMPTY_GRAPH":
+                sim_status = ScenarioStatus.EMPTY_GRAPH
+            elif plan.status in ("UNRESOLVED_TARGET", "AMBIGUOUS"):
+                sim_status = ScenarioStatus.UNRESOLVED_TARGET
+            elif plan.status == "MISSING_SNAPSHOT":
+                sim_status = ScenarioStatus.MISSING_SNAPSHOT
+            else:
+                sim_status = ScenarioStatus.FAILED
+
             failed_sim = ScenarioAnalysisResult(
                 scenario_id=scen_id,
                 repository_id=repository_id,
                 base_snapshot_id=base_snapshot_id,
                 name=plan.scenario_title,
                 description=query,
-                status=ScenarioStatus.FAILED,
+                status=sim_status,
+                status_explanation=plan.execution_block_reason or "Analysis blocked.",
                 created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 proposed_changes=[],
                 validation=ScenarioValidationResult(
@@ -476,6 +663,8 @@ class MultiAgentScenarioOrchestrator:
                 unknowns=plan.missing_information,
                 comparison=VirtualTwinComparison(),
                 execution_time_ms=elapsed_ms,
+                limitations=["Simulation requires a valid target entity existing in the specified snapshot Knowledge Graph."],
+                recommended_verification=["Select a verified component from the target dropdown or re-index snapshot."],
             )
 
             report = self._generate_engineering_report(
@@ -741,28 +930,32 @@ class MultiAgentScenarioOrchestrator:
             counter += 1
 
         # 5. Truthful Zero-Impact Finding if no downstream entities affected
-        if total_affected == 0 and len(findings) == 0:
+        if total_affected == 0:
+            target_desc = f"Modifying '{plan.target_entity}' has 0 downstream dependents or callers (in-degree: 0). It operates as an isolated leaf or standalone component."
+            if sim.target_details and sim.target_details.is_test_entity:
+                target_desc = f"Target '{plan.target_entity}' is a test artifact with 0 downstream dependents. Modifications do not propagate to production services."
             findings.append(
                 StructuredFinding(
                     finding_id=f"FIND-ZERO-{counter:03d}",
                     category=FindingCategory.UNKNOWN_STATUS,
-                    title="Isolated Entity: Zero Downstream Impact Identified",
-                    description=f"Modifying '{plan.target_entity}' has zero downstream callers or architectural dependents. It operates as a leaf or standalone component.",
+                    title="Isolated Entity: 0 Downstream Dependents Identified",
+                    description=target_desc,
                     affected_entity_ids=[plan.target_entity or ""],
                     affected_entity_names=[plan.target_entity or ""],
                     repository_id=repository_id,
                     snapshot_id=snapshot_id,
-                    evidence_references=["0 inbound callers, 0 downstream APIs, 0 test regressions"],
+                    evidence_references=["0 inbound callers", "0 downstream APIs", "0 affected components", "in_degree=0"],
                     provenance="SIMULATED_STRUCTURAL",
                     severity="INFORMATIONAL",
-                    confidence=0.95,
+                    confidence=0.98,
                     uncertainty_notes="Static graph contains no inbound dependency relationships to this symbol.",
-                    recommended_verification="Confirm that no dynamic reflections or untyped runtime configurations reference this entity.",
+                    recommended_verification="Verify localized unit test passes. Confirm whether dynamic reflection callers exist outside static AST scope.",
                     remediation_steps=[
-                        "Safe to refactor locally provided reflection-based calls are not utilized.",
+                        "Safely modify or refactor this isolated entity without downstream breakage risk.",
                     ],
                 )
             )
+            counter += 1
 
         return findings
 

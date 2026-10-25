@@ -17,6 +17,7 @@ from app.models.entities import (
     ProcessTransition,
     ArchitectureReportEntity,
     ArchitectureDriftEntity,
+    RuntimeEvent,
 )
 
 
@@ -280,6 +281,12 @@ class TwinGraphProjection:
             else:  # Level 4: All
                 filtered_node_ids.add(nid)
 
+        # CRITICAL: Always retain all nodes affected by the blast radius so they are visible
+        if impact_data and "affected_node_ids" in impact_data:
+            for affected_id in impact_data["affected_node_ids"]:
+                if affected_id in active_node_ids:
+                    filtered_node_ids.add(affected_id)
+
         # Fallback for Level 1 if no macro hubs matched
         if level == 1 and not filtered_node_ids:
             for nid in active_node_ids:
@@ -299,6 +306,12 @@ class TwinGraphProjection:
                     cand = "src." + name[2:].replace("/", ".")
                     if cand in concrete_by_qual:
                         ph_map[a.id] = concrete_by_qual[cand].id
+
+        # Check runtime observation status
+        runtime_events = db.query(RuntimeEvent).filter_by(repository_id=repository_id).all()
+        runtime_observed_ids = {re.component_artifact_id for re in runtime_events if re.component_artifact_id}
+        runtime_observed_names = {re.service_name.lower() for re in runtime_events if re.service_name}
+        commit_sha = snap.commit_hash if snap else "unknown"
 
         # 8. Transform to JSON-ready Nodes
         rendered_nodes: List[Dict[str, Any]] = []
@@ -322,6 +335,21 @@ class TwinGraphProjection:
             is_impacted = nid in impact_data.get("affected_node_ids", set())
             impact_info = impact_data.get("details", {}).get(nid, {})
 
+            is_runtime_observed = (
+                art.id in runtime_observed_ids
+                or (art.name and art.name.lower() in runtime_observed_names)
+                or (art.qualified_name and art.qualified_name.lower() in runtime_observed_names)
+            )
+            extraction_method = (
+                art.metadata_payload.get("analyzer_source", "AST_TREE_SITTER")
+                if art.metadata_payload
+                else "AST_TREE_SITTER"
+            )
+            verification_status = (
+                "RUNTIME_OBSERVED" if is_runtime_observed
+                else ("INFERRED" if (art.confidence and art.confidence < 0.8) else "VERIFIED_AST")
+            )
+
             rendered_nodes.append({
                 "id": art.id,
                 "name": art.name,
@@ -343,6 +371,11 @@ class TwinGraphProjection:
                 "impact_depth": impact_info.get("depth", 0),
                 "impact_reasons": impact_info.get("reasons", []),
                 "metadata": art.metadata_payload or {},
+                "snapshot_id": target_snap_id,
+                "commit_hash": commit_sha,
+                "extraction_method": extraction_method,
+                "verification_status": verification_status,
+                "is_runtime_observed": is_runtime_observed,
             })
 
         # Add removed nodes from diff if diff requested
@@ -439,14 +472,23 @@ class TwinGraphProjection:
                 "id": rel.id,
                 "source": u_eff,
                 "target": v_eff,
+                "source_entity": src_qual,
+                "target_entity": tgt_qual,
                 "type": rel.relationship_type,
                 "confidence": rel.confidence or 1.0,
-                "detection_method": rel.detection_method,
+                "detection_method": rel.detection_method or "ast_call_expression",
                 "source_location": rel.source_location,
+                "snapshot_id": target_snap_id,
+                "commit_hash": commit_sha,
+                "verification_status": (
+                    "CONFIG_INFERRED" if "config" in str(rel.detection_method).lower()
+                    else ("INFERRED" if (rel.confidence and rel.confidence < 0.8)
+                    else "VERIFIED_AST")
+                ),
                 "evidence": {
                     "file": ev_file,
                     "line": ev_line,
-                    "snippet": rel.metadata_payload.get("snippet", f"{rel.source_artifact_id} -> {rel.target_artifact_id}"),
+                    "snippet": (rel.metadata_payload.get("snippet") if rel.metadata_payload else None) or f"{src_qual} -> {tgt_qual}",
                 },
                 "diff_status": diff_status,
                 "is_drift": is_drift,
@@ -473,6 +515,19 @@ class TwinGraphProjection:
             "relationship_types": {},
             "diff_summary": diff_data.get("summary") if diff_data else None,
             "impact_summary": impact_data.get("summary") if impact_data else None,
+            "validation_coverage": {
+                "total_artifacts": len(artifacts),
+                "ast_verified_percent": round((len([e for e in rendered_edges if e.get("verification_status") == "VERIFIED_AST"]) / max(1, len(rendered_edges))) * 100, 1),
+                "ast_verified_edges": len([e for e in rendered_edges if e.get("verification_status") == "VERIFIED_AST"]),
+                "config_inferred_edges": len([e for e in rendered_edges if e.get("verification_status") == "CONFIG_INFERRED"]),
+                "inferred_edges": len([e for e in rendered_edges if e.get("verification_status") == "INFERRED"]),
+                "runtime_observed_nodes": len([n for n in rendered_nodes if n.get("is_runtime_observed")]),
+            },
+            "known_limitations": [
+                "Static AST analysis does not resolve dynamic string-based reflection or runtime RPC dispatches.",
+                "Multi-repository cross-service calls require distributed OpenTelemetry traces or OpenAPI specs.",
+                "Edges represent static callability or configuration references; actual runtime invocation frequency requires connected telemetry.",
+            ],
         }
 
         for n in rendered_nodes:
@@ -774,9 +829,16 @@ class TwinGraphProjection:
         art_qual_map: Dict[str, Any] = {str(a.qualified_name): a for a in artifacts}
 
         # Resolve root ID
-        root_id = root_artifact_id
-        if root_id not in art_map and root_id in art_qual_map:
-            root_id = art_qual_map[root_id].id
+        root_id = str(root_artifact_id).strip()
+        if root_id not in art_map:
+            if root_id in art_qual_map:
+                root_id = art_qual_map[root_id].id
+            else:
+                r_lower = root_id.lower()
+                for a in artifacts:
+                    if (a.name and a.name.lower() == r_lower) or (a.qualified_name and a.qualified_name.lower() == r_lower) or (a.location and r_lower in a.location.lower()):
+                        root_id = a.id
+                        break
 
         if root_id not in art_map:
             return {"affected_node_ids": set(), "details": {}, "summary": {}}
