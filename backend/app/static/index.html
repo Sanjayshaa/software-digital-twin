@@ -406,6 +406,26 @@
               </p>
             </div>
 
+            <!-- Pro-Level Feature: 1-Click Interactive Demo Sandbox -->
+            <div class="bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-purple-50/80 border border-blue-200/80 rounded-2xl p-4 sm:p-5 max-w-2xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
+              <div class="flex items-center gap-3.5 text-left">
+                <div class="w-10 h-10 rounded-xl bg-[#0071e3] text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <span class="material-symbols-outlined text-[22px]">play_circle</span>
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
+                    <span>Explore Pre-Built Digital Twin</span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-[#E0F2FE] text-[#0284C7] uppercase">Interactive Sandbox</span>
+                  </div>
+                  <p class="text-[11px] text-[#64748B] mt-0.5">Test 3D architecture graph, What-If blast radius, and test intelligence with zero setup.</p>
+                </div>
+              </div>
+              <button onclick="window.TwinApp.loadDemoSandbox()" class="px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all shrink-0 cursor-pointer" type="button">
+                <span>Launch Demo Twin</span>
+                <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+              </button>
+            </div>
+
             <!-- Primary 3 Acquisition Actions -->
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mx-auto pt-2">
               <button onclick="window.TwinApp.openConnectModal('github')" class="onboard-card group" type="button" aria-label="Connect GitHub Repository">

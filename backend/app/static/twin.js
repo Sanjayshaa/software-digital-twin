@@ -6237,9 +6237,24 @@
       </div>
 
       <div class="space-y-1.5 pt-2 border-t border-[#E2E8F0]">
-        <div class="text-[10px] uppercase font-bold text-[#64748B] tracking-wider">Source Location</div>
-        <div class="p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] font-mono text-[11px] text-[#334155] break-all">
-          ${escapeHtml(node.file || 'unknown')}:${node.line_start || 1}
+        <div class="flex items-center justify-between">
+          <div class="text-[10px] uppercase font-bold text-[#64748B] tracking-wider">Source Location</div>
+          <div class="flex items-center gap-1.5">
+            <a href="vscode://file/${node.file || ''}:${node.line_start || 1}" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#EFF6FF] text-[#0071E3] hover:bg-[#DBEAFE] border border-[#BFDBFE] transition-colors" title="Open directly in VS Code at line ${node.line_start || 1}">
+              <span class="material-symbols-outlined text-[12px]">code</span>
+              <span>VS Code</span>
+            </a>
+            <a href="cursor://file/${node.file || ''}:${node.line_start || 1}" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#F5F3FF] text-[#7C3AED] hover:bg-[#EDE9FE] border border-[#DDD6FE] transition-colors" title="Open directly in Cursor AI Editor at line ${node.line_start || 1}">
+              <span class="material-symbols-outlined text-[12px]">terminal</span>
+              <span>Cursor</span>
+            </a>
+          </div>
+        </div>
+        <div class="p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] font-mono text-[11px] text-[#334155] break-all flex items-center justify-between gap-2">
+          <span>${escapeHtml(node.file || 'unknown')}:${node.line_start || 1}</span>
+          <button onclick="navigator.clipboard.writeText('${escapeHtml(node.file || '')}:${node.line_start || 1}'); showNotification('Copied file location to clipboard', 'info');" class="text-[#94A3B8] hover:text-[#0F172A] p-0.5" title="Copy file path">
+            <span class="material-symbols-outlined text-[14px]">content_copy</span>
+          </button>
         </div>
       </div>
 
@@ -10145,6 +10160,25 @@
     downloadAssessmentReport,
     openDisconnectModal,
     confirmDisconnectRepository,
+    loadDemoSandbox: async () => {
+      showNotification('Loading interactive E-Commerce Microservices sandbox...', 'info');
+      try {
+        let repoToUse = (state.repositories || []).find(r => r.name?.toLowerCase().includes('demo') || r.name?.toLowerCase().includes('campus') || r.name?.toLowerCase().includes('ecommerce'));
+        if (!repoToUse && state.repositories && state.repositories.length > 0) {
+          repoToUse = state.repositories[0];
+        }
+        if (repoToUse) {
+          await selectRepository(repoToUse.id);
+          switchPrimaryView('architecture');
+          showNotification('Interactive Demo Sandbox launched successfully!', 'success');
+        } else {
+          showNotification('Creating sandbox workspace environment...', 'info');
+          await triggerLocalOnboarding('/Users/sanjay/DIGITAL TWIN', 'TwinCore-Demo-Sandbox');
+        }
+      } catch (err) {
+        showNotification(`Could not launch sandbox: ${err.message}`, 'error');
+      }
+    },
     openModal,
     closeModal,
     selectResolvedTarget,

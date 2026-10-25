@@ -35,7 +35,7 @@ import websockets
 
 CHROME_BIN = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 PORT = 9232
-TARGET_URL = "http://localhost:8000/app"
+TARGET_URL = "http://127.0.0.1:8000/app"
 SCREENSHOT_DIR = "/Users/sanjay/DIGITAL TWIN /scratch/frontend_ux_screenshots"
 
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
@@ -154,13 +154,17 @@ def launch_chrome(profile_dir, port):
         f"--user-data-dir={profile_dir}",
         "--no-first-run",
         "--no-default-browser-check",
-        "--headless=new",
+        "--headless",
         "--window-size=1440,900",
         "--disable-gpu",
-        "about:blank",
+        "--disable-web-security",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--allow-running-insecure-content",
+        "--test-type",
+        TARGET_URL,
     ]
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(1.5)
+    time.sleep(2.0)
     return proc
 
 
@@ -201,9 +205,17 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
             "deviceScaleFactor": 1,
             "mobile": False
         })
-        # Navigate to target page immediately so origin is valid HTTP (not opaque about:blank)
+        # Navigate to target page and wait for document to load with real HTTP origin
         await self.cdp.send("Page.navigate", {"url": TARGET_URL})
-        await asyncio.sleep(2.0)
+        for _ in range(40):
+            await asyncio.sleep(0.15)
+            try:
+                origin = await self.cdp.eval_js("window.location.origin")
+                if origin and origin != "null" and "http" in origin:
+                    break
+            except Exception:
+                pass
+        await asyncio.sleep(0.5)
         # Clear any initial navigation errors
         self.cdp.console_errors.clear()
         self.cdp.network_failures.clear()
@@ -240,9 +252,24 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
             email="admin@digitaltwin.enterprise"
         )
 
-        # Set verified enterprise token and trigger state machine boot
-        await self.cdp.eval_js(f"localStorage.setItem('jwt_token', '{test_token}');")
-        await self.cdp.eval_js("window.TwinApp.startApplicationStateMachine();")
+        # Set verified enterprise token via DOMStorage / localStorage
+        try:
+            await self.cdp.send("DOMStorage.enable")
+            storage_id = {"securityOrigin": "http://127.0.0.1:8000", "isLocalStorage": True}
+            await self.cdp.send("DOMStorage.setDOMStorageItem", {
+                "storageId": storage_id,
+                "key": "jwt_token",
+                "value": test_token
+            })
+        except Exception:
+            pass
+
+        try:
+            await self.cdp.eval_js(f"window.localStorage?.setItem('jwt_token', '{test_token}');")
+        except Exception:
+            pass
+
+        await self.cdp.eval_js("window.TwinApp?.startApplicationStateMachine?.();")
         
         # Poll up to 10s for boot state machine completion
         login_result = None
@@ -507,9 +534,15 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         print("VERIFYING ALL 8 CANONICAL UI STATES & LIFECYCLE RECOVERY")
         print("=" * 70)
 
-        # Fresh navigation without auth
-        await self.cdp.send("Page.navigate", {"url": TARGET_URL})
-        await asyncio.sleep(1.5)
+        # The browser is already navigated to TARGET_URL in asyncSetUp. Wait for app readiness.
+        for _ in range(30):
+            await asyncio.sleep(0.1)
+            try:
+                ready = await self.cdp.eval_js("Boolean(window.TwinApp && typeof window.TwinApp.setAppState === 'function')")
+                if ready is True:
+                    break
+            except Exception:
+                pass
 
         # State 1: INITIALIZING
         print("  Checking State 1: INITIALIZING...")
