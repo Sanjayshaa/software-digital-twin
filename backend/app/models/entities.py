@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from sqlalchemy import (
     Column,
@@ -23,6 +23,10 @@ def generate_uuid() -> str:
     return str(uuid.uuid4())
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 # ====================================================================
 # 0. AUTHENTICATION & IDENTITY ENTITIES
 # ====================================================================
@@ -36,8 +40,8 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(50), default="engineer", nullable=False)  # admin, engineer, viewer
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     # Relationships
     repositories = relationship("Repository", back_populates="owner")
@@ -64,8 +68,8 @@ class Project(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     name = Column(String(255), nullable=False, unique=True, index=True)
     description = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     # Relationships
     repositories = relationship("Repository", back_populates="project", cascade="all, delete-orphan")
@@ -73,6 +77,8 @@ class Project(Base):
     def __init__(self, **kwargs):
         if "owner_id" in kwargs:
             kwargs.pop("owner_id")
+        if "user_id" in kwargs:
+            kwargs.pop("user_id")
         super().__init__(**kwargs)
     services = relationship("Service", back_populates="project", cascade="all, delete-orphan")
     tests = relationship("Test", back_populates="project", cascade="all, delete-orphan")
@@ -96,7 +102,7 @@ class Repository(Base):
     default_branch = Column(String(100), default="main", nullable=False)
     source_type = Column(String(50), default="LOCAL", nullable=False)
     environment = Column(String(50), default="USER", nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     project = relationship("Project", back_populates="repositories")
@@ -127,7 +133,7 @@ class RepositorySnapshot(Base):
     total_files = Column(Integer, default=0, nullable=False)
     total_symbols = Column(Integer, default=0, nullable=False)
     snapshot_metadata = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     repository = relationship("Repository", back_populates="snapshots")
@@ -176,7 +182,7 @@ class Branch(Base):
     name = Column(String(255), nullable=False)
     head_commit_hash = Column(String(64), nullable=True)
     is_default = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     repository = relationship("Repository", back_populates="branches")
@@ -192,7 +198,7 @@ class Commit(Base):
     message = Column(Text, nullable=True)
     committed_at = Column(DateTime, nullable=True)
     parent_hashes = Column(JSON, default=list, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     repository = relationship("Repository", back_populates="commits")
@@ -211,7 +217,7 @@ class Change(Base):
     status = Column(String(50), default="analyzed", nullable=False)
     description = Column(Text, nullable=True)
     change_payload = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     project = relationship("Project", back_populates="changes")
@@ -239,7 +245,7 @@ class File(Base):
     sha256_hash = Column(String(64), nullable=False, index=True)
     file_hash = Column(String(64), nullable=True)
     is_test = Column(Boolean, default=False, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     repository = relationship("Repository", back_populates="files")
@@ -263,8 +269,8 @@ class CodeSymbol(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     file_id = Column(String(36), ForeignKey("files.id", ondelete="CASCADE"), nullable=False, index=True)
-    name = Column(String(255), nullable=False, index=True)
-    qualified_name = Column(String(512), nullable=False, index=True)
+    name = Column(String(512), nullable=False, index=True)
+    qualified_name = Column(String(2048), nullable=False, index=True)
     symbol_type = Column(String(50), nullable=False, index=True)  # function, class, method, module
     signature = Column(Text, nullable=True)
     docstring = Column(Text, nullable=True)
@@ -273,7 +279,7 @@ class CodeSymbol(Base):
     start_line = Column(Integer, nullable=True)
     end_line = Column(Integer, nullable=True)
     is_exported = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     file = relationship("File", back_populates="symbols")
@@ -283,6 +289,10 @@ class CodeSymbol(Base):
     def __init__(self, **kwargs):
         if "qualified_name" not in kwargs and "name" in kwargs:
             kwargs["qualified_name"] = kwargs["name"]
+        if "name" in kwargs and kwargs["name"] is not None:
+            kwargs["name"] = str(kwargs["name"])[:512]
+        if "qualified_name" in kwargs and kwargs["qualified_name"] is not None:
+            kwargs["qualified_name"] = str(kwargs["qualified_name"])[:2048]
         ls = kwargs.get("line_start") or kwargs.get("start_line") or 1
         le = kwargs.get("line_end") or kwargs.get("end_line") or ls
         kwargs["line_start"] = ls
@@ -308,7 +318,7 @@ class Service(Base):
     service_type = Column(String(50), default="backend_service", nullable=False)
     runtime = Column(String(50), nullable=True)
     root_directory = Column(String(1024), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     project = relationship("Project", back_populates="services")
@@ -331,7 +341,7 @@ class APIEndpoint(Base):
     request_schema = Column(JSON, default=dict, nullable=False)
     response_schema = Column(JSON, default=dict, nullable=False)
     description = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     service = relationship("Service", back_populates="api_endpoints")
@@ -356,7 +366,7 @@ class DatabaseEntity(Base):
     table_name = Column(String(255), nullable=True)
     schema_definition = Column(JSON, default=dict, nullable=False)
     entity_type = Column(String(50), default="table", nullable=False)  # table, collection, queue
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     project = relationship("Project")
@@ -375,7 +385,7 @@ class Dependency(Base):
     relation_type = Column(String(50), nullable=False, index=True)  # CONTAINS, IMPORTS, CALLS, DEPENDS_ON, EXPOSES, etc.
     weight = Column(Float, default=1.0, nullable=False)
     metadata_payload = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     __table_args__ = (
         Index("idx_dep_source", "source_type", "source_id"),
@@ -394,7 +404,7 @@ class Configuration(Base):
     config_value = Column(Text, nullable=True)
     config_format = Column(String(50), default="env", nullable=False)
     file_path = Column(String(1024), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     service = relationship("Service", back_populates="configurations")
@@ -408,7 +418,7 @@ class Environment(Base):
     name = Column(String(100), nullable=False)
     env_type = Column(String(50), default="dev", nullable=False)
     host = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 # ====================================================================
@@ -429,7 +439,7 @@ class Test(Base):
     test_type = Column(String(50), default="unit", nullable=False)  # unit, integration, e2e
     target_component = Column(String(255), nullable=True)
     file_path = Column(String(1024), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     project = relationship("Project", back_populates="tests")
@@ -448,7 +458,7 @@ class TestExecution(Base):
     duration_ms = Column(Integer, default=0, nullable=False)
     error_message = Column(Text, nullable=True)
     stdout = Column(Text, nullable=True)
-    executed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    executed_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     test = relationship("Test", back_populates="executions")
@@ -470,7 +480,7 @@ class Incident(Base):
     affected_component_id = Column(String(128), ForeignKey("structural_artifacts.id", ondelete="SET NULL"), nullable=True, index=True)
     root_cause_component_id = Column(String(64), nullable=True)
     metadata_payload = Column(JSON, default=dict, nullable=False)
-    detected_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    detected_at = Column(DateTime, default=utc_now, nullable=False)
     resolved_at = Column(DateTime, nullable=True)
 
     # Relationships
@@ -496,7 +506,7 @@ class RuntimeEvent(Base):
     span_id = Column(String(128), nullable=True)
     message = Column(Text, nullable=True)
     payload = Column(JSON, default=dict, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = Column(DateTime, default=utc_now, nullable=False, index=True)
 
     # Relationships
     service = relationship("Service", back_populates="runtime_events")
@@ -514,7 +524,7 @@ class IncidentEvidenceLink(Base):
     confidence = Column(Float, default=1.0, nullable=False)
     explanation = Column(Text, nullable=True)
     metadata_payload = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     incident = relationship("Incident", back_populates="evidence_links")
@@ -533,7 +543,7 @@ class Scenario(Base):
     description = Column(Text, nullable=True)
     scenario_type = Column(String(100), nullable=False)  # service_failure, latency_spike, network_partition
     parameters = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     project = relationship("Project", back_populates="scenarios")
@@ -574,7 +584,7 @@ class ScenarioResult(Base):
     propagation_paths = Column(JSON, default=list, nullable=False)
     risk_impact_score = Column(Float, default=0.0, nullable=False)
     result_payload = Column(JSON, default=dict, nullable=False)
-    simulated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    simulated_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     scenario = relationship("Scenario", back_populates="results")
@@ -602,7 +612,7 @@ class AnalysisRun(Base):
     warnings = Column(JSON, default=list, nullable=False)
     errors = Column(JSON, default=list, nullable=False)
     summary = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
     completed_at = Column(DateTime, nullable=True)
 
     # Relationships
@@ -626,7 +636,7 @@ class RiskAssessment(Base):
     severity_level = Column(String(50), nullable=False)  # LOW, MEDIUM, HIGH, CRITICAL
     risk_level = Column(String(50), nullable=True)
     confidence = Column(Float, default=1.0, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     project = relationship("Project", back_populates="risk_assessments")
@@ -646,7 +656,7 @@ class AgentRun(Base):
     input_data = Column(JSON, default=dict, nullable=False)
     output_data = Column(JSON, default=dict, nullable=False)
     status = Column(String(50), default="completed", nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     analysis_run = relationship("AnalysisRun", back_populates="agent_runs")
@@ -665,7 +675,7 @@ class Evidence(Base):
     description = Column(Text, nullable=False)
     confidence = Column(Float, default=1.0, nullable=False)
     payload = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     project = relationship("Project", back_populates="evidence_items")
@@ -692,7 +702,7 @@ class Technology(Base):
     name = Column(String(100), nullable=False, unique=True, index=True)
     category = Column(String(50), nullable=False, index=True)  # language, framework, build_system, package_manager, database, api, testing, infrastructure, architecture_signal
     description = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     project_technologies = relationship("ProjectTechnology", back_populates="technology", cascade="all, delete-orphan")
@@ -712,7 +722,7 @@ class TechnologyEvidence(Base):
     snippet = Column(Text, nullable=True)
     confidence = Column(Float, default=1.0, nullable=False)
     detection_rule = Column(String(255), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     technology = relationship("Technology", back_populates="evidence_items")
@@ -730,7 +740,7 @@ class ProjectTechnology(Base):
     confidence = Column(Float, default=1.0, nullable=False)
     detection_status = Column(String(20), default="OBSERVED", nullable=False)  # OBSERVED, INFERRED, UNKNOWN
     metadata_payload = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     technology = relationship("Technology", back_populates="project_technologies")
@@ -744,7 +754,7 @@ class Capability(Base):
     description = Column(Text, nullable=True)
     capability_level = Column(Integer, default=0, nullable=False)  # 0: Detection, 1: Structure, 2: Dependency, 3: Framework/API/Test, 4: Deep Semantic
     category = Column(String(50), nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     project_capabilities = relationship("ProjectCapability", back_populates="capability", cascade="all, delete-orphan")
@@ -760,7 +770,7 @@ class Analyzer(Base):
     supported_frameworks = Column(JSON, default=list, nullable=False)
     capability_level = Column(Integer, default=0, nullable=False)
     is_available = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     project_capabilities = relationship("ProjectCapability", back_populates="analyzer", cascade="all, delete-orphan")
@@ -777,7 +787,7 @@ class ProjectCapability(Base):
     status = Column(String(50), default="SUPPORTED", nullable=False)  # SUPPORTED, PARTIAL, UNSUPPORTED
     confidence = Column(Float, default=1.0, nullable=False)
     details = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     capability = relationship("Capability", back_populates="project_capabilities")
@@ -793,7 +803,7 @@ class AnalysisPlan(Base):
     status = Column(String(50), default="GENERATED", nullable=False)  # GENERATED, EXECUTING, COMPLETED
     plan_steps = Column(JSON, default=list, nullable=False)
     total_steps = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
     executed_at = Column(DateTime, nullable=True)
 
 
@@ -810,18 +820,18 @@ class StructuralArtifact(Base):
     file_id = Column(String(36), ForeignKey("files.id", ondelete="SET NULL"), nullable=True, index=True)
     artifact_type = Column(String(50), nullable=False, index=True)  # MODULE, PACKAGE, CLASS, INTERFACE, FUNCTION, METHOD, CONSTRUCTOR, API_ENDPOINT, DATABASE_ENTITY, CONFIG_ENTITY, TEST_CASE, COBOL_DIVISION, DOCKER_STAGE, etc.
     language = Column(String(50), nullable=False, index=True)
-    name = Column(String(255), nullable=False, index=True)
-    qualified_name = Column(String(1024), nullable=False, index=True)
+    name = Column(String(512), nullable=False, index=True)
+    qualified_name = Column(String(2048), nullable=False, index=True)
     signature = Column(Text, nullable=True)
     docstring = Column(Text, nullable=True)
-    location = Column(String(1024), nullable=True)
+    location = Column(String(2048), nullable=True)
     line_start = Column(Integer, nullable=True)
     line_end = Column(Integer, nullable=True)
     source_hash = Column(String(64), nullable=True)
     analyzer_source = Column(String(100), nullable=True)
     confidence = Column(Float, default=1.0, nullable=False)
     metadata_payload = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     snapshot = relationship("RepositorySnapshot", back_populates="structural_artifacts")
@@ -844,14 +854,30 @@ class StructuralArtifact(Base):
     )
 
     def __init__(self, **kwargs):
+        if "id" in kwargs and kwargs["id"] is not None:
+            kwargs["id"] = str(kwargs["id"])[:128]
+        if "name" in kwargs and kwargs["name"] is not None:
+            kwargs["name"] = str(kwargs["name"])[:255]
+        if "qualified_name" in kwargs and kwargs["qualified_name"] is not None:
+            kwargs["qualified_name"] = str(kwargs["qualified_name"])[:1024]
+        if "location" in kwargs and kwargs["location"] is not None:
+            kwargs["location"] = str(kwargs["location"])[:1024]
+        if "analyzer_source" in kwargs and kwargs["analyzer_source"] is not None:
+            kwargs["analyzer_source"] = str(kwargs["analyzer_source"])[:100]
+        if "artifact_type" in kwargs and kwargs["artifact_type"] is not None:
+            kwargs["artifact_type"] = str(kwargs["artifact_type"])[:50]
+        if "language" in kwargs and kwargs["language"] is not None:
+            kwargs["language"] = str(kwargs["language"])[:50]
+        if "source_hash" in kwargs and kwargs["source_hash"] is not None:
+            kwargs["source_hash"] = str(kwargs["source_hash"])[:64]
         if "file_path" in kwargs:
             fp = kwargs.pop("file_path")
             if "location" not in kwargs:
-                kwargs["location"] = f"{fp}:1"
+                kwargs["location"] = f"{fp}:1"[:1024]
         if "content_hash" in kwargs:
             ch = kwargs.pop("content_hash")
             if "source_hash" not in kwargs:
-                kwargs["source_hash"] = ch
+                kwargs["source_hash"] = str(ch)[:64]
         if "language" not in kwargs:
             kwargs["language"] = "python"
         if "repository_id" not in kwargs and "snapshot_id" in kwargs and kwargs["snapshot_id"]:
@@ -901,9 +927,9 @@ class ArtifactRelationship(Base):
     relationship_type = Column(String(50), nullable=False, index=True)  # CONTAINS, IMPORTS, EXPORTS, CALLS, EXTENDS, IMPLEMENTS, REFERENCES, DEPENDS_ON, EXPOSES, CONSUMES, PERSISTS_TO, CONFIGURES, TESTS, PART_OF, INCLUDES, COPY_DEPENDS_ON, USES
     confidence = Column(Float, default=1.0, nullable=False)
     detection_method = Column(String(100), nullable=False)
-    source_location = Column(String(1024), nullable=True)
+    source_location = Column(String(2048), nullable=True)
     metadata_payload = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     snapshot = relationship("RepositorySnapshot", back_populates="artifact_relationships")
@@ -918,8 +944,20 @@ class ArtifactRelationship(Base):
     def __init__(self, **kwargs):
         if "id" not in kwargs or not kwargs["id"]:
             kwargs["id"] = f"rel_{uuid.uuid4().hex[:12]}"
+        if "id" in kwargs and kwargs["id"] is not None:
+            kwargs["id"] = str(kwargs["id"])[:128]
+        if "source_artifact_id" in kwargs and kwargs["source_artifact_id"] is not None:
+            kwargs["source_artifact_id"] = str(kwargs["source_artifact_id"])[:128]
+        if "target_artifact_id" in kwargs and kwargs["target_artifact_id"] is not None:
+            kwargs["target_artifact_id"] = str(kwargs["target_artifact_id"])[:128]
+        if "relationship_type" in kwargs and kwargs["relationship_type"] is not None:
+            kwargs["relationship_type"] = str(kwargs["relationship_type"])[:50]
         if "detection_method" not in kwargs or not kwargs["detection_method"]:
             kwargs["detection_method"] = "AST_STATIC"
+        if "detection_method" in kwargs and kwargs["detection_method"] is not None:
+            kwargs["detection_method"] = str(kwargs["detection_method"])[:100]
+        if "source_location" in kwargs and kwargs["source_location"] is not None:
+            kwargs["source_location"] = str(kwargs["source_location"])[:2048]
         if "repository_id" not in kwargs and "snapshot_id" in kwargs and kwargs["snapshot_id"]:
             repo_id = RepositorySnapshot._snapshot_repo_cache.get(kwargs["snapshot_id"])
             if repo_id:
@@ -948,7 +986,7 @@ class ProcessDefinition(Base):
     description = Column(Text, nullable=True)
     process_type = Column(String(100), default="business_process", nullable=False)
     metadata_payload = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     steps = relationship("ProcessStep", back_populates="process", cascade="all, delete-orphan")
@@ -965,7 +1003,7 @@ class ProcessStep(Base):
     component_artifact_id = Column(String(128), ForeignKey("structural_artifacts.id", ondelete="SET NULL"), nullable=True, index=True)
     step_type = Column(String(50), default="action", nullable=False)
     metadata_payload = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     process = relationship("ProcessDefinition", back_populates="steps")
@@ -980,7 +1018,7 @@ class ProcessTransition(Base):
     to_step_id = Column(String(36), ForeignKey("process_steps.id", ondelete="CASCADE"), nullable=False, index=True)
     transition_condition = Column(String(255), nullable=True)
     metadata_payload = Column(JSON, default=dict, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     process = relationship("ProcessDefinition", back_populates="transitions")
@@ -1000,7 +1038,7 @@ class ArchitectureReportEntity(Base):
     unexpected_count = Column(Integer, default=0, nullable=False)
     conformance_percentage = Column(Float, default=100.0, nullable=False)
     summary = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     repository = relationship("Repository")
@@ -1026,7 +1064,7 @@ class ArchitectureDriftEntity(Base):
     line_number = Column(Integer, nullable=False)
     confidence = Column(Float, default=0.98, nullable=False)
     status = Column(String(30), default="DETECTED", nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
     resolved_at = Column(DateTime, nullable=True)
 
     # Relationships
@@ -1037,6 +1075,8 @@ class ArchitectureDriftEntity(Base):
 
 # Compatibility Aliases
 Snapshot = RepositorySnapshot
+SimulationScenario = Scenario
+HistoricalChange = Change
 
 
 

@@ -549,6 +549,13 @@ DEMO_NODES = [
     },
 ]
 
+# Ensure canonical schema normalization on DEMO_NODES (type, label)
+for _node in DEMO_NODES:
+    if "type" not in _node:
+        _node["type"] = _node.get("artifact_type") or _node.get("category", "COMPONENT")
+    if "label" not in _node:
+        _node["label"] = _node.get("name", _node.get("id", ""))
+
 DEMO_EDGES = [
     # Gateway Routes
     {"id": "rel-1", "source": "art-gw", "target": "art-ep-auth", "type": "ROUTES_TO", "provenance": "STATIC_EXTRACTED", "status": "VERIFIED_AST"},

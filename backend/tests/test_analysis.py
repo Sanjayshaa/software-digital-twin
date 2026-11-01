@@ -332,3 +332,204 @@ class TestEndToEndStructuralTwin:
         # Artifacts count in DB must remain identical, not doubled
         post_count = db_session.query(StructuralArtifact).filter(StructuralArtifact.snapshot_id == snapshot_id).count()
         assert post_count == len(db_artifacts)
+
+    def test_oversized_artifact_and_relationship_truncation_safety(self, db_session: Session):
+        """Verifies that strings exceeding column limits (e.g. >255 chars name, >1024 chars qualname)
+        are safely bounded without throwing psycopg2.errors.StringDataRightTruncation."""
+        from app.services.analysis.runtime.result import AnalysisRunResult, ExtractedArtifact, ExtractedRelationship
+        from app.services.analysis.persistence.twin_writer import twin_writer
+        from app.services.discovery.scanner import FileInventory
+        import uuid
+
+        proj = Project(
+            id=str(uuid.uuid4()),
+            name=f"Stress Project {uuid.uuid4().hex[:6]}",
+            description="Testing schema truncation bounds",
+        )
+        db_session.add(proj)
+        db_session.flush()
+
+        repo = Repository(
+            id=str(uuid.uuid4()),
+            project_id=proj.id,
+            name="stress_repo",
+            local_path="/tmp/stress_repo",
+        )
+        db_session.add(repo)
+        db_session.commit()
+
+        snapshot_id = f"snap_{uuid.uuid4().hex[:16]}"
+        oversized_name = "function_call_with_very_long_expression_" + ("x" * 300)
+        oversized_qual = "module.submodule.class." + ("y" * 1200)
+        oversized_target = "LiteLLMProvider(model=\"vendor/reasoner\")." + ("z" * 400)
+
+        art1 = ExtractedArtifact(
+            id=f"art_{uuid.uuid4().hex[:20]}",
+            artifact_type=ArtifactType.FUNCTION,
+            language="python",
+            name=oversized_name,
+            qualified_name=oversized_qual,
+            file_path="src/long_file.py",
+            line_start=1,
+            line_end=10,
+            analyzer_source="python_ast",
+            confidence=1.0,
+        )
+
+        rel1 = ExtractedRelationship(
+            id=f"rel_{uuid.uuid4().hex[:20]}",
+            source_qualified_name=oversized_qual,
+            target_qualified_name=oversized_target,
+            relationship_type=RelationshipType.CALLS,
+            confidence=0.9,
+            detection_method="ast_call_expression",
+            source_location="src/long_file.py:5",
+        )
+
+        run_result = AnalysisRunResult(
+            run_id=f"run_{uuid.uuid4().hex[:16]}",
+            repository_id=repo.id,
+            snapshot_id=snapshot_id,
+            status="COMPLETED",
+            artifacts=[art1],
+            relationships=[rel1],
+            evidence_items=[],
+        )
+
+        inventory = FileInventory(root_path="/tmp/stress_repo", files=[], total_files=0, total_lines=0)
+
+        # Must execute write_twin cleanly without StringDataRightTruncation
+        analysis_run = twin_writer.write_twin(
+            db=db_session,
+            repository_id=repo.id,
+            snapshot_id=snapshot_id,
+            inventory=inventory,
+            result=run_result,
+        )
+        assert analysis_run is not None
+
+        # Verify artifacts in database have their fields clamped to column constraints
+        persisted_arts = db_session.query(StructuralArtifact).filter_by(snapshot_id=snapshot_id).all()
+        assert len(persisted_arts) >= 2  # The explicit artifact + inferred external dependency
+        for a in persisted_arts:
+            assert len(a.name) <= 512
+            assert len(a.qualified_name) <= 2048
+
+    def test_long_identifier_and_path_round_trip_persistence(self, db_session: Session):
+        """
+        P1-DB-02 Regression Test:
+        Verifies that qualified names, artifact locations, and relationship source locations
+        longer than 255 characters (e.g. 350-character path/qualname) survive round-trip
+        persistence intact without unexpected 255-char truncation.
+        """
+        from app.services.analysis.runtime.result import AnalysisRunResult, ExtractedArtifact, ExtractedRelationship
+        from app.services.analysis.persistence.twin_writer import twin_writer
+        from app.services.discovery.scanner import FileInventory
+        import uuid
+
+        proj = Project(
+            id=str(uuid.uuid4()),
+            name=f"Long ID Project {uuid.uuid4().hex[:6]}",
+        )
+        db_session.add(proj)
+        db_session.flush()
+
+        repo = Repository(
+            id=str(uuid.uuid4()),
+            project_id=proj.id,
+            name="long_id_repo",
+            local_path="/tmp/long_id_repo",
+        )
+        db_session.add(repo)
+        db_session.commit()
+
+        snapshot_id = f"snap_{uuid.uuid4().hex[:16]}"
+        long_name = "ClassWithRelativelyLongName"
+        # 300 character qualified name (> 255 characters)
+        long_qual = "enterprise.core.services.billing.checkout.v2.internal." + ("subcomponent_" * 15) + ".Processor"
+        assert len(long_qual) > 255, f"Test setup error: long_qual must exceed 255 (len={len(long_qual)})"
+
+        # 300 character file path (> 255 characters)
+        deep_dir = "/".join(["nested_module_level_" + str(i) for i in range(12)])
+        long_file_path = f"{deep_dir}/very_deep_processor_implementation.py"
+        assert len(long_file_path) > 255, f"Test setup error: long_file_path must exceed 255 (len={len(long_file_path)})"
+
+        # Long external target identifier (> 255 characters)
+        long_target_qual = "org.springframework.cloud.gateway.filter.factory.rewrite." + ("TargetFilter_" * 20) + "Service"
+        assert len(long_target_qual) > 255, f"Test setup error: long_target_qual must exceed 255 (len={len(long_target_qual)})"
+
+        long_src_loc = f"{long_file_path}:142"
+
+        art = ExtractedArtifact(
+            id=f"art_{uuid.uuid4().hex[:20]}",
+            artifact_type=ArtifactType.CLASS,
+            language="python",
+            name=long_name,
+            qualified_name=long_qual,
+            file_path=long_file_path,
+            line_start=142,
+            line_end=200,
+            analyzer_source="python_ast",
+            confidence=1.0,
+        )
+
+        rel = ExtractedRelationship(
+            id=f"rel_{uuid.uuid4().hex[:20]}",
+            source_qualified_name=long_qual,
+            target_qualified_name=long_target_qual,
+            relationship_type=RelationshipType.CALLS,
+            confidence=1.0,
+            detection_method="ast_call_expression",
+            source_location=long_src_loc,
+        )
+
+        run_result = AnalysisRunResult(
+            run_id=f"run_{uuid.uuid4().hex[:16]}",
+            repository_id=repo.id,
+            snapshot_id=snapshot_id,
+            status="COMPLETED",
+            artifacts=[art],
+            relationships=[rel],
+            evidence_items=[],
+        )
+
+        inventory = FileInventory(root_path="/tmp/long_id_repo", files=[], total_files=0, total_lines=0)
+
+        # Write twin
+        twin_writer.write_twin(
+            db=db_session,
+            repository_id=repo.id,
+            snapshot_id=snapshot_id,
+            inventory=inventory,
+            result=run_result,
+        )
+
+        # 1. Verify StructuralArtifact survived intact without 255-char cutoff
+        saved_art = db_session.query(StructuralArtifact).filter_by(snapshot_id=snapshot_id, id=art.id).first()
+        assert saved_art is not None
+        assert saved_art.name == long_name
+        assert saved_art.qualified_name == long_qual, (
+            f"Qualified name was truncated! Expected length {len(long_qual)}, got {len(saved_art.qualified_name)}"
+        )
+        assert saved_art.location == long_src_loc, (
+            f"Location was truncated! Expected length {len(long_src_loc)}, got {len(saved_art.location)}"
+        )
+        # Verify file_path property extraction works cleanly on long location
+        assert saved_art.file_path == long_file_path
+
+        # 2. Verify External Target Dependency node created by writer preserved full long qualified name
+        saved_target = db_session.query(StructuralArtifact).filter_by(
+            snapshot_id=snapshot_id,
+            qualified_name=long_target_qual,
+        ).first()
+        assert saved_target is not None, "Target external dependency node must be resolved by long qualified name!"
+        assert saved_target.qualified_name == long_target_qual
+
+        # 3. Verify ArtifactRelationship preserved long source_location (> 255 chars)
+        saved_rel = db_session.query(ArtifactRelationship).filter_by(snapshot_id=snapshot_id, id=rel.id).first()
+        assert saved_rel is not None
+        assert saved_rel.source_location == long_src_loc, (
+            f"Relationship source_location truncated! Expected {len(long_src_loc)}, got {len(saved_rel.source_location)}"
+        )
+
+

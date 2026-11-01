@@ -108,6 +108,19 @@ body.theme-dark textarea {
   color: var(--text-primary) !important;
 }
 
+body.theme-dark #ti-ci-quick-actions {
+  background: linear-gradient(to right, #0F172A, #1E293B) !important;
+  border-color: #334155 !important;
+  color: #F8FAFC !important;
+}
+body.theme-dark #ti-ci-quick-actions #ti-roi-desc {
+  color: #94A3B8 !important;
+}
+body.theme-dark #ti-ci-quick-actions .grid > div {
+  background: rgba(30, 41, 59, 0.6) !important;
+  border-color: #334155 !important;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -2833,5 +2846,298 @@ body.theme-dark .taste-kpi-value {
   background-color: #f8fafc;
   border-color: #94a3b8;
 }
+
+/* ==================================================================== */
+/* TWINCORE FUTURISTIC INTERACTIVE DEMO SIMULATION STYLES */
+/* ==================================================================== */
+.demo-graph-canvas {
+  background-color: #0b1120;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-size: 20px 20px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+}
+
+/* Animated SVG Stream Edges */
+@keyframes edgeFlow {
+  from { stroke-dashoffset: 24; }
+  to { stroke-dashoffset: 0; }
+}
+
+.demo-edge-stream {
+  stroke-dasharray: 6 4;
+  animation: edgeFlow 1.4s linear infinite;
+}
+
+.demo-edge-blast {
+  stroke-dasharray: 8 6;
+  animation: edgeFlow 0.8s linear infinite;
+  stroke: #f43f5e !important;
+  stroke-width: 2.5px !important;
+  filter: drop-shadow(0 0 4px rgba(244, 63, 94, 0.6));
+}
+
+/* Node Glowing Pulses */
+@keyframes nodePulseCyan {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.5); }
+  50% { box-shadow: 0 0 0 8px rgba(56, 189, 248, 0); }
+}
+
+@keyframes nodePulseRose {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.6); }
+  50% { box-shadow: 0 0 0 10px rgba(244, 63, 94, 0); }
+}
+
+.pulse-cyan {
+  animation: nodePulseCyan 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.pulse-rose {
+  animation: nodePulseRose 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Discovery Scan Line */
+@keyframes scanTravel {
+  0% { transform: translateY(-100%); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateY(320px); opacity: 0; }
+}
+
+.demo-scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #38bdf8, #0071e3, transparent);
+  box-shadow: 0 0 12px #38bdf8;
+  animation: scanTravel 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+
+/* Node focus & dimming */
+.node-focused {
+  transform: scale(1.04);
+  z-index: 20;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
+}
+
+.node-dimmed {
+  opacity: 0.22 !important;
+  filter: grayscale(60%) !important;
+  transition: opacity 0.25s ease, filter 0.25s ease;
+}
+
+.edge-dimmed {
+  opacity: 0.12 !important;
+  transition: opacity 0.25s ease;
+}
+
+/* Reduced Motion Fallback */
+@media (prefers-reduced-motion: reduce), (update: slow) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .demo-edge-stream,
+  .demo-edge-blast,
+  .pulse-cyan,
+  .pulse-rose,
+  .demo-scanline,
+  .animate-pulse,
+  .animate-spin,
+  .animate-bounce {
+    animation: none !important;
+  }
+  .node-focused {
+    transform: none !important;
+  }
+}
+
+.reduced-motion-active .demo-edge-stream,
+.reduced-motion-active .demo-edge-blast,
+.reduced-motion-active .pulse-cyan,
+.reduced-motion-active .pulse-rose,
+.reduced-motion-active .demo-scanline,
+.reduced-motion-active .animate-pulse,
+.reduced-motion-active .animate-spin {
+  animation: none !important;
+}
+
+/* Accessible High-Contrast Keyboard Focus Indicators */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #0071e3 !important;
+  outline-offset: 2px !important;
+}
+
+body.theme-dark a:focus-visible,
+body.theme-dark button:focus-visible,
+body.theme-dark input:focus-visible,
+body.theme-dark select:focus-visible,
+body.theme-dark textarea:focus-visible,
+body.theme-dark [tabindex]:focus-visible {
+  outline: 2px solid #38bdf8 !important;
+  outline-offset: 2px !important;
+}
+
+/* Stable numeric alignment across metric counters */
+.tabular-nums,
+.stat-num,
+.stat-number,
+.metric-value,
+.badge-count,
+#stat-components,
+#stat-nodes,
+#stat-edges,
+#stat-health,
+#isolated-count,
+#graph-nodes-badge {
+  font-variant-numeric: tabular-nums;
+  -webkit-font-feature-settings: "tnum" 1;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Accessible text wrapping and overflow handling */
+.accessible-wrap {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Transformed Overview: Step Cards & Reduced Motion */
+.stage-step-card {
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.stage-step-card:hover {
+  transform: translateY(-1px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-step-card,
+  .stage-step-card:hover {
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
+/* ==================================================================== */
+/* RESPONSIVE & COLLAPSIBLE SIDEBAR DRAWER STYLES                      */
+/* ==================================================================== */
+
+/* Smooth sliding transitions */
+#app-sidebar {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              width 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.25s ease;
+  will-change: transform, width;
+}
+
+/* Mobile Drawer Overlay (< 1024px lg breakpoint) */
+@media (max-width: 1023.98px) {
+  #app-sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    width: 288px !important;
+    max-width: 85vw !important;
+    z-index: 100 !important;
+    transform: translateX(-100%) !important;
+    box-shadow: none;
+  }
+
+  body.sidebar-mobile-open #app-sidebar {
+    transform: translateX(0) !important;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.05) !important;
+  }
+
+  /* Prevent background scrolling when mobile drawer is open */
+  body.sidebar-mobile-open {
+    overflow: hidden !important;
+  }
+
+  /* Backdrop Overlay */
+  #sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    z-index: 95;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  body.sidebar-mobile-open #sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* Desktop Collapsed Rail (>= 1024px) */
+@media (min-width: 1024px) {
+  #sidebar-backdrop {
+    display: none !important;
+  }
+
+  #btn-close-sidebar-mobile {
+    display: none !important;
+  }
+
+  /* When desktop sidebar is collapsed */
+  body.sidebar-desktop-collapsed #app-sidebar {
+    width: 68px !important;
+  }
+
+  body.sidebar-desktop-collapsed #app-sidebar .sidebar-text-label,
+  body.sidebar-desktop-collapsed #app-sidebar .sidebar-badge-label,
+  body.sidebar-desktop-collapsed #app-sidebar #sidebar-brand-text,
+  body.sidebar-desktop-collapsed #app-sidebar #sidebar-repo-active-container,
+  body.sidebar-desktop-collapsed #app-sidebar #sidebar-repo-connect-container span:not(.material-symbols-outlined) {
+    display: none !important;
+  }
+
+  body.sidebar-desktop-collapsed #app-sidebar .view-tab {
+    justify-content: center !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+
+  body.sidebar-desktop-collapsed #app-sidebar .view-tab > div {
+    justify-content: center !important;
+    width: 100% !important;
+  }
+
+  body.sidebar-desktop-collapsed #app-sidebar nav .space-y-1 > div:first-child {
+    display: none !important; /* Hide Section headers like "Home", "Explore" in collapsed rail */
+  }
+
+  body.sidebar-desktop-collapsed #app-sidebar #sidebar-btn-connect-codebase {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    justify-content: center !important;
+  }
+}
+
+/* Reduced Motion Override */
+@media (prefers-reduced-motion: reduce) {
+  #app-sidebar,
+  #sidebar-backdrop {
+    transition: none !important;
+  }
+}
+
+
 
 

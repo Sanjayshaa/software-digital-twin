@@ -17,7 +17,7 @@ import subprocess
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Dict, Any, Tuple
 
 
 # Workspace root for all cloned repositories
@@ -285,15 +285,139 @@ def _sanitize_git_error(stderr: str, token: Optional[str]) -> str:
 def _user_facing_clone_error(returncode: int, stderr: str) -> str:
     """Returns a safe, human-readable error message for common clone failures."""
     stderr_lower = (stderr or "").lower()
-    if "not found" in stderr_lower or "repository" in stderr_lower and "not found" in stderr_lower:
-        return "Repository not found. Check the URL and ensure the repository is public (or provide a valid access token for private repos)."
-    if "authentication" in stderr_lower or "authorization" in stderr_lower or "403" in stderr_lower:
-        return "Authentication failed. For private repositories, please provide a valid GitHub Personal Access Token."
+    if "could not read username" in stderr_lower or "terminal prompts disabled" in stderr_lower or "authentication failed" in stderr_lower or "403" in stderr_lower:
+        return "Authentication failed or private repository. For private repositories, please provide a GitHub Personal Access Token (PAT) with 'repo' scope."
+    if "remote branch" in stderr_lower and "not found" in stderr_lower:
+        return "The specified branch was not found on the remote repository. Check the branch name or leave it empty to use the default branch."
+    if "empty repository" in stderr_lower or "couldn't find remote ref" in stderr_lower or "remote branch head not found" in stderr_lower:
+        return "The repository appears to be empty (no commits found). TwinCore requires at least one commit with source files to construct a Digital Twin."
+    if "could not resolve host" in stderr_lower or "connection refused" in stderr_lower or "ssl" in stderr_lower or "unable to access" in stderr_lower:
+        return "Network connection to GitHub failed. Please verify your internet connection, proxy settings, or firewall."
+    if "rate limit" in stderr_lower or "429" in stderr_lower:
+        return "GitHub API or network rate limit exceeded. Please wait a few minutes before trying again, or provide an authenticated access token."
+    if "not found" in stderr_lower or ("repository" in stderr_lower and "not found" in stderr_lower):
+        return "Repository not found. Check the URL and ensure the repository exists and is accessible."
     if "timeout" in stderr_lower or "timed out" in stderr_lower:
-        return "Connection timed out while cloning the repository."
+        return "Connection timed out while cloning the repository. The repository may be too large or the network is slow."
     if "already exists" in stderr_lower:
         return "Repository workspace already exists. Please try again."
-    return "Repository acquisition failed. Please verify the URL is correct and accessible."
+    return "Repository acquisition failed. Please verify the URL and credentials, and try again."
+
+
+def discover_repository_branches(
+    workspace_path: str,
+    default_branch: str = "main",
+) -> List[dict]:
+    """
+    Safely introspects the real Git repository at workspace_path to discover actual branches.
+    Returns a list of branch dictionaries with name, is_default, is_current, and head_commit_hash.
+    Never fabricates branches.
+    """
+    abs_path = os.path.abspath(workspace_path)
+    dot_git = os.path.join(abs_path, ".git")
+    if not os.path.exists(dot_git):
+        return [{
+            "name": default_branch or "main",
+            "is_default": True,
+            "is_current": True,
+            "head_commit_hash": "no-git",
+        }]
+
+    clean_env = _get_sanitized_git_env()
+
+    # Determine current branch / HEAD
+    current_branch_name = None
+    try:
+        cur_proc = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=abs_path,
+            env=clean_env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if cur_proc.returncode == 0:
+            out = cur_proc.stdout.strip()
+            if out and out != "HEAD":
+                current_branch_name = out
+    except Exception:
+        pass
+
+    branches_map: dict[str, dict] = {}
+    try:
+        # Query local and remote-tracking branches
+        ref_proc = subprocess.run(
+            ["git", "for-each-ref", "--format=%(refname:short)\x1f%(objectname)\x1f%(HEAD)", "refs/heads/", "refs/remotes/"],
+            cwd=abs_path,
+            env=clean_env,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if ref_proc.returncode == 0 and ref_proc.stdout.strip():
+            for line in ref_proc.stdout.strip().split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split("\x1f")
+                if len(parts) >= 2:
+                    raw_name = parts[0].strip()
+                    commit_sha = parts[1].strip()
+                    is_head_marker = (parts[2].strip() == "*") if len(parts) >= 3 else False
+
+                    # Skip remote HEAD pointer (e.g. origin/HEAD -> origin/main)
+                    if "HEAD" in raw_name and ("origin/HEAD" in raw_name or raw_name == "HEAD"):
+                        continue
+
+                    # Normalize branch name: if remote branch e.g. "origin/feature-1", strip "origin/"
+                    clean_name = raw_name
+                    if clean_name.startswith("origin/"):
+                        clean_name = clean_name[len("origin/"):]
+
+                    if not clean_name:
+                        continue
+
+                    # If already seen as local branch, keep local
+                    if clean_name in branches_map and not raw_name.startswith("origin/"):
+                        branches_map[clean_name]["head_commit_hash"] = commit_sha
+                        if is_head_marker:
+                            branches_map[clean_name]["is_current"] = True
+                        continue
+
+                    if clean_name not in branches_map:
+                        branches_map[clean_name] = {
+                            "name": clean_name,
+                            "is_default": (clean_name == default_branch or clean_name == "main" or clean_name == "master"),
+                            "is_current": is_head_marker or (clean_name == current_branch_name),
+                            "head_commit_hash": commit_sha,
+                        }
+    except Exception:
+        pass
+
+    # Ensure default branch is marked accurately
+    branches_list = list(branches_map.values())
+    if default_branch:
+        found_def = False
+        for b in branches_list:
+            if b["name"] == default_branch:
+                b["is_default"] = True
+                found_def = True
+            else:
+                b["is_default"] = False
+        if not found_def and branches_list:
+            branches_list[0]["is_default"] = True
+
+    if not branches_list:
+        branches_list = [{
+            "name": default_branch or "main",
+            "is_default": True,
+            "is_current": True,
+            "head_commit_hash": "no-git",
+        }]
+
+    # Sort branches: default first, then current, then alphabetical
+    branches_list.sort(key=lambda b: (not b["is_default"], not b.get("is_current", False), b["name"]))
+    return branches_list
 
 
 def discover_repository_commits(
@@ -301,12 +425,15 @@ def discover_repository_commits(
     max_count: int = 50,
     allow_deepen: bool = True,
     default_branch: str = "main",
+    branch_name: Optional[str] = None,
 ) -> dict:
     """
     Safely introspects the real Git repository at workspace_path to discover accessible commits.
+    - If branch_name is provided, introspects commits on that specific branch.
+    - Computes real diff metrics: files_changed, additions, deletions via git numstat.
     - If shallow and allow_deepen=True, attempts to deepen history up to max_count commits.
-    - Extracts full SHA, short SHA, author, date, message, and head status.
-    - Never fabricates commits.
+    - Extracts full SHA, short SHA, author, date, message, additions, deletions, files_changed, and head status.
+    - Never fabricates commits or metrics.
     """
     abs_path = os.path.abspath(workspace_path)
     dot_git = os.path.join(abs_path, ".git")
@@ -322,11 +449,12 @@ def discover_repository_commits(
     clean_env = _get_sanitized_git_env()
     shallow_file = os.path.join(dot_git, "shallow")
     is_shallow = os.path.exists(shallow_file)
+    target_branch = branch_name or default_branch or "main"
 
     # If the repository is shallow and allow_deepen is True, try deepening history
     if is_shallow and allow_deepen:
         try:
-            deepen_args = ["git", "fetch", f"--depth={max_count}", "origin", default_branch]
+            deepen_args = ["git", "fetch", f"--depth={max_count}", "origin", target_branch]
             subprocess.run(
                 deepen_args,
                 cwd=abs_path,
@@ -355,27 +483,125 @@ def discover_repository_commits(
     except Exception:
         pass
 
-    # Read git log
+    # Read git log with numstat for real diff statistics
     commits = []
+    log_args = [
+        "git", "log",
+        f"-n{max_count}",
+        "--numstat",
+        "--pretty=format:__COMMIT_START__\x1f%H\x1f%h\x1f%an\x1f%ae\x1f%aI\x1f%s\x1f%P",
+    ]
+    target_ref = None
+    if branch_name:
+        for candidate in [branch_name, f"origin/{branch_name}", f"refs/remotes/origin/{branch_name}", f"refs/heads/{branch_name}"]:
+            chk = subprocess.run(
+                ["git", "rev-parse", "--verify", candidate],
+                cwd=abs_path,
+                env=clean_env,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if chk.returncode == 0:
+                target_ref = candidate
+                break
+        if not target_ref:
+            # Check if branch_name is a commit SHA
+            chk_sha = subprocess.run(
+                ["git", "cat-file", "-e", f"{branch_name}^{{commit}}"],
+                cwd=abs_path,
+                env=clean_env,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if chk_sha.returncode == 0:
+                target_ref = branch_name
+        if not target_ref:
+            return {
+                "is_git_repo": True,
+                "is_shallow": is_shallow,
+                "total_commits": 0,
+                "commits": [],
+                "error": f"Branch '{branch_name}' not found in repository.",
+            }
+        log_args.append(target_ref)
+
     try:
         log_res = subprocess.run(
-            ["git", "log", f"-n{max_count}", "--pretty=format:%H\x1f%h\x1f%an\x1f%ae\x1f%aI\x1f%s"],
+            log_args,
             cwd=abs_path,
             env=clean_env,
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=20,
         )
-        if log_res.returncode == 0 and log_res.stdout.strip():
-            for line in log_res.stdout.strip().split("\n"):
-                parts = line.split("\x1f")
-                if len(parts) >= 6:
-                    c_sha = parts[0].strip()
-                    s_sha = parts[1].strip()
-                    author_name = parts[2].strip()
-                    author_email = parts[3].strip()
-                    date_str = parts[4].strip()
-                    subject = parts[5].strip()
+        if log_res.returncode != 0:
+            if branch_name:
+                return {
+                    "is_git_repo": True,
+                    "is_shallow": is_shallow,
+                    "total_commits": 0,
+                    "commits": [],
+                    "error": f"Branch '{branch_name}' not found in repository.",
+                }
+            err_msg = log_res.stderr.strip() or f"git log exited with {log_res.returncode}"
+            return {
+                "is_git_repo": True,
+                "is_shallow": is_shallow,
+                "total_commits": 0,
+                "commits": [],
+                "error": f"Failed to read git log: {err_msg}",
+            }
+
+        raw_output = log_res.stdout
+        if raw_output:
+            raw_blocks = raw_output.split("__COMMIT_START__\x1f")
+            for block in raw_blocks:
+                block = block.strip()
+                if not block:
+                    continue
+                lines = block.split("\n")
+                header_line = lines[0].strip()
+                stat_lines = lines[1:]
+
+                header_parts = header_line.split("\x1f")
+                if len(header_parts) >= 6:
+                    c_sha = header_parts[0].strip()
+                    s_sha = header_parts[1].strip()
+                    author_name = header_parts[2].strip()
+                    author_email = header_parts[3].strip()
+                    date_str = header_parts[4].strip()
+                    subject = header_parts[5].strip()
+                    parents = header_parts[6].strip().split() if len(header_parts) >= 7 else []
+
+                    additions = 0
+                    deletions = 0
+                    files_changed = 0
+                    changed_files_list = []
+
+                    for s_line in stat_lines:
+                        s_line = s_line.strip()
+                        if not s_line:
+                            continue
+                        cols = s_line.split("\t")
+                        if len(cols) >= 3:
+                            files_changed += 1
+                            ins_str, del_str = cols[0].strip(), cols[1].strip()
+                            file_path = cols[2].strip()
+                            is_binary = (ins_str == "-" and del_str == "-")
+                            f_add = int(ins_str) if ins_str.isdigit() else 0
+                            f_del = int(del_str) if del_str.isdigit() else 0
+                            additions += f_add
+                            deletions += f_del
+                            if len(changed_files_list) < 50:
+                                changed_files_list.append({
+                                    "path": file_path,
+                                    "additions": f_add,
+                                    "deletions": f_del,
+                                    "is_binary": is_binary,
+                                })
+
                     commits.append({
                         "commit_sha": c_sha,
                         "short_sha": s_sha,
@@ -383,6 +609,12 @@ def discover_repository_commits(
                         "authored_date": date_str,
                         "message": subject,
                         "is_head": (c_sha == head_sha),
+                        "is_merge": (len(parents) > 1),
+                        "files_changed": files_changed,
+                        "additions": additions,
+                        "deletions": deletions,
+                        "files": changed_files_list,
+                        "branch_name": branch_name or default_branch or "main",
                     })
     except Exception as exc:
         return {

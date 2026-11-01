@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "./.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --app-dir backend --reload",
     "start": "./.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --app-dir backend",
-    "test": "./.venv/bin/python backend/tests/test_frontend_ux_e2e.py",
+    "test": "./.venv/bin/python -u scripts/find_report.py",
+    "test:correctness": "./.venv/bin/python -m unittest backend/tests/test_simulation_correctness_and_evidence.py",
     "test:quick": "POSTGRES_SERVER=127.0.0.1 POSTGRES_PORT=5434 POSTGRES_USER=digitaltwin POSTGRES_PASSWORD=digitaltwin_secret_password PYTHONPATH=backend ./.venv/bin/pytest backend/tests -q",
     "test:integrity": "PYTHONPATH=backend ./.venv/bin/pytest backend/tests/test_evaluation_integrity.py",
     "test:e2e": "./.venv/bin/python backend/tests/test_frontend_ux_e2e.py",

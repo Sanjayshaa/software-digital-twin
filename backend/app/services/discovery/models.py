@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class EvidenceType(str, Enum):
@@ -86,7 +86,7 @@ class ArchitectureSignal(BaseModel):
 
 class ProjectProfile(BaseModel):
     repository_path: str
-    scan_timestamp: datetime = Field(default_factory=datetime.utcnow)
+    scan_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     total_files_scanned: int = 0
     total_lines_of_code: int = 0
     languages: List[LanguageStat] = Field(default_factory=list)
@@ -123,7 +123,7 @@ class AnalysisPlanStep(BaseModel):
 
 class AnalysisPlanResult(BaseModel):
     repository_path: str
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     project_profile_summary: Dict[str, Any]
     total_steps: int
     steps: List[AnalysisPlanStep] = Field(default_factory=list)

@@ -30,18 +30,7 @@ def _resolve_repo(
     repository_id: str,
     principal: Optional[AuthenticatedPrincipal] = None,
 ) -> Optional[Repository]:
-    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
-    if repo:
-        return repo
-    if not principal:
-        from sqlalchemy import or_
-        return db.query(Repository).filter(
-            or_(
-                Repository.id == repository_id,
-                Repository.name == repository_id,
-            )
-        ).first()
-    return None
+    return resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
 
 
 class QuickSimulateRequest(BaseModel):
@@ -150,7 +139,7 @@ def parse_natural_language_scenario(
         explicit_target=req.resolved_target,
         explicit_type=req.resolved_type,
     )
-    return plan.dict()
+    return plan.model_dump() if hasattr(plan, "model_dump") else plan.dict()
 
 
 @router.post("/{repository_id}/scenarios/orchestrate", response_model=Dict[str, Any])
@@ -182,7 +171,7 @@ def orchestrate_scenario(
         explicit_target=req.resolved_target,
         explicit_type=req.resolved_type,
     )
-    res_dict = result.dict()
+    res_dict = result.model_dump() if hasattr(result, "model_dump") else result.dict()
     res_dict["report_markdown"] = result.report.markdown_content
     res_dict["markdown_content"] = result.report.markdown_content
     return res_dict
@@ -273,7 +262,7 @@ def analyze_scenario(
             detail=f"Repository '{repository_id}' not found.",
         )
     res = scenario_service.simulate_scenario(db=db, scenario_id=scenario_id, repository_id=repo.id)
-    return res.dict()
+    return res.model_dump() if hasattr(res, "model_dump") else res.dict()
 
 
 @router.post("/{repository_id}/scenarios/{scenario_id}/simulate", response_model=Dict[str, Any])
@@ -334,7 +323,7 @@ def quick_simulate(
     )
     created = scenario_service.create_scenario(db=db, repository_id=repo.id, request=create_req)
     res = scenario_service.simulate_scenario(db=db, scenario_id=created["id"])
-    return res.dict()
+    return res.model_dump() if hasattr(res, "model_dump") else res.dict()
 
 
 @router.get("/{repository_id}/scenarios/{scenario_id}/report", response_model=Dict[str, Any])
@@ -390,7 +379,7 @@ def get_scenario_engineering_report(
 
     latest_res = scenario_data.get("latest_result") if scenario_data else None
     if latest_res:
-        sim_obj = ScenarioAnalysisResult.parse_obj(latest_res)
+        sim_obj = ScenarioAnalysisResult.model_validate(latest_res) if hasattr(ScenarioAnalysisResult, "model_validate") else ScenarioAnalysisResult.parse_obj(latest_res)
     else:
         # Generate simulation outcome on demand
         sim_obj = multi_agent_scenario_orchestrator.simulation_engine.simulate_scenario(
@@ -421,7 +410,7 @@ def get_scenario_engineering_report(
     )
 
     sanitized_md, _ = SensitiveDataSanitizer().sanitize_text(report.markdown_content)
-    rep_dict = report.dict()
+    rep_dict = report.model_dump() if hasattr(report, "model_dump") else report.dict()
     rep_dict["markdown_content"] = sanitized_md
     rep_dict["report_markdown"] = sanitized_md
     return rep_dict

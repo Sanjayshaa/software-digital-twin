@@ -72,6 +72,8 @@ class ChangeImpactAnalyzer:
                 .filter_by(snapshot_id=target_snapshot_id)
                 .all()
             )
+        if not target_artifacts and base_artifacts and ("working-tree" in str(target_snapshot_id) or base_snapshot_id == target_snapshot_id):
+            target_artifacts = base_artifacts
 
         # 1. Detect Changes (symbol-level where supported, file-level fallback) or use provided change_set
         if change_set is None:
@@ -85,7 +87,9 @@ class ChangeImpactAnalyzer:
             )
 
         # Handle Identical / No-Change scenario
-        is_identical = (base_snapshot_id == target_snapshot_id) or (change_set.status == "IDENTICAL_COMMITS")
+        is_identical = (change_set.status == "IDENTICAL_COMMITS") or (
+            base_snapshot_id == target_snapshot_id and not change_set.changes
+        )
         if not change_set.changes or is_identical:
             elapsed_ms = round((time.time() - start_time) * 1000, 2)
             if is_identical:

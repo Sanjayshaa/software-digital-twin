@@ -37,11 +37,14 @@
       toastContainer = document.createElement('div');
       toastContainer.id = 'twin-toast-container';
       toastContainer.className = 'fixed bottom-5 right-5 z-[9999] flex flex-col gap-2 max-w-sm pointer-events-none';
+      toastContainer.setAttribute('role', 'status');
+      toastContainer.setAttribute('aria-live', 'polite');
       document.body.appendChild(toastContainer);
     }
 
     const toast = document.createElement('div');
     toast.className = 'pointer-events-auto p-3.5 rounded-xl shadow-lg border text-xs flex items-start gap-2.5 transition-all transform translate-y-2 opacity-0';
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
 
     let bg = '#EFF6FF';
     let border = '#BFDBFE';
@@ -70,10 +73,10 @@
     toast.style.color = text;
 
     toast.innerHTML = `
-      <span class="material-symbols-outlined text-[18px] shrink-0 mt-0.5">${icon}</span>
+      <span class="material-symbols-outlined text-[18px] shrink-0 mt-0.5" aria-hidden="true">${icon}</span>
       <div class="flex-1 leading-relaxed">${escapeHtml(message)}</div>
-      <button class="shrink-0 text-current opacity-60 hover:opacity-100 p-0.5 rounded cursor-pointer" type="button">
-        <span class="material-symbols-outlined text-[16px]">close</span>
+      <button class="shrink-0 text-current opacity-60 hover:opacity-100 p-0.5 rounded cursor-pointer" type="button" aria-label="Dismiss notification">
+        <span class="material-symbols-outlined text-[16px]" aria-hidden="true">close</span>
       </button>
     `;
 
@@ -100,9 +103,13 @@
     repositories: [],
     currentRepoId: null,
     currentRepoData: null,
+    branches: [],
+    currentBranchName: null,
     snapshots: [],
     currentSnapshotId: null,
     diffSnapshotId: null,
+    commitsRequestEpoch: 0,
+    commitHistoryInfo: null,
     appState: 'BOOT',
     user: null,
 
@@ -279,14 +286,21 @@
 
   // --- 1. Navigation & View Switching ---
   function getInitialRequestedView() {
+    const path = window.location.pathname;
     const hash = window.location.hash ? window.location.hash.replace(/^#\/?/, '').split('?')[0].trim() : '';
     const urlParams = new URLSearchParams(window.location.search);
     const queryView = urlParams.get('view');
-    const candidate = hash || queryView || localStorage.getItem('selected_view') || 'overview';
     const validViews = [
       'overview', 'discovery', 'architecture', 'dependencies', 'components',
       'changes', 'impact', 'simulation', 'tests', 'incidents', 'runtime', 'evidence', 'ask', 'demo'
     ];
+    if (path === '/demo' || path.startsWith('/demo/')) {
+      if (hash && validViews.includes(hash) && hash !== 'demo') {
+        return hash;
+      }
+      return 'demo';
+    }
+    const candidate = hash || queryView || localStorage.getItem('selected_view') || 'overview';
     return validViews.includes(candidate) ? candidate : 'overview';
   }
 
@@ -313,6 +327,11 @@
     tabs.forEach(tab => {
       tab.addEventListener('click', () => {
         const view = tab.dataset.view;
+        const isDemoRoute = window.location.pathname === '/demo' || window.location.pathname.startsWith('/demo/');
+        if (!state.currentRepoId && isDemoRoute && view !== 'demo') {
+          selectSyntheticDemoProject(view);
+          return;
+        }
         if (!state.currentRepoId && view !== 'overview' && view !== 'demo' && view !== 'dashboard') {
           const viewLabels = {
             architecture: 'Architecture',
@@ -332,6 +351,10 @@
           return;
         }
         switchPrimaryView(view);
+        // On mobile, selecting a navigation item closes the drawer
+        if (window.innerWidth < 1024) {
+          closeMobileSidebar();
+        }
       });
     });
 
@@ -362,6 +385,51 @@
     document.getElementById('top-btn-connect-repo')?.addEventListener('click', () => openConnectModal('github'));
     document.getElementById('sidebar-repo-card')?.addEventListener('click', () => openConnectModal('github'));
     document.getElementById('sidebar-btn-connect-codebase')?.addEventListener('click', () => openConnectModal('github'));
+
+    // Responsive Sidebar Controls (Mobile Drawer & Desktop Collapse)
+    const sidebarToggleBtn = document.getElementById('btn-sidebar-toggle');
+    const sidebarCloseBtn = document.getElementById('btn-close-sidebar-mobile');
+    const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+
+    sidebarToggleBtn?.addEventListener('click', () => {
+      if (window.innerWidth < 1024) {
+        toggleMobileSidebar();
+      } else {
+        toggleDesktopSidebar();
+      }
+    });
+
+    sidebarCloseBtn?.addEventListener('click', () => {
+      closeMobileSidebar();
+    });
+
+    sidebarBackdrop?.addEventListener('click', () => {
+      closeMobileSidebar();
+    });
+
+    // Close mobile drawer on Escape key
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.body.classList.contains('sidebar-mobile-open')) {
+        closeMobileSidebar();
+      }
+    });
+
+    // Handle viewport resize to reset mobile drawer state when expanding to desktop
+    window.addEventListener('resize', () => {
+      if (window.innerWidth >= 1024 && document.body.classList.contains('sidebar-mobile-open')) {
+        closeMobileSidebar();
+      }
+      updateSidebarAriaState();
+    });
+
+    // Initialize desktop collapsed state from localStorage if preference exists
+    try {
+      const savedDesktopCollapsed = localStorage.getItem('sidebar_desktop_collapsed') === 'true';
+      if (savedDesktopCollapsed && window.innerWidth >= 1024) {
+        document.body.classList.add('sidebar-desktop-collapsed');
+      }
+      updateSidebarAriaState();
+    } catch (_) {}
 
     document.getElementById('top-btn-ingest-runtime')?.addEventListener('click', () => {
       if (!state.currentRepoId) {
@@ -428,7 +496,7 @@
       btn.addEventListener('click', () => switchSidebarTab(btn.dataset.sbTab));
     });
 
-    // Repo and Snapshot Selectors in Header
+    // Repo, Branch, and Snapshot Selectors in Header
     const repoSelect = document.getElementById('repo-select');
     if (repoSelect) {
       repoSelect.addEventListener('change', (e) => {
@@ -436,10 +504,24 @@
       });
     }
 
+    const branchSelect = document.getElementById('branch-select');
+    if (branchSelect) {
+      branchSelect.addEventListener('change', (e) => {
+        selectBranch(e.target.value);
+      });
+    }
+
     const snapSelect = document.getElementById('snapshot-select');
     if (snapSelect) {
       snapSelect.addEventListener('change', (e) => {
         selectSnapshot(e.target.value);
+      });
+    }
+
+    const btnSnapHelp = document.getElementById('btn-snapshot-help');
+    if (btnSnapHelp) {
+      btnSnapHelp.addEventListener('click', () => {
+        openSnapshotHelpModal();
       });
     }
 
@@ -1700,8 +1782,7 @@
     populateRepoSelect([]);
     populateSnapshotSelects([]);
     showNotification('Signed out successfully.', 'info');
-    await startApplicationStateMachine();
-    switchPrimaryView('overview');
+    window.location.replace('/login');
   }
 
   async function deleteAccount() {
@@ -1804,7 +1885,19 @@
       if (connectContainer) connectContainer.style.display = 'block';
     }
 
-    // 3. Snapshot selector gating (Rule 1: No repository means no snapshot)
+    // 3. Branch & Snapshot selector gating
+    const branchSelect = document.getElementById('branch-select');
+    const branchWrap = document.getElementById('branch-select-wrap');
+    if (branchSelect) {
+      branchSelect.disabled = !hasRepo;
+      branchSelect.setAttribute('aria-disabled', String(!hasRepo));
+      branchSelect.style.cursor = hasRepo ? 'pointer' : 'not-allowed';
+    }
+    if (branchWrap) {
+      branchWrap.classList.toggle('opacity-50', !hasRepo);
+      branchWrap.classList.toggle('cursor-not-allowed', !hasRepo);
+    }
+
     const snapSelect = document.getElementById('snapshot-select');
     const snapWrap = document.getElementById('snapshot-select-wrap');
     if (snapSelect) {
@@ -2083,7 +2176,26 @@
     try {
       // Step 1: RESTORING SESSION & AUTH CHECK
       setAppState('RESTORING_SESSION');
-      await checkAuthentication();
+      const authUser = await checkAuthentication();
+
+      // Check for standalone interactive demo mode (/demo)
+      const isDemoPath = window.location.pathname === '/demo' || window.location.pathname.startsWith('/demo/');
+      const requestedView = getInitialRequestedView();
+      if (isDemoPath) {
+        // Dedicated Demo Mode: No auth required, isolated from real repos
+        setAppState('READY');
+        if (requestedView && requestedView !== 'demo') {
+          selectSyntheticDemoProject(requestedView);
+        } else {
+          switchPrimaryView('demo');
+        }
+        return;
+      }
+      if (requestedView === 'demo') {
+        setAppState('READY');
+        switchPrimaryView('demo');
+        return;
+      }
 
       const urlParams = new URLSearchParams(window.location.search);
       const targetRepo = preferredRepoId || urlParams.get('repo') || localStorage.getItem('selected_repo_id');
@@ -2122,10 +2234,22 @@
       // Step 3: Validate Repository Selection
       let matched = null;
       if (targetRepo) {
-        matched = validRepos.find(r => r.id === targetRepo);
-      }
-      if (!matched && validRepos.length > 0) {
-        // Auto-select first available valid repository if none specified or previous not found
+        matched = validRepos.find(r => r.id === targetRepo || r.name === targetRepo);
+        if (!matched) {
+          // Explicit target requested but not found or unauthorized - DO NOT silently substitute
+          console.warn(`Target repository '${targetRepo}' not found in user repositories.`);
+          localStorage.removeItem('selected_repo_id');
+          state.currentRepoId = null;
+          state.currentSnapshotId = null;
+          setAppState('RECOVERABLE_ERROR', { error: `Repository '${targetRepo}' could not be found or accessed.` });
+          showNotification(`Repository '${targetRepo}' not found or unauthorized.`, 'error');
+          populateSnapshotSelects([]);
+          updateSidebarRepoCard(null);
+          switchPrimaryView('overview');
+          return;
+        }
+      } else if (validRepos.length > 0) {
+        // Auto-select first available repository only when no explicit repo was targeted
         matched = validRepos[0];
       }
 
@@ -2203,17 +2327,13 @@
       return;
     }
 
+    // Discover real branches for current repo (non-blocking for fast view settling)
+    loadBranchesForCurrentRepo(repoId);
+
     populateSnapshotSelects(state.snapshots, state.commitHistoryInfo);
 
-    // Fetch commit history in background non-blocking so UI rendering is not gated by Git CLI
-    apiFetch(`/repositories/${repoId}/commits`)
-      .then(async (commitsRes) => {
-        if (commitsRes && commitsRes.ok && state.currentRepoId === repoId) {
-          state.commitHistoryInfo = await commitsRes.json();
-          populateSnapshotSelects(state.snapshots, state.commitHistoryInfo);
-        }
-      })
-      .catch(() => {});
+    // Fetch commit history for the current branch in background non-blocking
+    loadCommitsForCurrentRepo(repoId, state.currentBranchName);
 
     // Validate Snapshot
     const currentRepo = state.repositories.find(r => r.id === repoId);
@@ -2425,18 +2545,34 @@
     }
 
     // 1. Populate top-bar snapshot-select with analyzed snapshots only
-    snapshots.forEach((s) => {
-      if (!snapSelect) return;
-      const branch = s.branch_name || s.branch || 'main';
-      const shortHash = (s.commit_hash && s.commit_hash !== 'no-git') ? s.commit_hash.slice(0, 7) : (s.id ? s.id.slice(0, 7) : 'HEAD');
-      const dateStr = s.created_at ? new Date(s.created_at).toLocaleDateString() : '';
-      const label = `${branch} · ${shortHash}${dateStr ? ' (' + dateStr + ')' : ''}`;
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = label;
-      if (s.id === state.currentSnapshotId) opt.selected = true;
-      snapSelect.appendChild(opt);
-    });
+    if (snapshots.length === 0) {
+      if (snapSelect) {
+        snapSelect.innerHTML = '';
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '-- No Analyzed Snapshots (Run Discovery) --';
+        emptyOpt.disabled = true;
+        emptyOpt.selected = true;
+        snapSelect.appendChild(emptyOpt);
+        snapSelect.disabled = true;
+      }
+    } else {
+      if (snapSelect) snapSelect.disabled = false;
+      snapshots.forEach((s) => {
+        if (!snapSelect) return;
+        const branch = s.branch_name || s.branch || 'main';
+        const shortHash = (s.commit_hash && s.commit_hash !== 'no-git') ? s.commit_hash.slice(0, 7) : (s.id ? s.id.slice(0, 7) : 'HEAD');
+        const dateStr = s.created_at ? new Date(s.created_at).toLocaleDateString() : '';
+        const symCount = s.total_symbols || s.artifacts_count || 0;
+        const fileCount = s.files_count || s.files_scanned || 0;
+        const label = `${branch} · ${shortHash} (${dateStr}) [${fileCount} files, ${symCount} symbols]`;
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = label;
+        if (s.id === state.currentSnapshotId) opt.selected = true;
+        snapSelect.appendChild(opt);
+      });
+    }
 
     // 2. Populate pairwise comparison selectors with discovered historical commits
     const comparisonSelectors = [diffBaseSelect, diffTargetSelect, impactBaseSelect, impactTargetSelect, sbDiffSelect];
@@ -2569,10 +2705,482 @@
     }
   }
 
+  // --- Git Intelligence: Branches, Commits & Snapshots ---
+
+  async function loadBranchesForCurrentRepo(repoId) {
+    if (!repoId) return [];
+    try {
+      const res = await apiFetch(`/repositories/${repoId}/branches`);
+      if (res.ok) {
+        const data = await res.json();
+        state.branches = Array.isArray(data) ? data : (data.branches || []);
+        populateBranchSelect(state.branches);
+        return state.branches;
+      }
+    } catch (err) {
+      console.warn('Failed to load repository branches:', err);
+    }
+    state.branches = [];
+    populateBranchSelect([]);
+    return [];
+  }
+
+  function populateBranchSelect(branches = []) {
+    const branchSelect = document.getElementById('branch-select');
+    const branchWrap = document.getElementById('branch-select-wrap');
+    if (!branchSelect) return;
+
+    branchSelect.innerHTML = '';
+    if (branches.length === 0) {
+      branchSelect.disabled = true;
+      branchSelect.classList.add('cursor-not-allowed');
+      if (branchWrap) {
+        branchWrap.classList.add('opacity-50', 'cursor-not-allowed');
+      }
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '-- Default Branch --';
+      branchSelect.appendChild(opt);
+      return;
+    }
+
+    branchSelect.disabled = false;
+    branchSelect.classList.remove('cursor-not-allowed');
+    if (branchWrap) {
+      branchWrap.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+
+    const currentRepo = state.repositories.find(r => r.id === state.currentRepoId);
+    const defaultBranchName = currentRepo?.default_branch || 'main';
+
+    branches.forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b.name;
+      const isCur = b.is_current ? ' (HEAD)' : (b.name === defaultBranchName ? ' (Default)' : '');
+      opt.textContent = `${b.name}${isCur}`;
+      if (state.currentBranchName === b.name || (!state.currentBranchName && (b.is_current || b.name === defaultBranchName))) {
+        opt.selected = true;
+        state.currentBranchName = b.name;
+      }
+      branchSelect.appendChild(opt);
+    });
+
+    // Populate branch filter in Commit History
+    const historyFilter = document.getElementById('history-branch-filter');
+    if (historyFilter) {
+      const curFilter = historyFilter.value;
+      historyFilter.innerHTML = '<option value="">All Branches</option>';
+      branches.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.name;
+        opt.textContent = b.name;
+        if (curFilter === b.name) opt.selected = true;
+        historyFilter.appendChild(opt);
+      });
+    }
+  }
+
+  async function selectBranch(branchName) {
+    state.currentBranchName = branchName || null;
+    const branchSelect = document.getElementById('branch-select');
+    if (branchSelect && branchName) branchSelect.value = branchName;
+    
+    // Invalidate stale commit history and refetch for this branch
+    await loadCommitsForCurrentRepo(state.currentRepoId, branchName);
+    renderCommitHistoryList();
+    showNotification(`Switched branch view context to '${branchName}'.`, 'info');
+  }
+
+  async function loadCommitsForCurrentRepo(repoId, branchName = null) {
+    if (!repoId) return null;
+    const epoch = ++state.commitsRequestEpoch;
+    try {
+      let url = `/repositories/${repoId}/commits`;
+      if (branchName) url += `?branch=${encodeURIComponent(branchName)}`;
+      const res = await apiFetch(url);
+      if (res.ok && epoch === state.commitsRequestEpoch && state.currentRepoId === repoId) {
+        state.commitHistoryInfo = await res.json();
+        populateSnapshotSelects(state.snapshots, state.commitHistoryInfo);
+        renderCommitHistoryList();
+        return state.commitHistoryInfo;
+      }
+    } catch (err) {
+      if (epoch === state.commitsRequestEpoch) {
+        renderCommitHistoryError(err.message || 'Failed to load commits.');
+      }
+    }
+    return null;
+  }
+
+  function renderCommitHistoryError(msg) {
+    const listEl = document.getElementById('history-commits-list');
+    if (listEl) {
+      listEl.innerHTML = `
+        <div class="p-6 text-center text-xs text-[#DC2626] bg-[#FEF2F2] rounded-xl border border-dashed border-[#FECACA] space-y-1">
+          <div class="font-bold">Error loading Git history</div>
+          <p>${escapeHtml(msg)}</p>
+        </div>`;
+    }
+  }
+
+  function renderCommitHistoryList() {
+    const listEl = document.getElementById('history-commits-list');
+    const badgeEl = document.getElementById('history-commit-count-badge');
+    const branchBadge = document.getElementById('history-active-branch-badge');
+    const limitationBox = document.getElementById('history-limitation-box');
+    const limitationText = document.getElementById('history-limitation-text');
+
+    if (!listEl) return;
+    const info = state.commitHistoryInfo;
+    const commits = info?.commits || [];
+
+    if (badgeEl) badgeEl.textContent = `${commits.length} commits`;
+    if (branchBadge) branchBadge.textContent = info?.selected_branch || state.currentBranchName || 'main';
+
+    if (info?.limitation_reason) {
+      if (limitationBox) limitationBox.style.display = 'block';
+      if (limitationText) limitationText.textContent = info.limitation_reason;
+    } else {
+      if (limitationBox) limitationBox.style.display = 'none';
+    }
+
+    if (commits.length === 0) {
+      listEl.innerHTML = `
+        <div class="p-8 text-center text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl border border-dashed border-[#CBD5E1] space-y-2">
+          <span class="material-symbols-outlined text-[24px] text-[#94A3B8]">history</span>
+          <div class="font-semibold text-[#0F172A]">No commits discovered</div>
+          <p>No commits accessible for the selected branch or repository history.</p>
+        </div>`;
+      return;
+    }
+
+    // Search and Branch filtering
+    const searchInput = document.getElementById('history-search-input');
+    const branchFilter = document.getElementById('history-branch-filter');
+    const sortSelect = document.getElementById('history-sort-select');
+
+    const searchQ = (searchInput?.value || '').toLowerCase().trim();
+    const branchQ = branchFilter?.value || '';
+    const sortOrder = sortSelect?.value || 'newest';
+
+    let filtered = commits.filter(c => {
+      if (branchQ && c.branch_name && c.branch_name !== branchQ) return false;
+      if (searchQ) {
+        const msg = (c.message || '').toLowerCase();
+        const author = (c.author_name || '').toLowerCase();
+        const sha = (c.commit_sha || '').toLowerCase();
+        if (!msg.includes(searchQ) && !author.includes(searchQ) && !sha.includes(searchQ)) return false;
+      }
+      return true;
+    });
+
+    if (sortOrder === 'oldest') {
+      filtered = filtered.slice().reverse();
+    }
+
+    listEl.innerHTML = filtered.map(c => {
+      const shortSha = c.short_sha || c.commit_sha.slice(0, 7);
+      const isMerge = Boolean(c.is_merge);
+      const filesCount = c.files_changed !== undefined ? c.files_changed : '—';
+      const adds = c.additions !== undefined ? `+${c.additions}` : '';
+      const dels = c.deletions !== undefined ? `-${c.deletions}` : '';
+      const dateStr = c.authored_date ? new Date(c.authored_date).toLocaleString() : '';
+      const isAnalyzed = Boolean(c.has_snapshot);
+      const statusPill = isAnalyzed
+        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0]">
+             <span class="material-symbols-outlined text-[12px]">verified</span> ANALYZED
+           </span>`
+        : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-[#F8FAFC] text-[#64748B] border border-[#CBD5E1]">
+             UNINDEXED
+           </span>`;
+
+      return `
+        <div class="p-3.5 rounded-xl border border-[#E2E8F0] bg-white hover:border-[#CBD5E1] transition-all space-y-2 shadow-2xs">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div class="space-y-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-mono text-xs font-bold text-[#0071e3] bg-[#EFF6FF] px-2 py-0.5 rounded border border-[#BFDBFE]">${shortSha}</span>
+                ${isMerge ? '<span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">MERGE</span>' : ''}
+                <span class="text-xs font-semibold text-[#0F172A]">${escapeHtml(c.message || 'No commit message')}</span>
+                ${statusPill}
+              </div>
+              <div class="flex items-center gap-3 text-[11px] text-[#64748B] flex-wrap">
+                <span>By <strong>${escapeHtml(c.author_name || 'Unknown')}</strong></span>
+                <span>•</span>
+                <span>${dateStr}</span>
+                ${c.branch_name ? `<span>•</span><span class="font-mono bg-slate-100 px-1.5 py-0.2 rounded text-[10px]">⎇ ${escapeHtml(c.branch_name)}</span>` : ''}
+              </div>
+            </div>
+
+            <!-- Stats & Actions -->
+            <div class="flex items-center gap-2 shrink-0">
+              <div class="text-[11px] font-mono text-right space-x-1.5">
+                <span class="text-[#64748B]">${filesCount} file${filesCount === 1 ? '' : 's'}</span>
+                ${adds ? `<span class="text-[#059669] font-bold">${adds}</span>` : ''}
+                ${dels ? `<span class="text-[#DC2626] font-bold">${dels}</span>` : ''}
+              </div>
+              ${!isAnalyzed ? `
+                <button type="button" class="btn-analyze-commit px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#0071e3] hover:bg-[#005bb5] text-white transition-colors cursor-pointer" data-sha="${c.commit_sha}" data-short="${shortSha}">
+                  Index Commit
+                </button>
+              ` : `
+                <button type="button" class="btn-compare-commit px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#0F172A] border border-[#CBD5E1] transition-colors cursor-pointer" data-ref="${c.snapshot_id || c.commit_sha}">
+                  Compare
+                </button>
+              `}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Attach button listeners
+    listEl.querySelectorAll('.btn-analyze-commit').forEach(btn => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        analyzeCommit(btn.dataset.sha, btn.dataset.short);
+      };
+    });
+
+    listEl.querySelectorAll('.btn-compare-commit').forEach(btn => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        compareCommitInDiff(btn.dataset.ref);
+      };
+    });
+  }
+
+  async function analyzeCommit(commitSha, shortSha) {
+    if (!state.currentRepoId || !commitSha) return;
+    showNotification(`Reconstructing and analyzing historical commit ${shortSha}...`, 'info');
+    try {
+      const res = await apiFetch(`/repositories/${state.currentRepoId}/snapshots/reconstruct`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commit_sha: commitSha, branch_name: state.currentBranchName || undefined }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `Failed to index commit ${shortSha}`);
+      }
+      const data = await res.json();
+      showNotification(`Commit ${shortSha} indexed (${data.artifacts_created || 0} symbols extracted).`, 'success');
+      await loadSnapshotsForCurrentRepo(data.snapshot_id);
+      await loadCommitsForCurrentRepo(state.currentRepoId, state.currentBranchName);
+    } catch (err) {
+      showNotification(`Indexing failed: ${err.message}`, 'error');
+    }
+  }
+
+  function compareCommitInDiff(targetRef) {
+    switchPrimaryView('changes');
+    switchChangesMode('snapshots');
+    const diffTargetSelect = document.getElementById('diff-target-select');
+    if (diffTargetSelect && targetRef) {
+      diffTargetSelect.value = targetRef;
+      validateBaselineAndTargetSelection();
+      executeSnapshotDiff();
+    }
+  }
+
+  function openSnapshotHelpModal() {
+    const modal = document.getElementById('modal-snapshot-help');
+    if (modal) modal.style.display = 'flex';
+  }
+
+  function closeSnapshotHelpModal() {
+    const modal = document.getElementById('modal-snapshot-help');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function updateSyncStatusPill(stateInfo) {
+    const pill = document.getElementById('header-sync-pill');
+    const dot = document.getElementById('header-sync-dot') || pill?.querySelector('span');
+    const text = document.getElementById('header-sync-text');
+    if (!pill || !text) return;
+
+    if (!state.currentRepoId) {
+      pill.style.display = 'none';
+      return;
+    }
+    pill.style.display = 'inline-flex';
+
+    const syncState = stateInfo?.sync_state || (state.snapshots && state.snapshots.length > 0 ? 'SYNCHRONIZED' : 'NO_SNAPSHOT_AVAILABLE');
+    state.syncState = syncState;
+
+    if (dot) dot.className = 'w-2 h-2 rounded-full';
+    if (syncState === 'SYNCHRONIZED') {
+      if (dot) dot.classList.add('bg-[#10B981]');
+      pill.className = 'items-center gap-1.5 bg-[#ECFDF5] px-2.5 h-8 rounded-full text-xs text-[#065F46] shrink-0 border border-[#A7F3D0]';
+      text.textContent = 'Synced';
+      pill.title = stateInfo?.status_message || 'Repository synchronized with snapshot';
+    } else if (syncState === 'NO_SNAPSHOT_AVAILABLE') {
+      if (dot) dot.classList.add('bg-[#F59E0B]');
+      pill.className = 'items-center gap-1.5 bg-[#FFFBEB] px-2.5 h-8 rounded-full text-xs text-[#92400E] shrink-0 border border-[#FDE68A]';
+      text.textContent = 'No Snapshot';
+      pill.title = stateInfo?.status_message || 'Connected, but no snapshot generated yet';
+    } else if (syncState === 'DISCOVERY_PENDING') {
+      if (dot) dot.classList.add('bg-[#3B82F6]');
+      pill.className = 'items-center gap-1.5 bg-[#EFF6FF] px-2.5 h-8 rounded-full text-xs text-[#1E40AF] shrink-0 border border-[#BFDBFE]';
+      text.textContent = 'Discovery Pending';
+      pill.title = 'Initial technology discovery pending';
+    } else if (syncState === 'ANALYSIS_IN_PROGRESS') {
+      if (dot) dot.classList.add('bg-[#3B82F6]', 'animate-ping');
+      pill.className = 'items-center gap-1.5 bg-[#EFF6FF] px-2.5 h-8 rounded-full text-xs text-[#1E40AF] shrink-0 border border-[#BFDBFE]';
+      text.textContent = 'Analyzing...';
+      pill.title = 'AST analysis and snapshot generation in progress';
+    } else if (syncState === 'ANALYSIS_FAILED') {
+      if (dot) dot.classList.add('bg-[#EF4444]');
+      pill.className = 'items-center gap-1.5 bg-[#FEF2F2] px-2.5 h-8 rounded-full text-xs text-[#991B1B] shrink-0 border border-[#FECACA]';
+      text.textContent = 'Analysis Failed';
+      pill.title = stateInfo?.status_message || 'Digital twin analysis failed';
+    } else if (syncState === 'OUT_OF_SYNC') {
+      if (dot) dot.classList.add('bg-[#F59E0B]');
+      pill.className = 'items-center gap-1.5 bg-[#FFFBEB] px-2.5 h-8 rounded-full text-xs text-[#92400E] shrink-0 border border-[#FDE68A]';
+      text.textContent = 'Behind HEAD';
+      pill.title = stateInfo?.status_message || 'Git HEAD has advanced beyond active snapshot';
+    }
+  }
+
+  function updateOverviewStateBanner(data) {
+    const banner = document.getElementById('ov-state-banner');
+    const liveBadge = document.getElementById('ov-model-live-indicator-badge');
+    if (!banner) return;
+
+    const syncState = data.sync_state || (data.has_snapshots ? 'SYNCHRONIZED' : 'NO_SNAPSHOT_AVAILABLE');
+
+    // Update live indicator badge in header
+    if (liveBadge) {
+      if (syncState === 'SYNCHRONIZED') {
+        liveBadge.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]';
+        liveBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-[#10B981]"></span><span>Model Synchronized</span>';
+      } else if (syncState === 'NO_SNAPSHOT_AVAILABLE') {
+        liveBadge.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]';
+        liveBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-[#F59E0B]"></span><span>No Snapshot Analyzed</span>';
+      } else if (syncState === 'ANALYSIS_IN_PROGRESS') {
+        liveBadge.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE]';
+        liveBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-[#3B82F6] animate-ping"></span><span>Analyzing Codebase</span>';
+      } else if (syncState === 'ANALYSIS_FAILED') {
+        liveBadge.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#FEF2F2] text-[#B91C1C] border border-[#FECACA]';
+        liveBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-[#EF4444]"></span><span>Analysis Failed</span>';
+      } else if (syncState === 'OUT_OF_SYNC') {
+        liveBadge.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]';
+        liveBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-[#F59E0B]"></span><span>Behind HEAD</span>';
+      }
+    }
+
+    if (syncState === 'SYNCHRONIZED') {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+      return;
+    }
+
+    banner.style.display = 'block';
+
+    if (syncState === 'NO_SNAPSHOT_AVAILABLE') {
+      banner.className = 'rounded-2xl border border-[#FDE68A] bg-[#FFFBEB] p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-[#92400E]';
+      banner.innerHTML = `
+        <div class="flex items-start gap-3.5">
+          <div class="w-10 h-10 rounded-xl bg-[#FEF3C7] text-[#D97706] flex items-center justify-center shrink-0 mt-0.5">
+            <span class="material-symbols-outlined text-[22px]">pending_actions</span>
+          </div>
+          <div class="space-y-1">
+            <h3 class="text-sm font-bold text-[#92400E]">Repository Connected — Digital Twin Snapshot Not Yet Analyzed</h3>
+            <p class="text-xs text-[#B45309] max-w-2xl leading-relaxed">
+              This codebase is registered with TwinCore, but AST analysis has not yet generated an architectural snapshot. The metrics below reflect that analysis is pending. Click 'Analyze Repository Now' to build your living software model.
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button id="btn-ov-analyze-now" onclick="window.TwinApp.triggerRepositoryAnalysis()" class="px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 cursor-pointer transition-all" type="button">
+            <span class="material-symbols-outlined text-[16px]">play_arrow</span>
+            <span>Analyze Repository Now</span>
+          </button>
+        </div>
+      `;
+    } else if (syncState === 'ANALYSIS_IN_PROGRESS') {
+      banner.className = 'rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] p-5 shadow-xs flex items-center gap-3.5 text-[#1E40AF]';
+      banner.innerHTML = `
+        <div class="w-10 h-10 rounded-xl bg-[#DBEAFE] text-[#2563EB] flex items-center justify-center shrink-0">
+          <span class="material-symbols-outlined text-[22px] animate-spin">progress_activity</span>
+        </div>
+        <div class="space-y-1">
+          <h3 class="text-sm font-bold text-[#1E3A8A]">Digital Twin Analysis in Progress</h3>
+          <p class="text-xs text-[#2563EB]">Parsing structural ASTs, mapping class dependencies, and computing API routes...</p>
+        </div>
+      `;
+    } else if (syncState === 'ANALYSIS_FAILED') {
+      banner.className = 'rounded-2xl border border-[#FECACA] bg-[#FEF2F2] p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-[#991B1B]';
+      banner.innerHTML = `
+        <div class="flex items-start gap-3.5">
+          <div class="w-10 h-10 rounded-xl bg-[#FEE2E2] text-[#DC2626] flex items-center justify-center shrink-0 mt-0.5">
+            <span class="material-symbols-outlined text-[22px]">error</span>
+          </div>
+          <div class="space-y-1">
+            <h3 class="text-sm font-bold text-[#991B1B]">Digital Twin Analysis Failed</h3>
+            <p class="text-xs text-[#B91C1C] max-w-2xl leading-relaxed">${escapeHtml(data.status_message || 'Could not parse repository AST or build snapshot.')}</p>
+          </div>
+        </div>
+        <button onclick="window.TwinApp.triggerRepositoryAnalysis()" class="px-4 py-2 rounded-xl bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 shrink-0" type="button">
+          <span class="material-symbols-outlined text-[16px]">refresh</span>
+          <span>Retry Analysis</span>
+        </button>
+      `;
+    } else if (syncState === 'OUT_OF_SYNC') {
+      banner.className = 'rounded-2xl border border-[#FDE68A] bg-[#FFFBEB] p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-[#92400E]';
+      banner.innerHTML = `
+        <div class="flex items-center gap-3">
+          <span class="material-symbols-outlined text-[20px] text-[#D97706]">sync_problem</span>
+          <div class="text-xs text-[#92400E]">
+            <span class="font-bold">Active Snapshot Behind HEAD:</span> ${escapeHtml(data.status_message || 'New commits are available.')}
+          </div>
+        </div>
+        <button onclick="window.TwinApp.triggerRepositoryAnalysis()" class="px-3.5 py-1.5 rounded-lg bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 shrink-0" type="button">
+          <span class="material-symbols-outlined text-[15px]">refresh</span>
+          <span>Index HEAD</span>
+        </button>
+      `;
+    }
+  }
+
+  async function triggerRepositoryAnalysis() {
+    if (!state.currentRepoId) return;
+    const repoId = state.currentRepoId;
+    state.isAnalyzing = true;
+    updateSyncStatusPill({ sync_state: 'ANALYSIS_IN_PROGRESS', status_message: 'Analyzing codebase...' });
+    updateOverviewStateBanner({ sync_state: 'ANALYSIS_IN_PROGRESS' });
+    showNotification('Initiating Digital Twin discovery and AST analysis...', 'info');
+
+    try {
+      const res = await apiFetch(`/repositories/${repoId}/analyze?branch_name=${encodeURIComponent(state.currentBranchName || '')}`, {
+        method: 'POST'
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ detail: 'Analysis failed' }));
+        throw new Error(errData.detail || `Analysis failed (HTTP ${res.status})`);
+      }
+      const result = await res.json();
+      showNotification(`Analysis complete: ${result.artifacts_count || 0} artifacts, ${result.files_scanned || 0} files indexed.`, 'success');
+      state.currentSnapshotId = result.snapshot_id;
+      localStorage.setItem('selected_snapshot_id', result.snapshot_id);
+      await loadSnapshotsForCurrentRepo(result.snapshot_id);
+      await loadOverviewData();
+    } catch (err) {
+      console.error('Analysis error:', err);
+      showNotification(`Analysis failed: ${err.message}`, 'error');
+      updateSyncStatusPill({ sync_state: 'ANALYSIS_FAILED', status_message: err.message });
+      updateOverviewStateBanner({ sync_state: 'ANALYSIS_FAILED', status_message: err.message });
+    } finally {
+      state.isAnalyzing = false;
+    }
+  }
+
   async function selectRepository(repoId) {
     if (!repoId) return;
     state.requestEpoch = (state.requestEpoch || 0) + 1;
     state.currentRepoId = repoId;
+    state.currentBranchName = null;
+    state.commitHistoryInfo = null;
     localStorage.setItem('selected_repo_id', repoId);
     localStorage.removeItem('selected_snapshot_id');
     state.currentSnapshotId = null;
@@ -2586,6 +3194,7 @@
     if (repoSelect) repoSelect.value = repoId;
     updateStateUI();
     switchPrimaryView(state.currentPrimaryView || 'overview');
+    await loadBranchesForCurrentRepo(repoId);
     await loadSnapshotsForCurrentRepo(null);
     await refreshActiveView();
   }
@@ -2702,7 +3311,11 @@
     if (elFiles) elFiles.textContent = m.files ?? 0;
     if (elArts) elArts.textContent = m.artifacts ?? 0;
     if (elRels) elRels.textContent = m.relationships ?? 0;
-    if (elStatus) elStatus.innerHTML = '<span class="status-pulse"></span> SYNCHRONIZED';
+    if (elStatus) {
+      const syncLabel = data.sync_label || (data.has_snapshots ? 'SYNCHRONIZED' : 'NO SNAPSHOT');
+      const pulseColor = data.sync_state === 'SYNCHRONIZED' ? '#10B981' : (data.sync_state === 'ANALYSIS_IN_PROGRESS' ? '#3B82F6' : (data.sync_state === 'ANALYSIS_FAILED' ? '#EF4444' : '#F59E0B'));
+      elStatus.innerHTML = `<span class="status-pulse" style="background:${pulseColor};"></span> ${escapeHtml(syncLabel)}`;
+    }
   }
 
   // Robust typed adapter for Architecture Packages
@@ -2849,8 +3462,10 @@
       if (reqEpoch !== state.requestEpoch || reqRepoId !== state.currentRepoId) return;
       state.currentRepoData = data;
 
-      // Update Global Twin Context Strip
+      // Update Global Twin Context Strip & Sync Indicators
       updateGlobalTwinContext(data);
+      updateSyncStatusPill(data);
+      updateOverviewStateBanner(data);
 
       // Populate Header Context
       const nameEl = document.getElementById('ov-repo-name');
@@ -2864,6 +3479,86 @@
       if (snapEl) snapEl.textContent = (data.snapshot?.id || '').slice(0, 14);
       if (commitEl) commitEl.textContent = (data.snapshot?.commit_hash || '').slice(0, 8);
       if (pathEl) pathEl.textContent = data.repository?.local_path || '-';
+
+      // Populate Project Purpose & Architecture Overview Card
+      const purposeEl = document.getElementById('ov-purpose-text');
+      if (purposeEl) {
+        purposeEl.textContent = data.project_purpose || `${data.repository?.name || 'Project'} — Software Digital Twin representation with structural AST and knowledge graph intelligence.`;
+      }
+
+      const langContainer = document.getElementById('ov-languages-container');
+      if (langContainer) {
+        langContainer.innerHTML = '';
+        const langs = data.tech_stack?.languages || [];
+        if (langs.length === 0) {
+          langContainer.innerHTML = '<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-[#F1F5F9] text-[#64748B]">General Codebase</span>';
+        } else {
+          langs.forEach(l => {
+            const span = document.createElement('span');
+            span.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#EFF6FF] text-[#0071e3] border border-[#BFDBFE]';
+            span.textContent = l;
+            langContainer.appendChild(span);
+          });
+        }
+      }
+
+      // Populate Primary Entry Points
+      const entryList = document.getElementById('ov-entry-points-list');
+      const entryCount = document.getElementById('ov-entry-count');
+      if (entryList) {
+        entryList.innerHTML = '';
+        const eps = data.entry_points || [];
+        if (entryCount) entryCount.textContent = eps.length;
+        if (eps.length === 0) {
+          entryList.innerHTML = '<span class="text-[#94A3B8]">No standard server/client entrypoints detected</span>';
+        } else {
+          eps.forEach(ep => {
+            const div = document.createElement('div');
+            div.className = 'flex items-center justify-between gap-1 py-0.5 border-b border-[#F8FAFC] truncate';
+            div.innerHTML = `
+              <span class="font-mono text-[#0071e3] truncate cursor-pointer hover:underline" title="${escapeHtml(ep.file_path)}">${escapeHtml(ep.file_path)}</span>
+              <span class="text-[9px] text-[#64748B] shrink-0">${escapeHtml(ep.role.split('(')[0])}</span>
+            `;
+            entryList.appendChild(div);
+          });
+        }
+      }
+
+      // Populate Discovered APIs
+      const apiList = document.getElementById('ov-apis-list');
+      const apiCount = document.getElementById('ov-api-count');
+      if (apiList) {
+        apiList.innerHTML = '';
+        const apis = data.services_and_apis || [];
+        if (apiCount) apiCount.textContent = apis.length;
+        if (apis.length === 0) {
+          apiList.innerHTML = '<span class="text-[#94A3B8]">0 declared HTTP API endpoints</span>';
+        } else {
+          apis.slice(0, 5).forEach(api => {
+            const div = document.createElement('div');
+            div.className = 'flex items-center justify-between gap-1 py-0.5 border-b border-[#F8FAFC] truncate';
+            div.innerHTML = `
+              <span class="font-mono text-[#059669] truncate" title="${escapeHtml(api.path)}">${escapeHtml(api.http_method)} ${escapeHtml(api.path)}</span>
+              <span class="text-[9px] text-[#64748B] shrink-0">${escapeHtml(api.location.split(':')[0].split('/').pop())}</span>
+            `;
+            apiList.appendChild(div);
+          });
+        }
+      }
+
+      // Populate Test Status
+      const testStatusBadge = document.getElementById('ov-test-status-badge');
+      const testExplanation = document.getElementById('ov-tests-explanation');
+      if (data.test_inventory_details) {
+        const ti = data.test_inventory_details;
+        if (testStatusBadge) {
+          testStatusBadge.textContent = ti.coverage_status;
+          testStatusBadge.className = `px-1.5 py-0.5 rounded text-[10px] font-bold ${ti.total_tests === 0 ? 'bg-[#FEF2F2] text-[#DC2626]' : 'bg-[#ECFDF5] text-[#059669]'}`;
+        }
+        if (testExplanation) {
+          testExplanation.textContent = ti.status_message;
+        }
+      }
 
       // Real Metrics Grid
       const m = data.metrics || {};
@@ -2885,6 +3580,18 @@
         driftEl.textContent = m.violations ?? 0;
         driftEl.className = `metric-value ${m.violations > 0 ? 'text-red' : 'text-green'}`;
       }
+
+      // Sync Glance Tiles
+      const gFiles = document.getElementById('glance-files-count');
+      const gLoc = document.getElementById('glance-loc-count');
+      const gAreas = document.getElementById('glance-areas-count');
+      const gConns = document.getElementById('glance-connections-count');
+      const gTests = document.getElementById('glance-tests-count');
+      if (gFiles) gFiles.textContent = m.files ?? 0;
+      if (gLoc) gLoc.textContent = m.lines_of_code ? m.lines_of_code.toLocaleString() : 'N/A';
+      if (gAreas) gAreas.textContent = (data.architecture_packages?.length || 0);
+      if (gConns) gConns.textContent = m.relationships ?? 0;
+      if (gTests) gTests.textContent = m.tests ?? 0;
 
       // Component Breakdown Grid
       const breakdownGrid = document.getElementById('comp-breakdown-grid');
@@ -3308,6 +4015,87 @@
       if (ovTestsCount) ovTestsCount.textContent = m.tests ?? 0;
       if (ovTestsSub) ovTestsSub.textContent = `${m.tests ?? 0} suites & cases mapped`;
 
+      // --- SECTION 1: PROJECT AT A GLANCE POPULATION ---
+      const glanceFiles = document.getElementById('glance-files-count');
+      const glanceLoc = document.getElementById('glance-loc-count');
+      const glanceLocSub = document.getElementById('glance-loc-sub');
+      const glanceAreas = document.getElementById('glance-areas-count');
+      const glanceConnections = document.getElementById('glance-connections-count');
+      const glanceTests = document.getElementById('glance-tests-count');
+      const glanceIndexTime = document.getElementById('glance-index-time');
+
+      if (glanceFiles) glanceFiles.textContent = (m.files ?? 0).toLocaleString();
+
+      if (glanceLoc) {
+        if (m.lines_of_code !== null && m.lines_of_code !== undefined && m.lines_of_code > 0) {
+          glanceLoc.textContent = Number(m.lines_of_code).toLocaleString();
+          glanceLoc.className = 'text-xl sm:text-2xl font-bold text-[#0F172A] tracking-tight';
+          if (glanceLocSub) glanceLocSub.textContent = 'Calculated source lines';
+        } else if (m.lines_of_code === 0) {
+          glanceLoc.textContent = '0';
+          glanceLoc.className = 'text-xl sm:text-2xl font-bold text-[#0F172A] tracking-tight';
+          if (glanceLocSub) glanceLocSub.textContent = '0 lines recorded';
+        } else {
+          glanceLoc.textContent = 'Not yet analyzed';
+          glanceLoc.className = 'text-xs sm:text-sm font-bold text-[#64748B] tracking-tight pt-1 block';
+          if (glanceLocSub) glanceLocSub.textContent = 'Run discovery to calculate LOC';
+        }
+      }
+
+      const mainAreasCount = (data.architecture_packages && data.architecture_packages.length > 0)
+        ? data.architecture_packages.length
+        : (bd.MODULE || (m.artifacts ? 1 : 0));
+      if (glanceAreas) glanceAreas.textContent = mainAreasCount.toLocaleString();
+
+      if (glanceConnections) {
+        glanceConnections.textContent = (m.relationships ?? 0).toLocaleString();
+      }
+      if (glanceTests) {
+        glanceTests.textContent = (m.tests ?? 0).toLocaleString();
+      }
+      if (glanceIndexTime) {
+        const rawTime = data.snapshot?.created_at || data.latest_run?.completed_at;
+        if (rawTime) {
+          try {
+            const dt = new Date(rawTime);
+            glanceIndexTime.textContent = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            glanceIndexTime.title = dt.toISOString();
+          } catch (_) {
+            glanceIndexTime.textContent = 'Active snapshot';
+          }
+        } else {
+          glanceIndexTime.textContent = 'Not yet indexed';
+        }
+      }
+
+      // --- SECTION 2: UNDERSTAND YOUR PROJECT CARDS ---
+      const uypAreas = document.getElementById('uyp-areas-count');
+      const uypConnections = document.getElementById('uyp-connections-count');
+      const uypApis = document.getElementById('uyp-apis-count');
+      const uypTests = document.getElementById('uyp-tests-count');
+      const uypRuntime = document.getElementById('uyp-runtime-count');
+
+      if (uypAreas) uypAreas.textContent = `${mainAreasCount} discovered`;
+      if (uypConnections) uypConnections.textContent = `${(m.relationships ?? 0).toLocaleString()} mapped`;
+      if (uypApis) uypApis.textContent = `${m.apis ?? 0} endpoints`;
+      if (uypTests) uypTests.textContent = `${m.tests ?? 0} verified`;
+      if (uypRuntime) {
+        const incCount = state.incidents?.length || 0;
+        uypRuntime.textContent = `${incCount} active · ${m.processes ?? 0} flows`;
+      }
+
+      // --- SECTION 3: PROJECT HEALTH ---
+      renderProjectHealth(data);
+
+      // --- SECTION 4: DO NEXT ---
+      renderDoNextList(data);
+
+      // --- SECTION 5: HOW YOUR PROJECT WORKS (LIFECYCLE) ---
+      renderWorkflowPipeline(data);
+
+      // --- SECTION 6: RECENT CHANGES & IMPACT ---
+      renderRecentChanges(data);
+
       // Update sidebar & breadcrumb repo info
       const sbRepoName = document.getElementById('sidebar-repo-name');
       const sbBranchName = document.getElementById('sidebar-branch-name');
@@ -3334,6 +4122,382 @@
           </div>`;
       }
     }
+  }
+
+  // --- Transformed Overview Helper: Project Health Assessment ---
+  function renderProjectHealth(data) {
+    if (!data) return;
+    const m = data.metrics || {};
+    const healthyList = document.getElementById('health-healthy-list');
+    const concernsList = document.getElementById('health-concerns-list');
+    const unknownList = document.getElementById('health-unknown-list');
+    const incidents = state.incidents || [];
+
+    if (healthyList) {
+      const items = [];
+      if ((m.artifacts || 0) > 0) {
+        items.push({
+          title: 'Code Structure Parsed',
+          desc: `${(m.artifacts).toLocaleString()} classes, functions, and modules parsed into an active AST graph.`
+        });
+      }
+      if ((m.violations || 0) === 0) {
+        items.push({
+          title: 'Architecture Conformance Verified',
+          desc: '0 structural boundary violations detected against declared baseline rules.'
+        });
+      }
+      if (data.snapshot?.id) {
+        const hashDisplay = data.snapshot.commit_hash ? data.snapshot.commit_hash.slice(0, 7) : 'HEAD';
+        items.push({
+          title: 'Deterministic Snapshot Identity',
+          desc: `Active snapshot ${data.snapshot.id.slice(0, 8)} is cryptographically linked to commit ${hashDisplay}.`
+        });
+      }
+      if (items.length === 0) {
+        items.push({
+          title: 'Repository Connected',
+          desc: 'Source code files registered with TwinCore engine.'
+        });
+      }
+      healthyList.innerHTML = items.map(it => `
+        <div class="flex items-start gap-2 bg-white/80 p-2.5 rounded-lg border border-[#BBF7D0]">
+          <span class="material-symbols-outlined text-[16px] text-[#16A34A] shrink-0 mt-0.5">verified</span>
+          <div>
+            <strong class="font-semibold block text-[#14532D]">${escapeHtml(it.title)}</strong>
+            <span class="text-[11px] text-[#15803D]">${escapeHtml(it.desc)}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    if (concernsList) {
+      const concerns = [];
+      if ((m.violations || 0) > 0) {
+        concerns.push({
+          title: `${m.violations} Architectural Drift Violation${m.violations > 1 ? 's' : ''}`,
+          desc: 'Dependencies cross declared layer boundaries. Review affected packages under Explore Architecture.'
+        });
+      }
+      if (incidents.length > 0) {
+        concerns.push({
+          title: `${incidents.length} Active Operational Incident${incidents.length > 1 ? 's' : ''}`,
+          desc: `${incidents[0].title || 'Production error flagged'} requires triage and root-cause tracing.`
+        });
+      }
+      if ((m.tests || 0) === 0 && (m.artifacts || 0) > 0) {
+        concerns.push({
+          title: 'No Automated Tests Identified',
+          desc: 'Automated test suite not detected or mapped; regression blast radius cannot target test suites.'
+        });
+      }
+      if ((m.relationships || 0) === 0 && (m.artifacts || 0) > 0) {
+        concerns.push({
+          title: '0 Dependency Connections',
+          desc: 'Code entities extracted, but inter-module calls and import relationships have not been linked.'
+        });
+      }
+
+      if (concerns.length === 0) {
+        concernsList.innerHTML = `
+          <div class="flex items-start gap-2 bg-white/80 p-2.5 rounded-lg border border-[#BBF7D0]">
+            <span class="material-symbols-outlined text-[16px] text-[#16A34A] shrink-0 mt-0.5">check_circle</span>
+            <div>
+              <strong class="font-semibold block text-[#14532D]">No Active Concerns Flagged</strong>
+              <span class="text-[11px] text-[#15803D]">Zero structural violations or active incidents detected in current snapshot.</span>
+            </div>
+          </div>
+        `;
+      } else {
+        concernsList.innerHTML = concerns.map(c => `
+          <div class="flex items-start gap-2 bg-white/80 p-2.5 rounded-lg border border-[#FECACA]">
+            <span class="material-symbols-outlined text-[16px] text-[#DC2626] shrink-0 mt-0.5">warning</span>
+            <div class="space-y-0.5">
+              <strong class="font-semibold block text-[#991B1B]">${escapeHtml(c.title)}</strong>
+              <span class="text-[11px] text-[#B91C1C]">${escapeHtml(c.desc)}</span>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    if (unknownList) {
+      const unknowns = [
+        {
+          title: 'Runtime Telemetry: Disconnected',
+          desc: 'Live error rates, execution frequencies, and production traffic latency are unobserved until runtime agents stream data.'
+        },
+        {
+          title: 'Dynamic Execution Paths: Unobserved',
+          desc: 'Static AST analysis models declared calls and imports; dynamic reflection or runtime dispatch remains unverified without traces.'
+        }
+      ];
+      if ((state.snapshots && state.snapshots.length < 2) && (!state.commitHistoryInfo || state.commitHistoryInfo.total_commits < 2)) {
+        unknowns.push({
+          title: 'Historical Change Drift: Single Baseline',
+          desc: 'Only 1 snapshot recorded. Historical change blast radius requires at least two distinct snapshots to compare.'
+        });
+      }
+      unknownList.innerHTML = unknowns.map(u => `
+        <div class="flex items-start gap-2 bg-white/80 p-2.5 rounded-lg border border-[#CBD5E1]">
+          <span class="material-symbols-outlined text-[16px] text-[#64748B] shrink-0 mt-0.5">visibility_off</span>
+          <div>
+            <strong class="font-semibold block text-[#334155]">${escapeHtml(u.title)}</strong>
+            <span class="text-[11px] text-[#64748B]">${escapeHtml(u.desc)}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+  }
+
+  // --- Transformed Overview Helper: Prioritized Do Next Recommendations ---
+  function renderDoNextList(data) {
+    const listEl = document.getElementById('ov-do-next-list');
+    if (!listEl || !data) return;
+    const m = data.metrics || {};
+    const incidents = state.incidents || [];
+    const actions = [];
+
+    // HIGH PRIORITY: Active Incidents
+    if (incidents.length > 0) {
+      actions.push({
+        priority: 'HIGH',
+        priorityColor: 'bg-[#FEE2E2] text-[#DC2626] border-[#FECACA]',
+        priorityIcon: 'report_problem',
+        title: `Triage Incident: ${incidents[0].title || 'Production Error Flagged'}`,
+        why: 'Operational issues in production impact users and need root-cause causal tracing against the digital twin.',
+        evidence: `${incidents.length} active incident(s) recorded in operational directory.`,
+        actionLabel: 'Investigate Incident',
+        handler: () => switchPrimaryView('incidents')
+      });
+    }
+
+    // HIGH PRIORITY: Architectural Boundary Violations
+    if ((m.violations || 0) > 0) {
+      actions.push({
+        priority: 'HIGH',
+        priorityColor: 'bg-[#FEE2E2] text-[#DC2626] border-[#FECACA]',
+        priorityIcon: 'warning',
+        title: 'Resolve Architectural Boundary Violations',
+        why: 'Components bypass service layers or access internal databases directly, breaking encapsulation and creating hidden coupling.',
+        evidence: `${m.violations} rule violation(s) flagged against defined architecture guardrails.`,
+        actionLabel: 'Inspect in Architecture',
+        handler: () => switchPrimaryView('architecture')
+      });
+    }
+
+    // MEDIUM PRIORITY: Pairwise Change Impact
+    if (state.snapshots && state.snapshots.length >= 2) {
+      const hasImpact = Boolean(data.latest_impact);
+      if (!hasImpact) {
+        actions.push({
+          priority: 'MEDIUM',
+          priorityColor: 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]',
+          priorityIcon: 'alt_route',
+          title: 'Run Pairwise Change Impact Analysis',
+          why: 'Compute exact blast radius and identify affected components and tests between your latest two snapshots.',
+          evidence: `Snapshots ${state.snapshots[0].id.slice(0, 7)} and ${state.snapshots[1].id.slice(0, 7)} available for comparison.`,
+          actionLabel: 'Run Impact Analysis',
+          handler: () => {
+            switchPrimaryView('impact');
+            const bSel = document.getElementById('diff-base-select') || document.getElementById('impact-base-select');
+            const tSel = document.getElementById('diff-target-select') || document.getElementById('impact-target-select');
+            if (tSel && state.snapshots[0]) tSel.value = state.snapshots[0].id;
+            if (bSel && state.snapshots[1]) bSel.value = state.snapshots[1].id;
+            executeChangeImpactAnalysis();
+          }
+        });
+      }
+    }
+
+    // MEDIUM PRIORITY: Test Mapping
+    if ((m.tests || 0) === 0 && (m.artifacts || 0) > 0) {
+      actions.push({
+        priority: 'MEDIUM',
+        priorityColor: 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]',
+        priorityIcon: 'checklist',
+        title: 'Catalog and Map Automated Tests',
+        why: 'Without test mapping, TwinCore cannot isolate which tests must run when specific functions change.',
+        evidence: `0 automated test suites linked to ${m.artifacts} discovered code entities.`,
+        actionLabel: 'Open Test Catalog',
+        handler: () => switchPrimaryView('tests')
+      });
+    }
+
+    // ALWAYS AVAILABLE RECOMMENDED: What-If Simulation
+    actions.push({
+      priority: actions.length === 0 ? 'HIGH' : 'MEDIUM',
+      priorityColor: actions.length === 0 ? 'bg-[#EEF2FF] text-[#4F46E5] border-[#C7D2FE]' : 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]',
+      priorityIcon: 'radar',
+      title: 'Simulate a Planned Software Change',
+      why: 'Predict downstream blast radius and broken API contracts before writing a single line of code or merging a PR.',
+      evidence: `Active snapshot model ready with ${(m.relationships || 0).toLocaleString()} mapped connections.`,
+      actionLabel: 'Launch What-If Simulation',
+      handler: () => switchPrimaryView('simulation')
+    });
+
+    // LOW PRIORITY: Telemetry
+    actions.push({
+      priority: 'LOW',
+      priorityColor: 'bg-[#EFF6FF] text-[#0071e3] border-[#BFDBFE]',
+      priorityIcon: 'sensors',
+      title: 'Connect Runtime Telemetry Stream',
+      why: 'Bridge static code structure with production traffic, latency spikes, and runtime error traces.',
+      evidence: '0 live telemetry streams currently streaming to this twin.',
+      actionLabel: 'View Runtime Guide',
+      handler: () => switchPrimaryView('runtime')
+    });
+
+    // LOW PRIORITY: Ask Twin
+    actions.push({
+      priority: 'LOW',
+      priorityColor: 'bg-[#FAF5FF] text-[#7C3AED] border-[#DDD6FE]',
+      priorityIcon: 'neurology',
+      title: 'Ask TwinCore Questions in Natural Language',
+      why: 'Understand unfamiliar modules, find architectural owners, and query dependencies interactively.',
+      evidence: 'Software intelligence brain synchronized with current snapshot.',
+      actionLabel: 'Ask Questions',
+      handler: () => switchPrimaryView('ask')
+    });
+
+    listEl.innerHTML = actions.map((item, idx) => `
+      <div class="twin-card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-[#CBD5E1] transition-colors">
+        <div class="space-y-1.5 max-w-2xl">
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${item.priorityColor}">
+              <span class="material-symbols-outlined text-[13px]">${item.priorityIcon}</span>
+              <span>${item.priority} PRIORITY</span>
+            </span>
+            <h4 class="text-xs sm:text-sm font-bold text-[#0F172A]">${escapeHtml(item.title)}</h4>
+          </div>
+          <p class="text-xs text-[#475569] leading-relaxed">
+            <strong class="text-[#0F172A]">Why it matters:</strong> ${escapeHtml(item.why)}
+          </p>
+          <div class="text-[11px] text-[#64748B] flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[14px] text-[#94A3B8]">fact_check</span>
+            <span><strong class="text-[#475569]">Evidence:</strong> ${escapeHtml(item.evidence)}</span>
+          </div>
+        </div>
+        <button class="btn-do-next shrink-0 px-3.5 py-2 rounded-xl bg-white hover:bg-[#F8FAFC] border border-[#CBD5E1] hover:border-[#94A3B8] text-xs font-semibold text-[#0F172A] shadow-2xs hover:shadow-xs transition-all flex items-center gap-1.5 self-start sm:self-center cursor-pointer" data-idx="${idx}" type="button">
+          <span>${escapeHtml(item.actionLabel)}</span>
+          <span class="material-symbols-outlined text-[15px] text-[#0071e3]">arrow_forward</span>
+        </button>
+      </div>
+    `).join('');
+
+    listEl.querySelectorAll('.btn-do-next').forEach(btn => {
+      btn.onclick = () => {
+        const idx = parseInt(btn.dataset.idx, 10);
+        if (actions[idx] && actions[idx].handler) {
+          actions[idx].handler();
+        }
+      };
+    });
+  }
+
+  // --- Transformed Overview Helper: Interactive Lifecycle Stepper ---
+  function renderWorkflowPipeline(data) {
+    if (!data) return;
+    const m = data.metrics || {};
+    const stgSnap = document.getElementById('stg-snap-pill');
+    const stgComp = document.getElementById('stg-comp-pill');
+    const stgRels = document.getElementById('stg-rels-pill');
+    const stgImpact = document.getElementById('stg-impact-pill');
+    const stgTest = document.getElementById('stg-test-pill');
+
+    if (stgSnap) stgSnap.textContent = `${state.snapshots?.length || 1} Snapshots`;
+    if (stgComp) stgComp.textContent = `${(m.artifacts || 0).toLocaleString()} Entities`;
+    if (stgRels) stgRels.textContent = `${(m.relationships || 0).toLocaleString()} Edges`;
+    if (stgImpact) stgImpact.textContent = data.latest_impact ? 'Verified' : 'Ready';
+    if (stgTest) stgTest.textContent = `${(m.tests || 0).toLocaleString()} Tests`;
+  }
+
+  // --- Transformed Overview Helper: Recent Changes & Impact ---
+  function renderRecentChanges(data) {
+    const listEl = document.getElementById('ov-recent-commits-list');
+    if (!listEl) return;
+
+    const commits = state.commitHistoryInfo?.commits || [];
+    const imp = data?.latest_impact;
+
+    if (!commits || commits.length === 0) {
+      if (state.snapshots && state.snapshots.length > 0) {
+        listEl.innerHTML = state.snapshots.slice(0, 4).map((s) => `
+          <div class="p-3.5 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] transition-colors flex items-center justify-between gap-3 text-xs">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="font-mono font-bold text-[#0F172A]">${escapeHtml(s.id.slice(0, 10))}</span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#ECFDF5] text-[#059669]">Analyzed Snapshot</span>
+              </div>
+              <p class="text-[#64748B] text-[11px]">Branch: ${escapeHtml(s.branch_name || 'main')} · ${s.total_files || 0} files indexed</p>
+            </div>
+            <button class="text-xs text-[#0071e3] font-semibold hover:underline" onclick="window.TwinApp.switchPrimaryView('changes');">
+              Compare →
+            </button>
+          </div>
+        `).join('');
+        return;
+      }
+      listEl.innerHTML = `
+        <div class="p-4 text-center text-xs text-[#64748B] bg-[#F8FAFC] rounded-xl border border-[#E2E8F0]">
+          No commit history available for this repository yet.
+        </div>
+      `;
+      return;
+    }
+
+    listEl.innerHTML = commits.slice(0, 4).map((c, idx) => {
+      const shortSha = c.short_sha || (c.commit_sha ? c.commit_sha.slice(0, 7) : 'HEAD');
+      const isAnalyzed = c.has_snapshot;
+      const isLatest = idx === 0;
+
+      let impactBadge = '';
+      if (isLatest && imp) {
+        impactBadge = `
+          <div class="mt-2 p-2 rounded-lg bg-[#FAF5FF] border border-[#DDD6FE] text-[11px] text-[#6D28D9] flex items-center justify-between">
+            <span class="font-semibold flex items-center gap-1">
+              <span class="material-symbols-outlined text-[14px]">check_circle</span>
+              <span>Verified Impact: ${imp.components_affected || 0} components &amp; ${imp.tests_affected || 0} tests affected</span>
+            </span>
+            <span class="text-[10px] font-mono bg-[#EDE9FE] px-1.5 py-0.5 rounded text-[#5B21B6]">Observed Result</span>
+          </div>
+        `;
+      } else if (isAnalyzed) {
+        impactBadge = `
+          <div class="mt-1.5 flex items-center gap-2 text-[11px] text-[#64748B]">
+            <span class="inline-flex items-center gap-1 text-[#059669]">
+              <span class="material-symbols-outlined text-[13px]">verified</span>
+              <span>Snapshot Analyzed</span>
+            </span>
+            <span>·</span>
+            <span class="text-[#94A3B8]">Impact uncalculated against baseline</span>
+          </div>
+        `;
+      } else {
+        impactBadge = `
+          <div class="mt-1.5 flex items-center gap-2 text-[11px] text-[#64748B]">
+            <span class="text-[#94A3B8]">Commit Ingested (Snapshot Pending)</span>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="p-3.5 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] transition-colors space-y-1">
+          <div class="flex items-center justify-between text-xs">
+            <div class="flex items-center gap-2 truncate">
+              <code class="font-mono font-bold text-[#0F172A] bg-[#F1F5F9] px-1.5 py-0.5 rounded border border-[#E2E8F0]">${escapeHtml(shortSha)}</code>
+              <span class="font-semibold text-[#0F172A] truncate max-w-xs sm:max-w-md">${escapeHtml(c.message || 'Commit')}</span>
+            </div>
+            <span class="text-[11px] text-[#94A3B8] shrink-0">${c.authored_date ? new Date(c.authored_date).toLocaleDateString() : ''}</span>
+          </div>
+          <div class="text-[11px] text-[#64748B] flex items-center gap-3">
+            <span>Author: <strong class="text-[#475569]">${escapeHtml(c.author || 'Developer')}</strong></span>
+            ${c.is_head ? '<span class="px-1.5 py-0.2 rounded text-[10px] bg-[#EFF6FF] text-[#0071e3] font-bold">HEAD</span>' : ''}
+          </div>
+          ${impactBadge}
+        </div>
+      `;
+    }).join('');
   }
 
   function renderArchitectureTiers(packages) {
@@ -3390,6 +4554,20 @@
       const res = await fetch(`/repositories/${repoId}/incidents`);
       if (!res.ok) return;
       const incidents = await res.json();
+      state.incidents = incidents;
+
+      // Update Understand Your Project Runtime Counter
+      const uypRuntime = document.getElementById('uyp-runtime-count');
+      if (uypRuntime) {
+        const flows = state.currentRepoData?.metrics?.processes ?? 0;
+        uypRuntime.textContent = `${incidents.length} active · ${flows} flows`;
+      }
+
+      // Re-evaluate Project Health and Do Next with real incident evidence
+      if (state.currentRepoData) {
+        renderProjectHealth(state.currentRepoData);
+        renderDoNextList(state.currentRepoData);
+      }
 
       const sbBadge = document.getElementById('sidebar-incidents-badge');
       const ovBadge = document.getElementById('ov-incidents-badge');
@@ -3449,8 +4627,8 @@
 
         if (confEl) confEl.textContent = 'Evidence: Causal graph correlation';
 
-        if (invBtnLabel) invBtnLabel.textContent = 'Investigate Incident';
-        if (invBtnIcon) invBtnIcon.textContent = 'travel_explore';
+        if (invBtnLabel) invBtnLabel.textContent = `Investigate (${incidents.length} Active)`;
+        if (invBtnIcon) invBtnIcon.textContent = 'report_problem';
 
         const doInvestigate = () => {
           switchPrimaryView('incidents');
@@ -3491,17 +4669,29 @@
 
         if (confEl) confEl.textContent = 'Deterministic static verification';
 
-        if (invBtnLabel) invBtnLabel.textContent = 'View Incidents (0 Active)';
-        if (invBtnIcon) invBtnIcon.textContent = 'visibility';
+        // When 0 incidents, guide user to Discovery & Health Assessment rather than dumping into empty incidents
+        if (invBtnLabel) invBtnLabel.textContent = 'Health Assessment';
+        if (invBtnIcon) invBtnIcon.textContent = 'health_and_safety';
 
-        const doViewIncidents = () => {
-          switchPrimaryView('incidents');
+        const doHealthDiscovery = () => {
+          switchPrimaryView('discovery');
         };
-        if (invBtn) invBtn.onclick = doViewIncidents;
-        if (viewIncidentsBtn) viewIncidentsBtn.onclick = doViewIncidents;
+        if (invBtn) invBtn.onclick = doHealthDiscovery;
+        if (viewIncidentsBtn) {
+          viewIncidentsBtn.onclick = () => switchPrimaryView('incidents');
+        }
       }
     } catch (e) {
       console.warn('Failed to load overview incidents', e);
+    }
+  }
+
+  function investigateOverview() {
+    if (state.incidents && state.incidents.length > 0) {
+      switchPrimaryView('incidents');
+      investigateIncident(state.incidents[0].id);
+    } else {
+      switchPrimaryView('discovery');
     }
   }
 
@@ -4845,10 +6035,370 @@
     }
   }
 
-  // --- 11. Changes (Snapshot Diff & Impact Analysis) View ---
+  // --- 11. Changes (Snapshot Diff & Live Incremental Impact Analysis) View ---
   let currentImpactAnalysisResult = null;
+  let currentChangesMode = 'history';
+
+  function switchChangesMode(mode) {
+    currentChangesMode = mode;
+    const btnHistory = document.getElementById('btn-changes-mode-history');
+    const btnLive = document.getElementById('btn-changes-mode-live');
+    const btnSnapshots = document.getElementById('btn-changes-mode-snapshots');
+    const panelHistory = document.getElementById('panel-changes-history');
+    const panelLive = document.getElementById('panel-changes-live');
+    const panelSnapshots = document.getElementById('panel-changes-snapshots');
+    const modeHint = document.getElementById('changes-mode-hint');
+
+    const inactiveClass = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] flex items-center gap-1.5 transition-all cursor-pointer';
+    const activeClass = 'px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white text-[#0071e3] shadow-xs flex items-center gap-1.5 transition-all cursor-pointer';
+
+    [btnHistory, btnLive, btnSnapshots].forEach(b => { if (b) b.className = inactiveClass; });
+    [panelHistory, panelLive, panelSnapshots].forEach(p => { if (p) p.style.display = 'none'; });
+
+    if (mode === 'history') {
+      if (btnHistory) btnHistory.className = activeClass;
+      if (panelHistory) panelHistory.style.display = 'block';
+      if (modeHint) modeHint.textContent = 'Explore Git commit history, code diff metrics, and analyze historical revisions';
+      renderCommitHistoryList();
+    } else if (mode === 'live') {
+      if (btnLive) btnLive.className = activeClass;
+      if (panelLive) panelLive.style.display = 'block';
+      if (modeHint) modeHint.textContent = 'Inspect uncommitted local working copy vs active Digital Twin';
+      checkLiveWorkingTreeChanges(true);
+      if (state.liveChanges && state.liveChanges.changes) {
+        renderImpactDiffTable(state.liveChanges.changes);
+        renderLiveMetricsBanner(state.liveChanges);
+      }
+    } else {
+      if (btnSnapshots) btnSnapshots.className = activeClass;
+      if (panelSnapshots) panelSnapshots.style.display = 'block';
+      if (modeHint) modeHint.textContent = 'Compare architectural states between two repository revisions';
+      const baseSelect = document.getElementById('diff-base-select');
+      const targetSelect = document.getElementById('diff-target-select');
+      if (baseSelect?.value && targetSelect?.value && baseSelect.value !== targetSelect.value) {
+        executeSnapshotDiff();
+      }
+    }
+  }
+
+  async function checkLiveWorkingTreeChanges(silent = false) {
+    if (!state.currentRepoId) return null;
+    try {
+      const res = await fetch(`/repositories/${state.currentRepoId}/live-changes`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      state.liveChanges = data;
+
+      const badgeCount = document.getElementById('badge-live-changes-count');
+      const btnSimulate = document.getElementById('btn-live-simulate-whatif');
+      const statusDot = document.getElementById('live-working-tree-dot');
+      const statusText = document.getElementById('live-working-tree-status-text');
+      const branchBadge = document.getElementById('live-working-tree-branch-badge');
+      const statusDesc = document.getElementById('live-working-tree-desc');
+      const impactDot = document.getElementById('impact-live-dot');
+      const impactCountChip = document.getElementById('impact-live-count-chip');
+      const simBanner = document.getElementById('sim-live-changes-banner');
+      const simBannerText = document.getElementById('sim-live-changes-text');
+
+      const isDirty = data.working_tree_status === 'DIRTY' && data.total_changes > 0;
+
+      if (badgeCount) {
+        badgeCount.textContent = data.total_changes || 0;
+        badgeCount.style.display = isDirty ? 'inline-flex' : 'none';
+      }
+
+      if (btnSimulate) {
+        btnSimulate.style.display = isDirty ? 'inline-flex' : 'none';
+      }
+
+      if (statusDot) {
+        statusDot.className = isDirty ? 'w-2.5 h-2.5 rounded-full bg-[#EF4444] animate-pulse' : 'w-2.5 h-2.5 rounded-full bg-[#10B981]';
+      }
+
+      if (statusText) {
+        statusText.textContent = isDirty
+          ? `Workspace Status: Dirty (${data.total_changes} uncommitted modifications)`
+          : 'Workspace Status: Clean';
+      }
+
+      if (branchBadge && data.target_snapshot_id) {
+        branchBadge.textContent = (data.target_snapshot_id || 'working-tree').replace(':working-tree', '');
+      }
+
+      if (statusDesc) {
+        statusDesc.textContent = data.message || (isDirty ? 'Uncommitted modifications ready for blast radius analysis and What-If simulation.' : 'Zero uncommitted changes in local workspace.');
+      }
+
+      if (impactDot) {
+        impactDot.className = isDirty ? 'w-2.5 h-2.5 rounded-full bg-[#EF4444] animate-pulse' : 'w-2.5 h-2.5 rounded-full bg-[#10B981]';
+      }
+
+      if (impactCountChip) {
+        impactCountChip.textContent = isDirty ? `${data.total_changes} uncommitted changes` : 'Clean working tree';
+        impactCountChip.className = isDirty
+          ? 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#FEF2F2] text-[#DC2626] border border-[#FECACA]'
+          : 'px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]';
+      }
+
+      if (simBanner) {
+        simBanner.style.display = isDirty ? 'flex' : 'none';
+      }
+
+      if (simBannerText && isDirty) {
+        simBannerText.textContent = `${data.total_changes} Live Workspace Changes Detected`;
+      }
+
+      return data;
+    } catch (err) {
+      if (!silent) console.warn('Could not check live working tree changes:', err);
+      return null;
+    }
+  }
+
+  async function executeLiveIncrementalAnalysis() {
+    if (!state.currentRepoId) {
+      showNotification('Please select or connect a repository first.', 'warning');
+      return;
+    }
+
+    const scanBtn = document.getElementById('btn-scan-live-changes');
+    const scanBtnText = document.getElementById('btn-scan-live-text');
+    const impactBtn = document.getElementById('btn-run-live-impact');
+    const impactBtnText = document.getElementById('btn-run-live-impact-text');
+
+    if (scanBtn) scanBtn.disabled = true;
+    if (scanBtnText) scanBtnText.textContent = 'Scanning...';
+    if (impactBtn) impactBtn.disabled = true;
+    if (impactBtnText) impactBtnText.textContent = 'Tracing Live Blast Radius...';
+
+    try {
+      const depthSelect = document.getElementById('impact-live-depth');
+      const maxDepth = depthSelect ? parseInt(depthSelect.value, 10) : 5;
+
+      const res = await fetch(`/repositories/${state.currentRepoId}/live-incremental-analysis?max_depth=${maxDepth}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base_snapshot_id: state.currentSnapshotId || null,
+          max_depth: maxDepth,
+          include_tests: true,
+          include_apis: true,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `Server returned ${res.status}`);
+      }
+
+      const result = await res.json();
+      state.liveAnalysisResult = result;
+      state.liveChanges = {
+        working_tree_status: result.working_tree_status,
+        total_changes: (result.change_set?.changes || []).length,
+        changes: result.change_set?.changes || [],
+        proposed_mutations: result.proposed_mutations || [],
+        summary: result.summary,
+      };
+
+      await checkLiveWorkingTreeChanges(true);
+
+      // Render Diff Table
+      renderImpactDiffTable(result.change_set?.changes || []);
+      renderLiveMetricsBanner(result);
+
+      // Render Blast Radius & Findings in Impact View
+      if (result.impact_result) {
+        currentImpactAnalysisResult = result.impact_result;
+        renderCausalPropagationTree(result.impact_result);
+        renderImpactFindings(result.impact_result.findings || []);
+        renderImpactCategories(result.impact_result.affected_categories || {});
+        renderImpactMetricsBanner(result.impact_result);
+
+        const metaEl = document.getElementById('impact-analysis-meta');
+        if (metaEl) {
+          metaEl.innerHTML = `<strong>Live Incremental Analysis:</strong> ${result.total_affected_entities || 0} downstream entities affected across ${result.change_set?.changes?.length || 0} modified artifacts. Risk Score: <strong>${(result.blast_radius_score || 0).toFixed(1)}/100 (${result.risk_level || 'LOW'})</strong>.`;
+        }
+      }
+
+      showNotification(`Live analysis completed: ${result.summary?.total_changed_items || 0} changed artifacts, ${result.total_affected_entities || 0} affected downstream nodes.`, 'success');
+    } catch (err) {
+      showNotification('Live incremental analysis error: ' + err.message, 'error');
+    } finally {
+      if (scanBtn) scanBtn.disabled = false;
+      if (scanBtnText) scanBtnText.textContent = 'Scan Working Tree';
+      if (impactBtn) impactBtn.disabled = false;
+      if (impactBtnText) impactBtnText.textContent = 'Trace Live Blast Radius';
+    }
+  }
+
+  function renderLiveMetricsBanner(result) {
+    const banner = document.getElementById('diff-metrics-banner');
+    if (!banner) return;
+    const summary = result.summary || {};
+    const total = summary.total_changed_items ?? summary.total_changes ?? 0;
+    const syms = summary.symbol_level_changes ?? summary.symbol_level_count ?? 0;
+    const files = summary.file_level_changes ?? summary.file_level_count ?? 0;
+    const tests = summary.affected_tests_count ?? (result.targeted_tests || []).length ?? 0;
+    const risk = summary.risk_level || result.risk_level || 'LOW';
+
+    let riskBadgeColor = 'bg-[#ECFDF5] text-[#059669] border-[#A7F3D0]';
+    if (risk === 'HIGH' || risk === 'CRITICAL') {
+      riskBadgeColor = 'bg-[#FEF2F2] text-[#DC2626] border-[#FECACA]';
+    } else if (risk === 'MEDIUM') {
+      riskBadgeColor = 'bg-[#FFFBEB] text-[#D97706] border-[#FDE68A]';
+    }
+
+    banner.innerHTML = `
+      <div class="px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] shadow-2xs flex items-center gap-2 text-xs">
+        <span class="text-[#64748B] font-medium">Changed Artifacts:</span>
+        <span class="font-bold text-[#0F172A]">${total}</span>
+      </div>
+      <div class="px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] shadow-2xs flex items-center gap-2 text-xs">
+        <span class="text-[#64748B] font-medium">AST Symbols:</span>
+        <span class="font-bold text-[#0071e3]">${syms}</span>
+      </div>
+      <div class="px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] shadow-2xs flex items-center gap-2 text-xs">
+        <span class="text-[#64748B] font-medium">Files:</span>
+        <span class="font-bold text-[#0F172A]">${files}</span>
+      </div>
+      <div class="px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] shadow-2xs flex items-center gap-2 text-xs">
+        <span class="text-[#64748B] font-medium">Targeted Tests:</span>
+        <span class="font-bold text-[#7C3AED]">${tests}</span>
+      </div>
+      <div class="px-3 py-1.5 rounded-xl border ${riskBadgeColor} shadow-2xs flex items-center gap-1.5 text-xs font-semibold">
+        <span class="material-symbols-outlined text-[14px]">shield</span>
+        <span>Risk: ${risk}</span>
+      </div>
+    `;
+    banner.style.display = 'flex';
+  }
+
+  async function handoverLiveChangesToWhatIf(autoRun = false) {
+    if (!state.currentRepoId) {
+      showNotification('Please select or connect a repository first.', 'warning');
+      return;
+    }
+
+    if (!state.liveChanges || !state.liveChanges.proposed_mutations || state.liveChanges.proposed_mutations.length === 0) {
+      const checked = await checkLiveWorkingTreeChanges(false);
+      if (!checked || !checked.proposed_mutations || checked.proposed_mutations.length === 0) {
+        showNotification('No uncommitted mutations detected in the working tree to simulate.', 'info');
+        return;
+      }
+    }
+
+    const mutations = state.liveChanges.proposed_mutations || [];
+    const firstMut = mutations[0] || {};
+
+    activateView('simulation');
+
+    const nlQueryInput = document.getElementById('input-sim-nl-query');
+    if (nlQueryInput) {
+      nlQueryInput.value = `Hypothetical validation of live working tree: ${mutations.length} proposed change(s) starting from ${firstMut.target || 'working tree'}`;
+    }
+
+    const targetInput = document.getElementById('input-sim-target');
+    if (targetInput && firstMut.target) {
+      targetInput.value = firstMut.target;
+      state.simResolvedTarget = firstMut.target;
+    }
+
+    const archetypeType = firstMut.mutation_type || 'MODIFY_SYMBOL';
+    document.querySelectorAll('.sim-archetype-card').forEach(card => {
+      const isMatch = card.dataset.type === archetypeType;
+      card.classList.toggle('active', isMatch);
+      if (isMatch) {
+        card.className = 'sim-archetype-card p-2.5 rounded-xl border border-[#0071e3] bg-[#EFF6FF] text-left transition-all group active cursor-pointer';
+      } else {
+        card.className = 'sim-archetype-card p-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#CBD5E1] text-left transition-all group cursor-pointer';
+      }
+    });
+    state.simSelectedArchetype = archetypeType;
+
+    showNotification(`Imported ${mutations.length} live mutation(s) into What-If simulation designer.`, 'success');
+
+    if (autoRun) {
+      setTimeout(() => executeOrchestratedSimulation(), 300);
+    }
+  }
 
   function loadChangesView() {
+    // Mode Switcher in Changes View
+    const modeHistoryBtn = document.getElementById('btn-changes-mode-history');
+    if (modeHistoryBtn) {
+      modeHistoryBtn.onclick = () => switchChangesMode('history');
+    }
+    const modeLiveBtn = document.getElementById('btn-changes-mode-live');
+    if (modeLiveBtn) {
+      modeLiveBtn.onclick = () => switchChangesMode('live');
+    }
+    const modeSnapshotsBtn = document.getElementById('btn-changes-mode-snapshots');
+    if (modeSnapshotsBtn) {
+      modeSnapshotsBtn.onclick = () => switchChangesMode('snapshots');
+    }
+
+    // History View Filter & Action Listeners
+    const refreshHistoryBtn = document.getElementById('btn-refresh-history');
+    if (refreshHistoryBtn) {
+      refreshHistoryBtn.onclick = () => loadCommitsForCurrentRepo(state.currentRepoId, state.currentBranchName);
+    }
+    const searchHistoryInput = document.getElementById('history-search-input');
+    if (searchHistoryInput) {
+      searchHistoryInput.oninput = () => renderCommitHistoryList();
+    }
+    const branchHistoryFilter = document.getElementById('history-branch-filter');
+    if (branchHistoryFilter) {
+      branchHistoryFilter.onchange = () => renderCommitHistoryList();
+    }
+    const sortHistorySelect = document.getElementById('history-sort-select');
+    if (sortHistorySelect) {
+      sortHistorySelect.onchange = () => renderCommitHistoryList();
+    }
+
+    // Default to current mode
+    switchChangesMode(currentChangesMode || 'history');
+
+    const scanLiveBtn = document.getElementById('btn-scan-live-changes');
+    if (scanLiveBtn) {
+      scanLiveBtn.onclick = () => executeLiveIncrementalAnalysis();
+    }
+
+    const liveBlastRadiusBtn = document.getElementById('btn-live-view-blast-radius');
+    if (liveBlastRadiusBtn) {
+      liveBlastRadiusBtn.onclick = () => {
+        activateView('impact');
+        switchImpactMode('live');
+        executeLiveIncrementalAnalysis();
+      };
+    }
+
+    const liveSimulateBtn = document.getElementById('btn-live-simulate-whatif');
+    if (liveSimulateBtn) {
+      liveSimulateBtn.onclick = () => handoverLiveChangesToWhatIf();
+    }
+
+    // Impact Mode Handlers
+    const modeLiveImpactBtn = document.getElementById('btn-impact-mode-live');
+    if (modeLiveImpactBtn) {
+      modeLiveImpactBtn.onclick = () => switchImpactMode('live');
+    }
+
+    const runLiveImpactBtn = document.getElementById('btn-run-live-impact');
+    if (runLiveImpactBtn) {
+      runLiveImpactBtn.onclick = () => executeLiveIncrementalAnalysis();
+    }
+
+    const liveImpactWhatifBtn = document.getElementById('btn-live-impact-to-whatif');
+    if (liveImpactWhatifBtn) {
+      liveImpactWhatifBtn.onclick = () => handoverLiveChangesToWhatIf();
+    }
+
+    const simLoadLiveBtn = document.getElementById('btn-sim-load-live');
+    if (simLoadLiveBtn) {
+      simLoadLiveBtn.onclick = () => handoverLiveChangesToWhatIf();
+    }
+
     const diffBtn = document.getElementById('btn-compute-diff') || document.getElementById('btn-run-diff-action');
     if (diffBtn) {
       diffBtn.onclick = () => executeSnapshotDiff();
@@ -4880,11 +6430,6 @@
         validateBaselineAndTargetSelection();
         executeSnapshotDiff();
       };
-
-      // Automatically execute snapshot diff if both base and target are selected
-      if (baseSelect.value && targetSelect.value && baseSelect.value !== targetSelect.value) {
-        executeSnapshotDiff();
-      }
     }
 
     // Tab handlers in impact panel
@@ -4915,6 +6460,9 @@
       };
     }
     populateImpactEntityDropdown();
+
+    // Check live working tree status on view load
+    checkLiveWorkingTreeChanges(true);
   }
 
   function switchImpactTab(activeTab) {
@@ -5429,30 +6977,31 @@
   function switchImpactMode(mode) {
     currentImpactMode = mode;
     const btnEntity = document.getElementById('btn-impact-mode-entity');
+    const btnLive = document.getElementById('btn-impact-mode-live');
     const btnDiff = document.getElementById('btn-impact-mode-diff');
     const panelEntity = document.getElementById('panel-impact-entity');
+    const panelLive = document.getElementById('panel-impact-live');
     const panelDiff = document.getElementById('panel-impact-diff');
     const modeHint = document.getElementById('impact-mode-hint');
 
+    const inactiveClass = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] flex items-center gap-1.5 transition-all';
+    const activeClass = 'px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white text-[#0071e3] shadow-xs flex items-center gap-1.5 transition-all';
+
+    [btnEntity, btnLive, btnDiff].forEach(b => { if (b) b.className = inactiveClass; });
+    [panelEntity, panelLive, panelDiff].forEach(p => { if (p) p.style.display = 'none'; });
+
     if (mode === 'entity') {
-      if (btnEntity) {
-        btnEntity.className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white text-[#0071e3] shadow-xs flex items-center gap-1.5 transition-all';
-      }
-      if (btnDiff) {
-        btnDiff.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] flex items-center gap-1.5 transition-all';
-      }
+      if (btnEntity) btnEntity.className = activeClass;
       if (panelEntity) panelEntity.style.display = 'block';
-      if (panelDiff) panelDiff.style.display = 'none';
       if (modeHint) modeHint.textContent = 'Inspect causal blast radius of any architectural component, class, or API';
       populateImpactEntityDropdown();
+    } else if (mode === 'live') {
+      if (btnLive) btnLive.className = activeClass;
+      if (panelLive) panelLive.style.display = 'block';
+      if (modeHint) modeHint.textContent = 'Trace causal blast radius of uncommitted changes in the active working tree';
+      checkLiveWorkingTreeChanges(true);
     } else {
-      if (btnDiff) {
-        btnDiff.className = 'px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white text-[#0071e3] shadow-xs flex items-center gap-1.5 transition-all';
-      }
-      if (btnEntity) {
-        btnEntity.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] flex items-center gap-1.5 transition-all';
-      }
-      if (panelEntity) panelEntity.style.display = 'none';
+      if (btnDiff) btnDiff.className = activeClass;
       if (panelDiff) panelDiff.style.display = 'block';
       if (modeHint) modeHint.textContent = 'Compare two distinct Git commits to find added, deleted, or changed symbols';
     }
@@ -6038,8 +7587,174 @@
     }
   }
 
-  // --- 12. Evidence & File Tree View ---
+  // --- 12. Full Project Report & Evidence Ledger View ---
+  function formatInlineMarkdown(text) {
+    if (!text) return '';
+    let escaped = escapeHtml(text);
+    escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-[#0F172A]">$1</strong>');
+    escaped = escaped.replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded text-[11px] font-mono bg-[#F1F5F9] text-[#0F172A] border border-[#E2E8F0]">$1</code>');
+    return escaped;
+  }
+
+  function renderMarkdownToHtml(md) {
+    if (!md) return '<p class="text-xs text-[#64748B]">No report content available.</p>';
+    const lines = md.split('\n');
+    let html = '';
+    let inTable = false;
+    let tableHeaders = [];
+    let inList = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+
+      // Tables
+      if (line.trim().startsWith('|')) {
+        const cells = line.split('|').map(c => c.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+        if (cells.every(c => /^:?-+:?$/.test(c))) {
+          continue;
+        }
+        if (!inTable) {
+          inTable = true;
+          tableHeaders = cells;
+          html += '<div class="overflow-x-auto my-3"><table class="min-w-full text-xs text-left border border-[#E2E8F0] rounded-xl overflow-hidden shadow-2xs"><thead class="bg-[#F8FAFC] border-b border-[#E2E8F0]"><tr>';
+          cells.forEach(h => {
+            html += `<th class="p-2.5 font-bold text-[#0F172A] border-r border-[#E2E8F0] last:border-r-0">${formatInlineMarkdown(h)}</th>`;
+          });
+          html += '</tr></thead><tbody class="divide-y divide-[#E2E8F0] bg-white">';
+          continue;
+        } else {
+          html += '<tr class="hover:bg-[#F8FAFC] transition-colors">';
+          cells.forEach(c => {
+            html += `<td class="p-2.5 text-[#334155] border-r border-[#E2E8F0] last:border-r-0">${formatInlineMarkdown(c)}</td>`;
+          });
+          html += '</tr>';
+          continue;
+        }
+      } else if (inTable) {
+        html += '</tbody></table></div>';
+        inTable = false;
+      }
+
+      // Lists
+      if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+        if (!inList) {
+          html += '<ul class="space-y-1 my-2">';
+          inList = true;
+        }
+        html += `<li class="flex items-start gap-2 text-xs text-[#334155] leading-relaxed"><span class="text-[#0071e3] font-bold mt-0.5">•</span><span>${formatInlineMarkdown(line.trim().slice(2))}</span></li>`;
+        continue;
+      } else if (inList) {
+        html += '</ul>';
+        inList = false;
+      }
+
+      // Blockquotes / Alerts
+      if (line.trim().startsWith('>')) {
+        const text = line.trim().replace(/^>\s*/, '');
+        if (text.includes('[!WARNING]')) {
+          html += `<div class="p-3.5 my-3 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B] text-xs font-medium space-y-1"><div class="font-bold flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">warning</span> Warning</div>`;
+        } else if (text.includes('[!NOTE]')) {
+          html += `<div class="p-3.5 my-3 rounded-xl bg-[#F0F9FF] border border-[#BAE6FD] text-[#0369A1] text-xs font-medium space-y-1"><div class="font-bold flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">info</span> Note</div>`;
+        } else if (text.includes('[!IMPORTANT]')) {
+          html += `<div class="p-3.5 my-3 rounded-xl bg-[#EEF2FF] border border-[#C7D2FE] text-[#3730A3] text-xs font-medium space-y-1"><div class="font-bold flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">priority_high</span> Important</div>`;
+        } else {
+          html += `<p class="leading-relaxed">${formatInlineMarkdown(text)}</p></div>`;
+        }
+        continue;
+      }
+
+      // Headings
+      if (line.startsWith('# ')) {
+        html += `<h1 class="text-2xl font-bold text-[#0F172A] mt-6 mb-2 tracking-tight">${formatInlineMarkdown(line.slice(2))}</h1>`;
+      } else if (line.startsWith('## ')) {
+        html += `<h2 class="text-lg font-bold text-[#0F172A] mt-5 mb-2 pb-1.5 border-b border-[#E2E8F0] flex items-center gap-2"><span class="material-symbols-outlined text-[18px] text-[#0071e3]">arrow_forward</span>${formatInlineMarkdown(line.slice(3))}</h2>`;
+      } else if (line.startsWith('### ')) {
+        html += `<h3 class="text-sm font-bold text-[#0F172A] mt-4 mb-1.5">${formatInlineMarkdown(line.slice(4))}</h3>`;
+      } else if (line.trim() === '---') {
+        html += '<hr class="my-4 border-[#E2E8F0]">';
+      } else if (line.trim()) {
+        html += `<p class="text-xs text-[#334155] leading-relaxed my-1.5">${formatInlineMarkdown(line.trim())}</p>`;
+      }
+    }
+
+    if (inTable) html += '</tbody></table></div>';
+    if (inList) html += '</ul>';
+    return html;
+  }
+
+  function switchEvidenceTab(tabName) {
+    const reportContainer = document.getElementById('evidence-report-view-container');
+    const treeContainer = document.getElementById('evidence-tree-view-container');
+    const btnReport = document.getElementById('btn-evidence-tab-report');
+    const btnTree = document.getElementById('btn-evidence-tab-tree');
+
+    if (tabName === 'report') {
+      if (reportContainer) reportContainer.style.display = 'block';
+      if (treeContainer) treeContainer.style.display = 'none';
+      if (btnReport) {
+        btnReport.className = 'px-3 py-1.5 rounded-md bg-white text-[#0071e3] shadow-xs';
+      }
+      if (btnTree) {
+        btnTree.className = 'px-3 py-1.5 rounded-md text-[#64748B] hover:text-[#0F172A]';
+      }
+    } else {
+      if (reportContainer) reportContainer.style.display = 'none';
+      if (treeContainer) treeContainer.style.display = 'grid';
+      if (btnReport) {
+        btnReport.className = 'px-3 py-1.5 rounded-md text-[#64748B] hover:text-[#0F172A]';
+      }
+      if (btnTree) {
+        btnTree.className = 'px-3 py-1.5 rounded-md bg-white text-[#0071e3] shadow-xs';
+      }
+      loadEvidenceFileTree();
+    }
+  }
+
   async function loadEvidenceView() {
+    if (!state.currentRepoId) return;
+
+    // Default to report tab
+    switchEvidenceTab('report');
+
+    const reportContent = document.getElementById('evidence-report-content');
+    if (!reportContent) return;
+
+    reportContent.innerHTML = `
+      <div class="text-center py-12 text-[#64748B] text-xs">
+        <span class="material-symbols-outlined text-3xl animate-spin mb-2 block text-[#0071e3]">progress_activity</span>
+        <p class="font-semibold text-sm text-[#0F172A]">Loading Full Project Technical Assessment Report...</p>
+        <p class="mt-1">Evaluating multi-layer architecture, tech stack, and test linkages from snapshot.</p>
+      </div>
+    `;
+
+    try {
+      let url = `/repositories/${state.currentRepoId}/discovery/report`;
+      if (state.currentSnapshotId) {
+        url += `?snapshot_id=${encodeURIComponent(state.currentSnapshotId)}`;
+      }
+
+      const res = await apiFetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status} retrieving report`);
+      const data = await res.json();
+
+      if (!data.report_markdown) {
+        reportContent.innerHTML = '<p class="text-xs text-[#DC2626]">Report markdown was not returned by the server.</p>';
+        return;
+      }
+
+      reportContent.innerHTML = renderMarkdownToHtml(data.report_markdown);
+    } catch (err) {
+      reportContent.innerHTML = `
+        <div class="p-4 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-center text-xs text-[#991B1B]">
+          <p class="font-bold">Failed to load Project Report</p>
+          <p class="mt-1">${escapeHtml(err.message)}</p>
+          <button class="mt-2 px-3 py-1.5 rounded-lg bg-[#DC2626] text-white font-semibold hover:bg-[#B91C1C]" onclick="window.TwinApp.loadEvidenceView()">Retry</button>
+        </div>
+      `;
+    }
+  }
+
+  async function loadEvidenceFileTree() {
     if (!state.currentRepoId) return;
     const treeContainer = document.getElementById('evidence-tree-container');
     const overviewBox = document.getElementById('evidence-overview-state');
@@ -6335,12 +8050,19 @@
       state.nodes = [];
       state.edges = [];
       updateStats({ nodes: [], edges: [] });
+      const statusText = document.getElementById('graph-status-text');
+      if (statusText) statusText.textContent = 'No repository selected • Connect or choose a codebase';
       return;
     }
 
     state.graphReqSeq = (state.graphReqSeq || 0) + 1;
     const currentReqSeq = state.graphReqSeq;
     const targetRepo = state.currentRepoId;
+
+    const statusText = document.getElementById('graph-status-text');
+    if (statusText) {
+      statusText.textContent = 'Loading architecture graph projection...';
+    }
 
     let url = `/repositories/${state.currentRepoId}/graph?level=${state.currentLevel}&depth=${state.depth}`;
     if (state.currentSnapshotId) url += `&snapshot_id=${state.currentSnapshotId}`;
@@ -6375,9 +8097,24 @@
         state.rawGraph = data;
         processGraphData(data);
         updateStats(data);
+      } else {
+        const errDetail = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+        state.rawGraph = { nodes: [], edges: [] };
+        state.nodes = [];
+        state.edges = [];
+        if (statusText) {
+          statusText.textContent = `Graph unavailable • ${errDetail.detail || `Error HTTP ${res.status}`}`;
+        }
+        showNotification(`Could not load architecture graph: ${errDetail.detail || `HTTP ${res.status}`}`, 'error');
+        render();
       }
     } catch (err) {
+      if (currentReqSeq !== state.graphReqSeq || state.currentRepoId !== targetRepo) return;
       console.error('Failed to load graph projection', err);
+      if (statusText) {
+        statusText.textContent = 'Graph projection network error • Check connectivity';
+      }
+      showNotification('Network error while requesting graph projection', 'error');
     }
   }
 
@@ -6388,7 +8125,15 @@
     const activeTypes = new Set(Array.from(document.querySelectorAll('#type-filter-grid input:checked')).map(cb => cb.value));
     const activeRels = new Set(Array.from(document.querySelectorAll('#rel-filter-grid input:checked')).map(cb => cb.value));
 
-    const rawNodes = (data.nodes || []).filter(n => activeTypes.size === 0 || activeTypes.has(n.type));
+    // Normalize node schema to guarantee type, label, and category exist
+    const normalizedNodes = (data.nodes || []).map(n => ({
+      ...n,
+      type: n.type || n.artifact_type || (n.category ? n.category.toUpperCase() : 'SERVICE'),
+      label: n.label || n.name || n.id,
+      category: n.category || (n.type ? n.type.toLowerCase() : 'service')
+    }));
+
+    const rawNodes = normalizedNodes.filter(n => activeTypes.size === 0 || activeTypes.has(n.type));
     const rawEdges = (data.edges || []).filter(e => activeRels.size === 0 || activeRels.has(e.type));
 
     const existingPos = new Map();
@@ -6454,7 +8199,13 @@
 
     const statusText = document.getElementById('graph-status-text');
     if (statusText) {
-      statusText.textContent = `Living System Synchronized • ${state.nodes.length} Nodes, ${state.edges.length} Connections`;
+      if (state.nodes.length === 0) {
+        statusText.textContent = `No structural components found for Level ${state.currentLevel || 2}`;
+      } else if (data.is_demo || state.currentRepoId === 'repo-demo-ecommerce-001' || state.currentRepoId === 'synthetic-online-shop') {
+        statusText.textContent = `Synthetic Reference Architecture • ${state.nodes.length} Nodes, ${state.edges.length} Connections`;
+      } else {
+        statusText.textContent = `Living System Synchronized • ${state.nodes.length} Nodes, ${state.edges.length} Connections`;
+      }
     }
 
     if (state.hideIsolated) {
@@ -9148,6 +10899,20 @@
       const res = await fetch(`/repositories/${state.currentRepoId}/incidents`);
       if (!res.ok) throw new Error('Failed to load incidents');
       const incidents = await res.json();
+      state.incidents = incidents;
+
+      // Update Understand Your Project Runtime Counter
+      const uypRuntime = document.getElementById('uyp-runtime-count');
+      if (uypRuntime) {
+        const flows = state.currentRepoData?.metrics?.processes ?? 0;
+        uypRuntime.textContent = `${incidents.length} active · ${flows} flows`;
+      }
+
+      // Re-evaluate Project Health and Do Next with real incident evidence
+      if (state.currentRepoData) {
+        renderProjectHealth(state.currentRepoData);
+        renderDoNextList(state.currentRepoData);
+      }
 
       const countBadge = document.getElementById('incidents-count-badge');
       if (countBadge) {
@@ -10316,18 +12081,39 @@
         errBox.style.display = 'block';
         const failureReason = sim.status_explanation || sim.error_message || plan.execution_block_reason || plan.ambiguity_explanation || 'Simulation could not be executed for the specified target.';
         const candidates = plan.candidate_entities || plan.ambiguity_candidates || [];
+        const isCapacityQuery = plan.change_type === 'CONCURRENCY_SPIKE' || plan.change_type === 'CAPACITY_LOAD_SPIKE';
+
         errBox.innerHTML = `
-          <div class="flex items-start gap-2">
-            <span class="material-symbols-outlined text-red-600 text-[18px] shrink-0 mt-0.5">error</span>
-            <div>
-              <div class="font-bold text-red-800 text-xs">Simulation Target Resolution (${escapeHtml(sim.status || 'UNRESOLVED_TARGET')})</div>
-              <div class="text-xs text-red-700 mt-0.5">${escapeHtml(failureReason)}</div>
-              ${candidates.length > 0 ? `<div class="text-[11px] text-red-600 mt-1">Suggested candidates in active twin: ${candidates.map(c => `<code>${escapeHtml(typeof c === 'string' ? c : (c.name || c.qualified_name))}</code>`).join(', ')}</div>` : ''}
+          <div class="flex items-start gap-3 p-4 rounded-xl ${isCapacityQuery ? 'bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E]' : 'bg-[#FEF2F2] border border-[#FECACA] text-[#991B1B]'}">
+            <span class="material-symbols-outlined text-[20px] shrink-0 mt-0.5">${isCapacityQuery ? 'traffic' : 'error'}</span>
+            <div class="space-y-2 w-full">
+              <div class="font-bold text-xs uppercase tracking-wider">${isCapacityQuery ? 'Concurrency / Load Target Disambiguation' : 'Simulation Target Resolution Required'} (${escapeHtml(sim.status || plan.status || 'UNRESOLVED_TARGET')})</div>
+              <div class="text-xs leading-relaxed">${escapeHtml(failureReason)}</div>
+              ${candidates.length > 0 ? `
+                <div class="pt-2 border-t ${isCapacityQuery ? 'border-[#FDE68A]' : 'border-[#FECACA]'}">
+                  <div class="text-[11px] font-bold mb-1.5">Select a recognized target component from the knowledge graph:</div>
+                  <div class="flex flex-wrap gap-1.5">
+                    ${candidates.map(c => {
+                      const cName = typeof c === 'string' ? c : (c.name || c.qualified_name);
+                      const cType = typeof c === 'object' ? (c.artifact_type || 'COMPONENT') : 'COMPONENT';
+                      return `<button type="button" class="px-2.5 py-1 rounded-lg text-[11px] font-mono font-semibold bg-white border border-[#CBD5E1] hover:border-[#0071e3] hover:text-[#0071e3] shadow-2xs transition-colors flex items-center gap-1" onclick="window.TwinApp.selectSimulationCandidate('${escapeHtml(cName)}')">
+                        <span class="text-[9px] uppercase px-1 rounded bg-[#F1F5F9]">${escapeHtml(cType)}</span>
+                        <span>${escapeHtml(cName)}</span>
+                      </button>`;
+                    }).join('')}
+                  </div>
+                </div>
+              ` : ''}
+              ${isCapacityQuery ? `
+                <div class="p-2 rounded bg-white/70 border border-[#FDE68A] text-[10px] text-[#78350F] mt-2">
+                  <strong>Analysis Scope Note:</strong> TwinCore evaluates static architectural blast radius, downstream call paths, and database fan-out from the chosen endpoint. Dynamic concurrency throughput and thread-pool saturation bounds require active runtime load testing.
+                </div>
+              ` : ''}
             </div>
           </div>
         `;
       }
-      showNotification('Simulation failed: Target could not be resolved or executed.', 'error');
+      showNotification(isCapacityQuery ? 'Please select a target endpoint for concurrency analysis.' : 'Target could not be resolved.', isCapacityQuery ? 'info' : 'error');
       return;
     }
 
@@ -10356,10 +12142,16 @@
       const s = sim.status || 'COMPLETED';
       if (s === 'VERIFIED_ZERO_IMPACT') {
         statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DCFCE7] text-[#15803D] border border-[#BBF7D0]';
-        statusBadge.textContent = '● Verified Zero Impact';
+        statusBadge.textContent = '● Verified Zero Impact (Leaf Entity)';
       } else if (s === 'DOWNSTREAM_IMPACT_DETECTED') {
         statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]';
         statusBadge.textContent = '● Downstream Impact Detected';
+      } else if (s === 'PARTIAL_ANALYSIS') {
+        statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]';
+        statusBadge.textContent = '● Inconclusive / Unmapped Dependencies';
+      } else if (s === 'INSUFFICIENT_GRAPH_DATA') {
+        statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]';
+        statusBadge.textContent = '● Insufficient Graph Relationships';
       } else if (s === 'UNRESOLVED_TARGET') {
         statusBadge.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FEE2E2] text-[#B91C1C] border border-[#FECACA]';
         statusBadge.textContent = '● Unresolved Target';
@@ -10730,7 +12522,11 @@
 
     // Try fetching existing assessment from backend
     try {
-      const res = await apiFetch(`/repositories/${state.currentRepoId}/discovery/assessment`);
+      let url = `/repositories/${state.currentRepoId}/discovery/assessment`;
+      if (state.currentSnapshotId) {
+        url += `?snapshot_id=${encodeURIComponent(state.currentSnapshotId)}`;
+      }
+      const res = await apiFetch(url);
       if (reqEpoch !== state.requestEpoch || reqRepoId !== state.currentRepoId) return;
       if (res.ok) {
         const data = await res.json();
@@ -10911,7 +12707,8 @@
 
     const discCov = document.getElementById('disc-metric-coverage');
     if (discCov) {
-      discCov.textContent = `${comp.code_coverage_pct || 0}% AST Coverage`;
+      const covPct = (comp.coverage_percentage !== undefined ? comp.coverage_percentage : comp.code_coverage_pct) || 0;
+      discCov.textContent = `${covPct}% AST Coverage`;
     }
 
     const discSym = document.getElementById('disc-metric-symbols');
@@ -10970,28 +12767,42 @@
           </div>`;
       } else {
         dimGrid.innerHTML = scores.map(dim => {
-          const score = dim.score !== null && dim.score !== undefined ? dim.score : '—';
+          const isUnknown = dim.status === 'UNKNOWN';
+          let scoreText = '';
           let scoreColor = 'text-[#059669] bg-[#ECFDF5] border-[#A7F3D0]';
           let barBg = 'bg-[#059669]';
-          if (score < 50) {
-            scoreColor = 'text-[#DC2626] bg-[#FEF2F2] border-[#FECACA]';
-            barBg = 'bg-[#DC2626]';
-          } else if (score < 80) {
-            scoreColor = 'text-[#D97706] bg-[#FFFBEB] border-[#FDE68A]';
-            barBg = 'bg-[#D97706]';
+          let numScore = 0;
+
+          if (isUnknown) {
+            scoreText = 'UNKNOWN';
+            scoreColor = 'text-[#64748B] bg-[#F1F5F9] border-[#CBD5E1]';
+            barBg = 'bg-[#CBD5E1]';
+            numScore = 0;
+          } else {
+            const score = dim.score !== null && dim.score !== undefined ? dim.score : 0;
+            scoreText = `${score}/100`;
+            numScore = typeof score === 'number' ? score : 0;
+            if (numScore < 50) {
+              scoreColor = 'text-[#DC2626] bg-[#FEF2F2] border-[#FECACA]';
+              barBg = 'bg-[#DC2626]';
+            } else if (numScore < 80) {
+              scoreColor = 'text-[#D97706] bg-[#FFFBEB] border-[#FDE68A]';
+              barBg = 'bg-[#D97706]';
+            }
           }
-          const numScore = typeof score === 'number' ? score : 0;
+
+          const descText = dim.summary || dim.rationale || '';
 
           return `
             <div class="p-4 rounded-xl border border-[#E2E8F0] bg-white shadow-xs space-y-2.5">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-bold text-[#0F172A]">${escapeHtml(dim.dimension_name)}</span>
-                <span class="text-xs font-extrabold px-2 py-0.5 rounded border ${scoreColor}">${score}/100</span>
+                <span class="text-xs font-extrabold px-2 py-0.5 rounded border ${scoreColor}">${scoreText}</span>
               </div>
               <div class="w-full bg-[#E2E8F0] h-1.5 rounded-full overflow-hidden">
                 <div class="${barBg} h-1.5 rounded-full" style="width: ${numScore}%"></div>
               </div>
-              <p class="text-[11px] text-[#64748B] leading-relaxed">${escapeHtml(dim.rationale)}</p>
+              <p class="text-[11px] text-[#64748B] leading-relaxed">${escapeHtml(descText)}</p>
             </div>
           `;
         }).join('');
@@ -11176,7 +12987,11 @@
 
     try {
       showNotification('Generating technical assessment report...', 'info');
-      const res = await apiFetch(`/repositories/${state.currentRepoId}/discovery/report`);
+      let url = `/repositories/${state.currentRepoId}/discovery/report`;
+      if (state.currentSnapshotId) {
+        url += `?snapshot_id=${encodeURIComponent(state.currentSnapshotId)}`;
+      }
+      const res = await apiFetch(url);
       if (!res.ok) {
         throw new Error('Failed to retrieve assessment report');
       }
@@ -11188,21 +13003,40 @@
       }
 
       const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
+      const blobUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
+      link.href = blobUrl;
       const repoName = (state.currentRepoData?.name || 'repository').replace(/[^a-zA-Z0-9_-]/g, '_');
       link.setAttribute('download', `twincore-technical-assessment-${repoName}.md`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(blobUrl);
 
       showNotification('Technical assessment report downloaded successfully.', 'success');
     } catch (err) {
       console.error('Download report error:', err);
       showNotification(`Failed to export report: ${err.message}`, 'error');
     }
+  }
+
+  function selectSimulationCandidate(targetName) {
+    const compSelect = document.getElementById('sim-component-select');
+    if (compSelect) {
+      let found = false;
+      for (let opt of compSelect.options) {
+        if (opt.value === targetName || opt.text === targetName) {
+          compSelect.value = opt.value;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        const newOpt = new Option(targetName, targetName, true, true);
+        compSelect.add(newOpt);
+      }
+    }
+    executeOrchestratedSimulation(targetName);
   }
 
   window.TwinApp = {
@@ -11227,6 +13061,7 @@
     loadRuntimeView,
     loadIncidentsView,
     investigateIncident,
+    investigateOverview,
     openConnectModal,
     closeConnectModal,
     openIngestModal,
@@ -11250,6 +13085,7 @@
     selectDependencyComponent,
     loadSimulationView,
     runSimulationAction: executeOrchestratedSimulation,
+    selectSimulationCandidate,
     inspectScenario,
     Twin3D,
     openCommandPalette: () => window.openCommandPalette?.(),
@@ -11257,6 +13093,8 @@
     runTechnicalAssessment,
     filterDiscoveryFindings,
     downloadAssessmentReport,
+    switchEvidenceTab,
+    loadEvidenceView,
     openDisconnectModal,
     confirmDisconnectRepository,
     loadDemoSandbox: () => {
@@ -11300,6 +13138,10 @@
     downloadDemoEvidenceReport,
     openDemoExtensionModal,
     closeDemoExtensionModal,
+    openMobileSidebar,
+    closeMobileSidebar,
+    toggleMobileSidebar,
+    toggleDesktopSidebar,
   };
 
   // ====================================================================
@@ -11425,6 +13267,18 @@
     }
   };
 
+  const STAGE_VIEW_MAP = {
+    overview: 'overview',
+    repository: 'overview',
+    snapshot: 'changes',
+    extraction: 'components',
+    graph: 'architecture',
+    impact: 'impact',
+    simulation: 'simulation',
+    tests: 'tests',
+    report: 'evidence'
+  };
+
   function inspectWorkflowStage(stageId) {
     const stage = WORKFLOW_STAGES[stageId] || WORKFLOW_STAGES.overview;
     const modal = document.getElementById('modal-workflow-stage');
@@ -11452,6 +13306,25 @@
     if (elOutput) elOutput.textContent = stage.output;
     if (elEvidence) elEvidence.textContent = stage.evidence;
     if (elLimitations) elLimitations.textContent = stage.limitations;
+
+    // Dynamically wire action button to specific stage view
+    const actionBtn = document.getElementById('workflow-stage-modal-action-btn');
+    if (actionBtn) {
+      const targetView = STAGE_VIEW_MAP[stageId] || 'overview';
+      if (state.currentRepoId) {
+        actionBtn.innerHTML = `<span>Explore in ${targetView.charAt(0).toUpperCase() + targetView.slice(1)}</span><span class="material-symbols-outlined text-[14px]">arrow_forward</span>`;
+        actionBtn.onclick = () => {
+          closeWorkflowStageModal();
+          switchPrimaryView(targetView);
+        };
+      } else {
+        actionBtn.innerHTML = `<span>Explore in Demo</span><span class="material-symbols-outlined text-[14px]">arrow_forward</span>`;
+        actionBtn.onclick = () => {
+          closeWorkflowStageModal();
+          switchPrimaryView('demo');
+        };
+      }
+    }
 
     modal.style.display = 'flex';
   }
@@ -12892,12 +14765,77 @@ pytest tests/test_payment_service.py tests/test_order_service.py -v
     if (modal) modal.style.display = 'none';
   }
 
-  function openDemoInTwinExplorer() {
+  function selectSyntheticDemoProject(view) {
     showNotification('Opening synthetic Online Shopping Platform in TwinCore Explorer...', 'info');
     state.currentRepoId = 'synthetic-online-shop';
     state.currentSnapshotId = 'snap-demo-online-shop-v1';
-    switchPrimaryView('architecture');
+    switchPrimaryView(view || 'architecture');
+  }
+
+  function openDemoInTwinExplorer() {
+    selectSyntheticDemoProject('architecture');
+  }
+
+  // ====================================================================
+  // RESPONSIVE SIDEBAR DRAWER & DESKTOP COLLAPSE CONTROLLERS
+  // ====================================================================
+
+  function openMobileSidebar() {
+    document.body.classList.add('sidebar-mobile-open');
+    updateSidebarAriaState();
+    // Trap or set focus to close button for accessibility
+    setTimeout(() => {
+      document.getElementById('btn-close-sidebar-mobile')?.focus();
+    }, 50);
+  }
+
+  function closeMobileSidebar() {
+    document.body.classList.remove('sidebar-mobile-open');
+    updateSidebarAriaState();
+    // Return focus to menu toggle button
+    document.getElementById('btn-sidebar-toggle')?.focus();
+  }
+
+  function toggleMobileSidebar() {
+    if (document.body.classList.contains('sidebar-mobile-open')) {
+      closeMobileSidebar();
+    } else {
+      openMobileSidebar();
+    }
+  }
+
+  function toggleDesktopSidebar() {
+    const isCurrentlyCollapsed = document.body.classList.contains('sidebar-desktop-collapsed');
+    if (isCurrentlyCollapsed) {
+      document.body.classList.remove('sidebar-desktop-collapsed');
+      try { localStorage.setItem('sidebar_desktop_collapsed', 'false'); } catch (_) {}
+    } else {
+      document.body.classList.add('sidebar-desktop-collapsed');
+      try { localStorage.setItem('sidebar_desktop_collapsed', 'true'); } catch (_) {}
+    }
+    updateSidebarAriaState();
+
+    // Trigger canvas resize if on graph view so layout adjusts cleanly
+    if (state.currentPrimaryView === 'architecture') {
+      setTimeout(() => {
+        resizeCanvas?.();
+      }, 300);
+    }
+  }
+
+  function updateSidebarAriaState() {
+    const toggleBtn = document.getElementById('btn-sidebar-toggle');
+    if (!toggleBtn) return;
+
+    if (window.innerWidth < 1024) {
+      const isOpen = document.body.classList.contains('sidebar-mobile-open');
+      toggleBtn.setAttribute('aria-expanded', String(isOpen));
+      toggleBtn.setAttribute('aria-label', isOpen ? 'Close navigation sidebar' : 'Open navigation sidebar');
+    } else {
+      const isCollapsed = document.body.classList.contains('sidebar-desktop-collapsed');
+      toggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
+      toggleBtn.setAttribute('aria-label', isCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar');
+    }
   }
 
 })();
-

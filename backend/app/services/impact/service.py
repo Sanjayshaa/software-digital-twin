@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 from fastapi.encoders import jsonable_encoder
 
-from app.models.entities import Repository, RepositorySnapshot, AnalysisRun
+from app.models.entities import Repository, RepositorySnapshot, AnalysisRun, StructuralArtifact, ArtifactRelationship
 from app.services.impact.models import (
     ImpactConfig,
     ImpactResult,
@@ -19,6 +19,7 @@ from app.services.impact.models import (
     ImpactPath,
 )
 from app.services.impact.analyzer import change_impact_analyzer, ChangeImpactAnalyzer
+from app.services.impact.change_detector import change_detector, map_changes_to_proposed_mutations
 
 
 class ChangeImpactService:
@@ -84,6 +85,179 @@ class ChangeImpactService:
         db.commit()
 
         return result
+
+    def run_live_incremental_analysis(
+        self,
+        db: Session,
+        repository_id: str,
+        base_snapshot_id: Optional[str] = None,
+        config: Optional[ImpactConfig] = None,
+    ) -> Dict[str, Any]:
+        """
+        Detects live uncommitted modifications in the local working tree,
+        maps them to knowledge graph AST symbols, propagates blast radius through the Digital Twin,
+        and translates changed nodes into What-If simulation mutations.
+        """
+        repo = db.query(Repository).filter_by(id=repository_id).first()
+        if not repo:
+            raise ValueError(f"Repository '{repository_id}' not found.")
+
+        # 1. Resolve base snapshot
+        base_snap = None
+        if base_snapshot_id:
+            base_snap = db.query(RepositorySnapshot).filter_by(id=base_snapshot_id, repository_id=repo.id).first()
+        if not base_snap:
+            base_snap = (
+                db.query(RepositorySnapshot)
+                .filter_by(repository_id=repo.id)
+                .order_by(RepositorySnapshot.created_at.desc())
+                .first()
+            )
+
+        if not base_snap:
+            raise ValueError(f"No existing snapshot found for repository '{repo.name}'. Please ingest/analyze repository first.")
+
+        # 2. Detect live changes in working tree
+        change_set = change_detector.detect_live_changes(
+            db=db,
+            repository_id=repo.id,
+            base_snapshot_id=base_snap.id,
+        )
+
+        # 3. If zero uncommitted changes:
+        if change_set.is_verified_zero or not change_set.changes:
+            return {
+                "status": "VERIFIED_CLEAN",
+                "working_tree_status": "CLEAN",
+                "repository_id": repo.id,
+                "repository_name": repo.name,
+                "base_snapshot_id": base_snap.id,
+                "base_commit": base_snap.commit_hash,
+                "base_branch": base_snap.branch_name,
+                "message": change_set.message or "Working tree is clean. Zero uncommitted changes detected.",
+                "change_set": jsonable_encoder(change_set),
+                "impact_result": {
+                    "analysis_id": f"live_clean_{base_snap.id[:8]}",
+                    "status": "VERIFIED_CLEAN",
+                    "message": "Zero uncommitted changes to propagate.",
+                    "summary": {"total_affected": 0, "blast_radius_score": 0.0, "risk_level": "LOW"},
+                    "changes": [],
+                    "findings": [],
+                    "paths": [],
+                    "affected_categories": {
+                        "changed_artifacts": [],
+                        "affected_components": [],
+                        "affected_services": [],
+                        "affected_apis": [],
+                        "affected_processes": [],
+                        "affected_tests": [],
+                        "affected_database_entities": [],
+                    },
+                    "impact_tree": {"direct": [], "indirect": [], "tests": []},
+                },
+                "proposed_mutations": [],
+                "targeted_tests": [],
+                "affected_apis": [],
+                "affected_services": [],
+                "blast_radius_score": 0.0,
+                "risk_level": "LOW",
+                "total_affected_entities": 0,
+                "summary": {
+                    "working_tree_status": "CLEAN",
+                    "total_changed_items": 0,
+                    "symbol_level_changes": 0,
+                    "file_level_changes": 0,
+                    "blast_radius_score": 0.0,
+                    "risk_level": "LOW",
+                    "affected_tests_count": 0,
+                    "what_if_mutations_count": 0,
+                },
+            }
+
+        # 4. Load baseline graph nodes & edges
+        base_artifacts = db.query(StructuralArtifact).filter_by(snapshot_id=base_snap.id).all()
+        base_rels = db.query(ArtifactRelationship).filter_by(snapshot_id=base_snap.id).all()
+
+        # 5. Execute propagation across the Knowledge Graph
+        cfg = config or ImpactConfig(max_depth=5, include_tests=True, include_apis=True)
+        impact_result = self.analyzer.analyze(
+            db=db,
+            repository_id=repo.id,
+            base_snapshot_id=base_snap.id,
+            target_snapshot_id=f"{base_snap.id}:working-tree",
+            config=cfg,
+            change_set=change_set,
+            target_artifacts=base_artifacts,
+            target_rels=base_rels,
+            base_artifacts=base_artifacts,
+            base_rels=base_rels,
+        )
+
+        # 6. Convert to What-If proposed mutations
+        proposed_mutations = map_changes_to_proposed_mutations(change_set.changes)
+
+        affected_tests = impact_result.affected_categories.get("affected_tests", [])
+        affected_apis = impact_result.affected_categories.get("affected_apis", [])
+        affected_services = impact_result.affected_categories.get("affected_services", [])
+
+        # Persist AnalysisRun trace for reproducibility
+        try:
+            analysis_run = AnalysisRun(
+                id=impact_result.analysis_id,
+                project_id=repo.project_id,
+                repository_id=repo.id,
+                snapshot_id=base_snap.id,
+                run_type="live_incremental_impact",
+                status="COMPLETED",
+                files_scanned=len(change_set.changes),
+                artifacts_created=len(impact_result.findings),
+                relationships_created=len(impact_result.paths),
+                summary={
+                    "working_tree_status": "DIRTY",
+                    "total_changes": len(change_set.changes),
+                    "blast_radius_score": impact_result.summary.blast_radius_score,
+                    "risk_level": impact_result.summary.risk_level,
+                    "affected_tests_count": len(affected_tests),
+                    "what_if_mutations_count": len(proposed_mutations),
+                },
+                created_at=datetime.utcnow(),
+                completed_at=datetime.utcnow(),
+            )
+            db.add(analysis_run)
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        return {
+            "status": "SUCCESS",
+            "working_tree_status": "DIRTY",
+            "repository_id": repo.id,
+            "repository_name": repo.name,
+            "base_snapshot_id": base_snap.id,
+            "base_commit": base_snap.commit_hash,
+            "base_branch": base_snap.branch_name,
+            "message": change_set.message,
+            "change_set": jsonable_encoder(change_set),
+            "impact_result": jsonable_encoder(impact_result),
+            "proposed_mutations": proposed_mutations,
+            "targeted_tests": affected_tests,
+            "affected_apis": affected_apis,
+            "affected_services": affected_services,
+            "blast_radius_score": getattr(impact_result.summary, "blast_radius_score", 0.0) if hasattr(impact_result.summary, "blast_radius_score") else round(min(1.0, (impact_result.summary.unique_affected + impact_result.summary.multi_hop_affected) / 20.0), 2),
+            "risk_level": getattr(impact_result.summary, "risk_level", "LOW") if hasattr(impact_result.summary, "risk_level") else ("HIGH" if (impact_result.summary.unique_affected + impact_result.summary.multi_hop_affected) > 3 else "LOW"),
+            "total_affected_entities": impact_result.summary.unique_affected + impact_result.summary.multi_hop_affected,
+            "summary": {
+                "working_tree_status": "DIRTY",
+                "total_changed_items": len(change_set.changes),
+                "symbol_level_changes": change_set.summary.get("symbol_level_count", 0),
+                "file_level_changes": change_set.summary.get("file_level_count", 0),
+                "blast_radius_score": getattr(impact_result.summary, "blast_radius_score", 0.0) if hasattr(impact_result.summary, "blast_radius_score") else round(min(1.0, (impact_result.summary.unique_affected + impact_result.summary.multi_hop_affected) / 20.0), 2),
+                "risk_level": getattr(impact_result.summary, "risk_level", "LOW") if hasattr(impact_result.summary, "risk_level") else ("HIGH" if (impact_result.summary.unique_affected + impact_result.summary.multi_hop_affected) > 3 else "LOW"),
+                "affected_tests_count": len(affected_tests),
+                "what_if_mutations_count": len(proposed_mutations),
+            },
+        }
+
 
     def get_impact_analysis(
         self,

@@ -531,3 +531,38 @@ def test_phase_877_matrix_n_guest_ingestion_creates_isolated_tenant(db_session, 
     assert guest_repos[0]["id"] == new_repo_id
 
 
+def test_anonymous_cannot_access_impact_or_scenarios(db_session, cross_user_fixtures):
+    """
+    P1-ISO-01 Regression Test:
+    Verifies that unauthenticated / anonymous requests to impact-analysis
+    and scenario endpoints are strictly denied (404/401) and never resolve
+    private user-owned repositories.
+    """
+    f = cross_user_fixtures
+    # Unauthenticated request to impact-analysis on user_a's repo
+    resp_impact = client.get(
+        f"/repositories/{f['repo_a'].id}/impact-analysis",
+        params={
+            "base_snapshot_id": f["snap_a"].id,
+            "target_snapshot_id": f["snap_a"].id,
+        },
+    )
+    assert resp_impact.status_code in [401, 404], (
+        f"Anonymous caller must NOT access impact analysis of private repo (got {resp_impact.status_code})"
+    )
+
+    # Unauthenticated request to scenarios on user_a's repo
+    resp_scenarios = client.post(
+        f"/repositories/{f['repo_a'].id}/scenarios",
+        json={
+            "name": "Malicious Simulation",
+            "base_snapshot_id": f["snap_a"].id,
+            "proposed_changes": [],
+        },
+    )
+    assert resp_scenarios.status_code in [401, 404], (
+        f"Anonymous caller must NOT execute scenario simulations on private repo (got {resp_scenarios.status_code})"
+    )
+
+
+

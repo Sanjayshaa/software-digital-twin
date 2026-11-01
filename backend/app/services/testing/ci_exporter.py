@@ -7,7 +7,7 @@ from typing import Dict, Any, List
 import math
 
 
-def generate_ci_test_commands(affected_tests: List[Dict[str, Any]]) -> Dict[str, str]:
+def generate_ci_test_commands(affected_tests: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Extracts test target files/specs and builds executable commands for major test runners.
     """

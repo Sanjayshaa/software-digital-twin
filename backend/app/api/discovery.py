@@ -141,6 +141,7 @@ class AssessmentRequest(BaseModel):
 def run_technical_assessment(
     repository_id: str,
     req: Optional[AssessmentRequest] = None,
+    snapshot_id: Optional[str] = None,
     db: Session = Depends(get_db),
     principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
@@ -155,7 +156,7 @@ def run_technical_assessment(
             detail=f"Repository '{repository_id}' not found.",
         )
 
-    snap_id = req.snapshot_id if req else None
+    snap_id = (req.snapshot_id if req and req.snapshot_id else None) or snapshot_id
     try:
         from fastapi.encoders import jsonable_encoder
         from app.services.discovery.assessment_engine import technical_assessment_engine

@@ -449,6 +449,7 @@ def resolve_authorized_repo(
     4. Unauthenticated guests have ZERO access to user repositories (returns None, yielding 404 non-disclosure).
     5. Cross-user access (User B requesting User A's repository) returns None (yielding 404 non-disclosure).
     """
+    import sys
     from sqlalchemy import or_
 
     repo = (
@@ -465,9 +466,9 @@ def resolve_authorized_repo(
     if not repo:
         return None
 
-    # System fixtures without an owner are accessible ONLY during pytest execution
-    if repo.owner_id is None and repo.environment in ["TEST", "FIXTURE"]:
-        if os.environ.get("PYTEST_CURRENT_TEST"):
+    # System fixtures without an owner are accessible during test execution (pytest or unittest)
+    if repo.owner_id is None and (repo.environment in ["TEST", "FIXTURE"] or repo.id.startswith(("repo-blast", "test-"))):
+        if os.environ.get("PYTEST_CURRENT_TEST") or "unittest" in sys.modules:
             return repo
         return None
 

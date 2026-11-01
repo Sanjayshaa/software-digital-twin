@@ -8,7 +8,7 @@ and synthesizes a prioritized advisory remediation roadmap.
 import os
 import uuid
 from typing import List, Dict, Any, Optional, Set, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import deque
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -110,7 +110,7 @@ class TechnicalAssessmentEngine:
         roadmap = self._synthesize_roadmap(findings, completeness)
 
         # 4. Generate Executive Summary & Markdown Report
-        summary, markdown_report = self._generate_report(repo, snap, completeness, scores, findings, roadmap)
+        summary, markdown_report, overall_health_score = self._generate_report(repo, snap, completeness, scores, findings, roadmap, artifacts=artifacts)
 
         assessment_id = f"assess_{uuid.uuid4().hex[:12]}"
         result = TechnicalAssessmentResult(
@@ -119,9 +119,10 @@ class TechnicalAssessmentEngine:
             repository_name=repo.name,
             snapshot_id=snap.id,
             commit_hash=snap.commit_hash or "HEAD",
-            assessed_at=datetime.utcnow().isoformat(),
+            assessed_at=datetime.now(timezone.utc).isoformat(),
             completeness=completeness,
             dimensional_scores=scores,
+            overall_health_score=overall_health_score,
             findings=findings,
             roadmap=roadmap,
             executive_summary=summary,
@@ -207,6 +208,9 @@ class TechnicalAssessmentEngine:
             status = DiscoveryStatus.COMPLETE
             explanation = f"Complete discovery: {files_analyzed_count} files analyzed, {symbols_count} symbols, {rels_count} relationships."
 
+        final_cov = min(cov_pct, 100.0)
+        test_ratio = round(tests_linked / max(tests_count, 1), 2) if tests_count > 0 else 0.0
+
         return DiscoveryCompleteness(
             status=status,
             files_discovered=total_discovered,
@@ -218,7 +222,9 @@ class TechnicalAssessmentEngine:
             relationships_extracted=rels_count,
             tests_discovered=tests_count,
             tests_linked=tests_linked,
-            coverage_percentage=min(cov_pct, 100.0),
+            coverage_percentage=final_cov,
+            code_coverage_pct=final_cov,
+            test_to_component_ratio=test_ratio,
             unsupported_extensions=sorted(list(unsupported_exts))[:10],
             explanation=explanation,
         )
@@ -277,14 +283,23 @@ class TechnicalAssessmentEngine:
                     recommended_action=f"Extract shared interface or introduce mediator service to decouple '{name_a}' and '{name_b}'.",
                 ))
 
-        arch_score = max(100.0 - (len(cycles) * 15.0), 30.0) if artifacts else 100.0
-        dim_arch = DimensionalScore(
-            dimension_name="Architecture & Modularity",
-            score=arch_score,
-            status="HEALTHY" if arch_score >= 80 else ("ATTENTION" if arch_score >= 50 else "AT_RISK"),
-            summary=f"{len(cycles)} circular dependencies detected across {len(artifacts)} structural entities.",
-            key_metrics={"circular_cycles_count": len(cycles), "total_entities": len(artifacts)},
-        )
+        if not artifacts or completeness.coverage_percentage == 0.0:
+            dim_arch = DimensionalScore(
+                dimension_name="Architecture & Modularity",
+                score=0.0,
+                status="UNKNOWN",
+                summary="Source code AST unextracted (0 structural entities). Modularity is unobserved.",
+                key_metrics={"circular_cycles_count": 0, "total_entities": 0},
+            )
+        else:
+            arch_score = max(100.0 - (len(cycles) * 15.0), 30.0)
+            dim_arch = DimensionalScore(
+                dimension_name="Architecture & Modularity",
+                score=arch_score,
+                status="HEALTHY" if arch_score >= 80 else ("ATTENTION" if arch_score >= 50 else "AT_RISK"),
+                summary=f"{len(cycles)} circular dependencies detected across {len(artifacts)} structural entities.",
+                key_metrics={"circular_cycles_count": len(cycles), "total_entities": len(artifacts)},
+            )
 
         # --- DIMENSION 2: Dependency & Coupling ---
         god_components = []
@@ -311,14 +326,23 @@ class TechnicalAssessmentEngine:
                 recommended_action=f"Refactor '{g_art.name}' by segregating responsibilities into cohesive sub-services.",
             ))
 
-        coupling_score = max(100.0 - (len(god_components) * 12.0), 40.0) if artifacts else 100.0
-        dim_coupling = DimensionalScore(
-            dimension_name="Dependency & Coupling",
-            score=coupling_score,
-            status="HEALTHY" if coupling_score >= 80 else ("ATTENTION" if coupling_score >= 50 else "AT_RISK"),
-            summary=f"{len(god_components)} high-coupling hotspot components identified with fan-out >= 12.",
-            key_metrics={"high_coupling_components_count": len(god_components)},
-        )
+        if not artifacts or completeness.coverage_percentage == 0.0:
+            dim_coupling = DimensionalScore(
+                dimension_name="Dependency & Coupling",
+                score=0.0,
+                status="UNKNOWN",
+                summary="Source code AST unextracted. Component coupling is unobserved.",
+                key_metrics={"high_coupling_components_count": 0},
+            )
+        else:
+            coupling_score = max(100.0 - (len(god_components) * 12.0), 40.0)
+            dim_coupling = DimensionalScore(
+                dimension_name="Dependency & Coupling",
+                score=coupling_score,
+                status="HEALTHY" if coupling_score >= 80 else ("ATTENTION" if coupling_score >= 50 else "AT_RISK"),
+                summary=f"{len(god_components)} high-coupling hotspot components identified with fan-out >= 12.",
+                key_metrics={"high_coupling_components_count": len(god_components)},
+            )
 
         # --- DIMENSION 3: API & Interface Relationships ---
         endpoints = [a for a in artifacts if a.artifact_type in ("API_ENDPOINT", "ENDPOINT") or "/api/" in (a.location or "")]
@@ -342,14 +366,31 @@ class TechnicalAssessmentEngine:
                     recommended_action="Verify if endpoint is called externally; if obsolete, deprecate or add integration tests.",
                 ))
 
-        api_score = 90.0 if not endpoints else max(100.0 - (len(orphaned_apis) * 5.0), 60.0)
-        dim_api = DimensionalScore(
-            dimension_name="API & Interface Exposure",
-            score=api_score,
-            status="HEALTHY" if api_score >= 80 else "ATTENTION",
-            summary=f"{len(endpoints)} API endpoints discovered; {len(orphaned_apis)} have zero internal callers.",
-            key_metrics={"total_endpoints": len(endpoints), "uncalled_endpoints": len(orphaned_apis)},
-        )
+        if not artifacts or completeness.coverage_percentage == 0.0:
+            dim_api = DimensionalScore(
+                dimension_name="API & Interface Exposure",
+                score=0.0,
+                status="UNKNOWN",
+                summary="Source code AST unextracted. API endpoints are unobserved.",
+                key_metrics={"total_endpoints": 0, "uncalled_endpoints": 0},
+            )
+        elif not endpoints:
+            dim_api = DimensionalScore(
+                dimension_name="API & Interface Exposure",
+                score=70.0,
+                status="ATTENTION",
+                summary="0 API endpoints discovered or declared in the structural twin.",
+                key_metrics={"total_endpoints": 0, "uncalled_endpoints": 0},
+            )
+        else:
+            api_score = max(100.0 - (len(orphaned_apis) * 5.0), 60.0)
+            dim_api = DimensionalScore(
+                dimension_name="API & Interface Exposure",
+                score=api_score,
+                status="HEALTHY" if api_score >= 80 else "ATTENTION",
+                summary=f"{len(endpoints)} API endpoints discovered; {len(orphaned_apis)} have zero internal callers.",
+                key_metrics={"total_endpoints": len(endpoints), "uncalled_endpoints": len(orphaned_apis)},
+            )
 
         # --- DIMENSION 4: Test Inventory & Linkage Gaps ---
         tests_count = completeness.tests_discovered
@@ -375,14 +416,26 @@ class TechnicalAssessmentEngine:
                 recommended_action="Prioritize unit test suite construction for untested services and controllers.",
             ))
 
-        test_ratio = len(tested_entities) / max(len(core_components), 1)
-        test_score = round(min(test_ratio * 100.0, 100.0), 1) if core_components else 100.0
+        if tests_count == 0:
+            test_score = 0.0
+            test_status = "AT_RISK"
+            summary_tests = "0 tests discovered. Automated regression protection is completely absent."
+        elif not core_components:
+            test_score = 50.0
+            test_status = "ATTENTION"
+            summary_tests = f"{tests_count} tests discovered, but no core components identified to link against."
+        else:
+            test_ratio = len(tested_entities) / max(len(core_components), 1)
+            test_score = round(min(test_ratio * 100.0, 100.0), 1)
+            test_status = "HEALTHY" if test_score >= 75 else ("ATTENTION" if test_score >= 40 else "AT_RISK")
+            summary_tests = f"{tests_count} tests discovered, {tests_linked} relationships mapped. {len(untested_core)} core components currently lack verified test coverage."
+
         dim_tests = DimensionalScore(
             dimension_name="Testing Inventory & Coverage Gaps",
             score=test_score,
-            status="HEALTHY" if test_score >= 75 else ("ATTENTION" if test_score >= 40 else "AT_RISK"),
-            summary=f"{tests_count} tests discovered, {tests_linked} relationships mapped. {len(untested_core)} core components currently lack verified test coverage.",
-            key_metrics={"tests_discovered": tests_count, "tests_linked": tests_linked, "untested_components": len(untested_core)},
+            status=test_status,
+            summary=summary_tests,
+            key_metrics={"tests_discovered": tests_count, "tests_linked": tests_linked, "untested_components": len(untested_core) if core_components else 0},
         )
 
         # --- DIMENSION 5: Change Impact Exposure ---
@@ -421,14 +474,23 @@ class TechnicalAssessmentEngine:
                 recommended_action=f"Implement facade or anti-corruption layer to constrain '{b_art.name}' blast radius.",
             ))
 
-        impact_score = max(100.0 - (len(deep_blast_components) * 10.0), 40.0) if artifacts else 100.0
-        dim_impact = DimensionalScore(
-            dimension_name="Change Impact Exposure",
-            score=impact_score,
-            status="HEALTHY" if impact_score >= 80 else ("ATTENTION" if impact_score >= 50 else "AT_RISK"),
-            summary=f"{len(deep_blast_components)} components exhibit high blast-radius propagation depth (depth >= 4 or nodes >= 15).",
-            key_metrics={"deep_blast_components_count": len(deep_blast_components)},
-        )
+        if not artifacts or completeness.coverage_percentage == 0.0:
+            dim_impact = DimensionalScore(
+                dimension_name="Change Impact Exposure",
+                score=0.0,
+                status="UNKNOWN",
+                summary="Source code AST unextracted. Change blast radius is unobserved.",
+                key_metrics={"deep_blast_components_count": 0},
+            )
+        else:
+            impact_score = max(100.0 - (len(deep_blast_components) * 10.0), 40.0)
+            dim_impact = DimensionalScore(
+                dimension_name="Change Impact Exposure",
+                score=impact_score,
+                status="HEALTHY" if impact_score >= 80 else ("ATTENTION" if impact_score >= 50 else "AT_RISK"),
+                summary=f"{len(deep_blast_components)} components exhibit high blast-radius propagation depth (depth >= 4 or nodes >= 15).",
+                key_metrics={"deep_blast_components_count": len(deep_blast_components)},
+            )
 
         # --- DIMENSION 6: Configuration & Build Management ---
         conf_findings = []
@@ -490,31 +552,40 @@ class TechnicalAssessmentEngine:
         runtime_events = db.query(RuntimeEvent).filter_by(repository_id=repo.id).all() if repo.id else []
         error_events = [e for e in runtime_events if (e.event_type or "").upper() in ("ERROR", "EXCEPTION", "CRASH")]
 
-        if error_events:
-            findings.append(AssessmentFinding(
-                finding_id="FIND-RNTM-ERRORS-001",
-                category=FindingCategory.RUNTIME_INCIDENT,
-                severity=FindingSeverity.HIGH,
-                title=f"Active Runtime Exceptions Observed ({len(error_events)} Events)",
-                description=f"The runtime telemetry ledger recorded {len(error_events)} error/exception events linked to components in this repository.",
-                rationale="Runtime exceptions point to active instability under live operational traffic.",
-                affected_entities=list({e.service_name for e in error_events if e.service_name})[:5],
-                affected_files=[],
-                evidence_references=[{"error_event_count": len(error_events)}],
-                detection_method="runtime_telemetry_correlation",
-                confidence=1.0,
-                known_limitations="Requires continuous runtime event stream ingestion.",
-                recommended_action="Inspect correlated incident traces and harden error recovery in affected services.",
-            ))
+        if not runtime_events and not incidents:
+            dim_runtime = DimensionalScore(
+                dimension_name="Runtime & Incident Evidence",
+                score=0.0,
+                status="UNKNOWN",
+                summary="Telemetry source disconnected (0 events recorded). Operational health is unobserved.",
+                key_metrics={"incidents_count": 0, "runtime_errors_count": 0, "telemetry_connected": False},
+            )
+        else:
+            if error_events:
+                findings.append(AssessmentFinding(
+                    finding_id="FIND-RNTM-ERRORS-001",
+                    category=FindingCategory.RUNTIME_INCIDENT,
+                    severity=FindingSeverity.HIGH,
+                    title=f"Active Runtime Exceptions Observed ({len(error_events)} Events)",
+                    description=f"The runtime telemetry ledger recorded {len(error_events)} error/exception events linked to components in this repository.",
+                    rationale="Runtime exceptions point to active instability under live operational traffic.",
+                    affected_entities=list({e.service_name for e in error_events if e.service_name})[:5],
+                    affected_files=[],
+                    evidence_references=[{"error_event_count": len(error_events)}],
+                    detection_method="runtime_telemetry_correlation",
+                    confidence=1.0,
+                    known_limitations="Requires continuous runtime event stream ingestion.",
+                    recommended_action="Inspect correlated incident traces and harden error recovery in affected services.",
+                ))
 
-        runtime_score = max(100.0 - (len(error_events) * 10.0) - (len(incidents) * 15.0), 30.0)
-        dim_runtime = DimensionalScore(
-            dimension_name="Runtime & Incident Evidence",
-            score=runtime_score,
-            status="HEALTHY" if runtime_score >= 80 else ("ATTENTION" if runtime_score >= 50 else "AT_RISK"),
-            summary=f"{len(incidents)} incidents and {len(error_events)} runtime exception events recorded.",
-            key_metrics={"incidents_count": len(incidents), "runtime_errors_count": len(error_events)},
-        )
+            runtime_score = max(100.0 - (len(error_events) * 10.0) - (len(incidents) * 15.0), 30.0)
+            dim_runtime = DimensionalScore(
+                dimension_name="Runtime & Incident Evidence",
+                score=runtime_score,
+                status="HEALTHY" if runtime_score >= 80 else ("ATTENTION" if runtime_score >= 50 else "AT_RISK"),
+                summary=f"{len(incidents)} incidents and {len(error_events)} runtime exception events recorded.",
+                key_metrics={"incidents_count": len(incidents), "runtime_errors_count": len(error_events), "telemetry_connected": True},
+            )
 
         # --- DIMENSION 9: Analysis Completeness & Confidence ---
         comp_score = completeness.coverage_percentage
@@ -605,15 +676,39 @@ class TechnicalAssessmentEngine:
         scores: List[DimensionalScore],
         findings: List[AssessmentFinding],
         roadmap: List[RoadmapRecommendation],
-    ) -> Tuple[str, str]:
-        """Generates executive summary and comprehensive sanitized markdown engineering report."""
-        avg_score = round(sum(s.score for s in scores) / len(scores), 1) if scores else 0.0
+        artifacts: Optional[List[StructuralArtifact]] = None,
+    ) -> Tuple[str, str, float]:
+        """Generates executive summary, comprehensive sanitized markdown engineering report, and overall health score."""
+        arts = artifacts or []
+        observed_scores = [s.score for s in scores if s.status != "UNKNOWN"]
+        if not observed_scores or completeness.coverage_percentage == 0.0 or completeness.files_analyzed == 0:
+            overall_health_score = 0.0
+        else:
+            base_avg = sum(observed_scores) / len(observed_scores)
+            scaled_score = base_avg * (min(completeness.coverage_percentage, 100.0) / 100.0)
+            dim_test = next((s for s in scores if s.dimension_name == "Testing Inventory & Coverage Gaps"), None)
+            if completeness.tests_discovered == 0 or (dim_test and dim_test.score == 0.0):
+                scaled_score = min(scaled_score, 45.0)
+            overall_health_score = round(scaled_score, 1)
+
+        from app.services.discovery.project_overview import (
+            extract_project_purpose,
+            extract_entry_points,
+            extract_service_and_api_inventory,
+            extract_database_entities,
+        )
+
+        project_purpose = extract_project_purpose(repo.local_path, default_name=repo.name)
+        entry_points = extract_entry_points(repo.local_path, arts)
+        api_inventory = extract_service_and_api_inventory(arts)
+        db_entities = extract_database_entities(arts)
 
         summary = (
             f"Technical Health Assessment for '{repo.name}' (Revision: {snap.commit_hash[:8] if snap.commit_hash else 'HEAD'}). "
+            f"Purpose: {project_purpose} "
             f"Discovery Status: {completeness.status.value} ({completeness.coverage_percentage}% code coverage across {completeness.files_analyzed} files). "
-            f"Average Technical Health Score: {avg_score}/100. "
-            f"Identified {len(findings)} findings ({sum(1 for f in findings if f.severity in (FindingSeverity.CRITICAL, FindingSeverity.HIGH))} Critical/High) "
+            f"Overall Technical Health Score: {overall_health_score}/100. "
+            f"Identified {len(findings)} confirmed findings ({sum(1 for f in findings if f.severity in (FindingSeverity.CRITICAL, FindingSeverity.HIGH))} Critical/High) "
             f"and synthesized {len(roadmap)} prioritized advisory remediation roadmap recommendations."
         )
 
@@ -623,40 +718,102 @@ class TechnicalAssessmentEngine:
             f"**Repository:** `{repo.name}` (`{repo.id}`)  ",
             f"**Revision Commit SHA:** `{snap.commit_hash or 'N/A'}`  ",
             f"**Assessment ID:** `assess_{snap.id[:8]}`  ",
-            f"**Generated At:** `{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}`  ",
+            f"**Generated At:** `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}`  ",
             f"**Discovery Status:** `{completeness.status.value}` ({completeness.coverage_percentage}% AST Coverage)  ",
             "",
             "---",
             "",
-            "## 1. Executive Summary",
+            "## 1. Executive Summary & Project Purpose",
+            "",
+            f"> **Project Purpose:** {project_purpose}",
             "",
             summary,
             "",
             "---",
             "",
-            "## 2. Discovery Scope & Completeness",
+            "## 2. Tech-Stack & Build Environment",
             "",
-            "| Discovery Dimension | Metric | Detail |",
-            "| :--- | :---: | :--- |",
-            f"| **Files Discovered** | `{completeness.files_discovered}` | Total scanned repository files |",
-            f"| **Files Analyzed (AST)** | `{completeness.files_analyzed}` | Verified parsed source files |",
-            f"| **Files Skipped** | `{completeness.files_skipped}` | Binary, vendor, or generated assets |",
-            f"| **Unsupported Files** | `{completeness.files_unsupported}` | Non-code or unsupported language extensions |",
-            f"| **Extracted Symbols** | `{completeness.symbols_extracted}` | Classes, interfaces, functions, services |",
-            f"| **Indexed Relationships** | `{completeness.relationships_extracted}` | Calls, imports, dependencies, tests |",
-            f"| **Discovered Tests** | `{completeness.tests_discovered}` | Identified test suites and test cases |",
-            f"| **Linked Tests** | `{completeness.tests_linked}` | Deterministically mapped to tested components |",
-            "",
-            f"> [!NOTE]",
-            f"> **Discovery Note:** {completeness.explanation}",
+            f"- **Analyzed AST Coverage:** `{completeness.coverage_percentage}%` across `{completeness.files_analyzed}` files.",
+            f"- **Extracted Symbols:** `{completeness.symbols_extracted}` classes, functions, and modules.",
+            f"- **Indexed Dependency Links:** `{completeness.relationships_extracted}` call, import, and inheritance edges.",
             "",
             "---",
             "",
-            "## 3. 9-Dimensional Technical Health Scorecard",
+            "## 3. Important Entry Points & Architecture Inventory",
+            "",
+        ]
+
+        if entry_points:
+            md_lines.extend([
+                "### Primary Entry Points",
+                "| File / Artifact | Technical Role | Type |",
+                "| :--- | :--- | :---: |",
+            ])
+            for ep in entry_points:
+                md_lines.append(f"| `{ep['file_path']}` | {ep['role']} | `{ep['type']}` |")
+            md_lines.append("")
+
+        if api_inventory:
+            md_lines.extend([
+                f"### Discovered API Endpoints & Routes ({len(api_inventory)})",
+                "| Method | Path / Endpoint | Source Location | Confidence |",
+                "| :---: | :--- | :--- | :---: |",
+            ])
+            for api in api_inventory[:15]:
+                md_lines.append(f"| `{api['http_method']}` | `{api['path']}` | `{api['location']}` | `{api['confidence']}` |")
+            if len(api_inventory) > 15:
+                md_lines.append(f"\n_... and {len(api_inventory) - 15} additional API endpoints indexed in knowledge graph._")
+            md_lines.append("")
+
+        if db_entities:
+            md_lines.extend([
+                f"### Database Entities & Data Models ({len(db_entities)})",
+                "| Entity Name | Qualified Name | Source Location |",
+                "| :--- | :--- | :--- |",
+            ])
+            for dbe in db_entities[:15]:
+                md_lines.append(f"| `{dbe['name']}` | `{dbe['qualified_name']}` | `{dbe['location']}` |")
+            md_lines.append("")
+
+        md_lines.extend([
+            "---",
+            "",
+            "## 4. Test Report & Verification Status",
+            "",
+        ])
+
+        if completeness.tests_discovered == 0:
+            md_lines.extend([
+                "> [!WARNING]",
+                "> **TEST COVERAGE STATUS: UNKNOWN / UNMEASURED**  ",
+                "> Zero automated unit or integration tests were detected in this repository snapshot. "
+                "0 affected tests does NOT demonstrate change safety; regression protection is currently unmeasured.",
+                "",
+                f"| Metric | Value | Provenance |",
+                f"| :--- | :---: | :--- |",
+                f"| **Discovered Tests** | `0` | Test runner / AST discovery |",
+                f"| **Linked Test Suites** | `0` | Graph relationship resolution |",
+                f"| **Coverage Protection Ratio** | `0.00` | Unmeasured |",
+                "",
+            ])
+        else:
+            md_lines.extend([
+                f"| Metric | Value | Detail |",
+                f"| :--- | :---: | :--- |",
+                f"| **Discovered Tests** | `{completeness.tests_discovered}` | Discovered test cases/suites |",
+                f"| **Linked Tests** | `{completeness.tests_linked}` | Linked to tested target components |",
+                f"| **Coverage Ratio** | `{(completeness.tests_linked / max(completeness.tests_discovered, 1)):.2f}` | Mapped linkage density |",
+                "",
+            ])
+
+        md_lines.extend([
+            "---",
+            "",
+            "## 5. 9-Dimensional Technical Health Scorecard",
             "",
             "| Technical Dimension | Score | Status | Key Evaluation Summary |",
             "| :--- | :---: | :---: | :--- |",
-        ]
+        ])
 
         for s in scores:
             status_badge = f"**{s.status}**"
@@ -666,7 +823,7 @@ class TechnicalAssessmentEngine:
             "",
             "---",
             "",
-            f"## 4. Prioritized Findings ({len(findings)} Detected)",
+            f"## 6. Confirmed Findings ({len(findings)} Detected with File & Line Citations)",
             "",
         ])
 
@@ -674,10 +831,12 @@ class TechnicalAssessmentEngine:
             md_lines.append("_No critical architectural, coupling, or testing findings identified._\n")
         else:
             for f in findings:
+                files_str = ', '.join(f'`{fl}`' for fl in f.affected_files if fl) if f.affected_files else 'Repository-wide'
                 md_lines.extend([
                     f"### [{f.severity.value}] {f.title}",
                     f"- **Finding ID:** `{f.finding_id}`",
                     f"- **Category:** `{f.category.value}`",
+                    f"- **Source File / Location:** {files_str}",
                     f"- **Detection Method:** `{f.detection_method}` (Confidence: `{f.confidence}`)",
                     f"- **Affected Entities:** {', '.join(f'`{e}`' for e in f.affected_entities) if f.affected_entities else 'None'}",
                     f"- **Description:** {f.description}",
@@ -687,10 +846,26 @@ class TechnicalAssessmentEngine:
                     "",
                 ])
 
+        # Explicit Unanalyzed / Unknown Evidence Section
         md_lines.extend([
             "---",
             "",
-            f"## 5. Advisory Remediation Roadmap ({len(roadmap)} Recommendations)",
+            "## 7. Not Analyzed / Unknown Evidence Ledger",
+            "",
+            "> [!NOTE]",
+            "> **Uncertainty Boundary:** The following elements represent areas where evidence was unobserved, unindexed, or outside static AST analysis bounds. These are NOT confirmed defects, but unverified operational aspects.",
+            "",
+            f"- **Skipped / Vendor Assets:** `{completeness.files_skipped}` files were excluded from AST parsing (vendor packages, node_modules, binaries, build caches).",
+            f"- **Unsupported Language Extensions:** `{completeness.files_unsupported}` files could not be parsed by deep semantic AST analyzers.",
+            f"- **Dynamic Runtime Dispatch:** Dynamic reflection, runtime RPC lookups, and string-based event triggers are not tracked by static graph traversal.",
+            f"- **Test Execution Telemetry:** Automated test execution logs (pass/fail history) require CI/CD integration.",
+            "",
+        ])
+
+        md_lines.extend([
+            "---",
+            "",
+            f"## 8. Advisory Remediation Roadmap ({len(roadmap)} Recommendations)",
             "",
             "> [!IMPORTANT]",
             "> **Governance Rule:** The remediation roadmap is advisory and strictly non-destructive. No source code modifications or git commits are performed without explicit engineer authorization.",
@@ -722,7 +897,7 @@ class TechnicalAssessmentEngine:
 
         full_markdown = "\n".join(md_lines)
         sanitized_markdown, _ = self.sanitizer.sanitize_text(full_markdown)
-        return summary, sanitized_markdown
+        return summary, sanitized_markdown, overall_health_score
 
     def _persist_assessment(
         self,
@@ -746,16 +921,16 @@ class TechnicalAssessmentEngine:
                     "repository_id": repo.id,
                     "snapshot_id": snap.id,
                     "commit_hash": result.commit_hash,
-                    "completeness": result.completeness.dict(),
+                    "completeness": result.completeness.model_dump() if hasattr(result.completeness, "model_dump") else result.completeness.dict(),
                     "findings_count": len(result.findings),
                     "roadmap_count": len(result.roadmap),
                     "executive_summary": result.executive_summary,
-                    "dimensional_scores": [s.dict() for s in result.dimensional_scores],
+                    "dimensional_scores": [s.model_dump() if hasattr(s, "model_dump") else s.dict() for s in result.dimensional_scores],
                     "report_markdown": result.report_markdown,
                 },
                 artifacts_created=len(result.findings),
                 errors=[],
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc),
             )
             db.merge(analysis_run)
             db.commit()

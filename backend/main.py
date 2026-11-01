@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 logger = logging.getLogger(__name__)
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.health import router as health_router
@@ -161,9 +161,26 @@ def serve_terms():
     raise HTTPException(status_code=404, detail="Terms of Service not found.")
 
 
+@app.get("/landing", response_class=FileResponse, tags=["Web UI"])
+def serve_landing():
+    landing_file = os.path.join(static_dir, "landing.html")
+    if os.path.exists(landing_file):
+        return FileResponse(landing_file)
+    return RedirectResponse(url="/")
+
+
 @app.get("/login", response_class=FileResponse, tags=["Web UI"])
 @app.get("/signin", response_class=FileResponse, tags=["Web UI"])
 def serve_login():
+    login_file = os.path.join(static_dir, "login.html")
+    if os.path.exists(login_file):
+        return FileResponse(login_file)
+    return RedirectResponse(url="/app")
+
+
+@app.get("/register", response_class=FileResponse, tags=["Web UI"])
+@app.get("/signup", response_class=FileResponse, tags=["Web UI"])
+def serve_register():
     login_file = os.path.join(static_dir, "login.html")
     if os.path.exists(login_file):
         return FileResponse(login_file)
@@ -182,16 +199,23 @@ def favicon():
     from fastapi.responses import Response
     return Response(status_code=204)
 
-# Root route
+# Root route: Serves public landing page to browsers; JSON API health metadata to REST callers
 @app.get("/", tags=["System"])
 def root(request: Request):
     accept = request.headers.get("accept", "")
     if "text/html" in accept and "application/json" not in accept and not accept.startswith("*/*"):
+        landing_file = os.path.join(static_dir, "landing.html")
+        if os.path.exists(landing_file):
+            return FileResponse(landing_file)
         return RedirectResponse(url="/app")
     return {
         "name": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "ui": "/app",
+        "demo": "/demo",
+        "landing": "/",
+        "login": "/login",
+        "register": "/register",
         "docs": "/docs",
         "health": "/health",
         "ready": "/ready",
@@ -262,6 +286,16 @@ def ensure_vendor_assets():
             log.info("Successfully cached OrbitControls.js locally (%d bytes)", len(content))
         except Exception as e:
             log.warning("Could not download OrbitControls.js: %s", e)
+
+
+@app.on_event("startup")
+def bootstrap_database_schema():
+    """Ensures database schema columns are widened for structural artifacts and symbols."""
+    try:
+        from app.core.database import ensure_database_schema_compatibility
+        ensure_database_schema_compatibility()
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Database schema bootstrap warning: %s", exc)
 
 
 @app.on_event("startup")

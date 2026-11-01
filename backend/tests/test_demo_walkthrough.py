@@ -20,7 +20,7 @@ import unittest
 if sys.version_info < (3, 11):
     venv_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".venv", "bin", "python3"))
     if os.path.exists(venv_py):
-        os.execv(venv_py, [venv_py, "-m", "unittest", os.path.abspath(__file__)])
+        os.execv(venv_py, [venv_py, "-m", "unittest"] + sys.argv[1:])
 
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if backend_dir not in sys.path:
@@ -169,6 +169,62 @@ class TestDemoWalkthrough(unittest.TestCase):
         res = self.client.get("/demo")
         self.assertEqual(res.status_code, 200)
         self.assertIn("text/html", res.headers.get("content-type", ""))
+
+    def test_full_twin_graph_projection_endpoint(self):
+        """GET /repositories/repo-demo-ecommerce-001/graph serves non-empty projection for Architecture view."""
+        # Level 1 (Macro): 6 services
+        res_l1 = self.client.get("/repositories/repo-demo-ecommerce-001/graph?level=1")
+        self.assertEqual(res_l1.status_code, 200)
+        data_l1 = res_l1.json()
+        self.assertTrue(data_l1["is_demo"])
+        self.assertEqual(len(data_l1["nodes"]), 6)
+        self.assertTrue(all(n["category"] == "service" for n in data_l1["nodes"]))
+
+        # Level 2 (Components): 16 nodes (services + apis + databases)
+        res_l2 = self.client.get("/repositories/repo-demo-ecommerce-001/graph?level=2")
+        self.assertEqual(res_l2.status_code, 200)
+        data_l2 = res_l2.json()
+        self.assertEqual(len(data_l2["nodes"]), 16)
+        self.assertGreater(len(data_l2["edges"]), 0)
+
+        # Level 3 (Micro / All): 22 nodes
+        res_l3 = self.client.get("/repositories/repo-demo-ecommerce-001/graph?level=3")
+        self.assertEqual(res_l3.status_code, 200)
+        data_l3 = res_l3.json()
+        self.assertEqual(len(data_l3["nodes"]), 22)
+        self.assertEqual(len(data_l3["edges"]), 22)
+        # Verify schema
+        first_node = data_l3["nodes"][0]
+        self.assertIn("id", first_node)
+        self.assertIn("name", first_node)
+        self.assertIn("type", first_node)
+        self.assertIn("verification_status", first_node)
+
+        # Alias synthetic-online-shop returns identical valid projection
+        res_alias = self.client.get("/repositories/synthetic-online-shop/graph?level=2")
+        self.assertEqual(res_alias.status_code, 200)
+        self.assertEqual(len(res_alias.json()["nodes"]), 16)
+
+        # File tree, overview, components, and snapshots
+        res_tree = self.client.get("/repositories/repo-demo-ecommerce-001/file-tree")
+        self.assertEqual(res_tree.status_code, 200)
+        self.assertIn("children", res_tree.json())
+
+        res_ov = self.client.get("/repositories/repo-demo-ecommerce-001/overview")
+        self.assertEqual(res_ov.status_code, 200)
+        self.assertEqual(res_ov.json()["repository"]["id"], "repo-demo-ecommerce-001")
+
+        res_comps = self.client.get("/repositories/repo-demo-ecommerce-001/components")
+        self.assertEqual(res_comps.status_code, 200)
+        self.assertGreater(res_comps.json()["total"], 0)
+
+        res_snaps = self.client.get("/repositories/repo-demo-ecommerce-001/snapshots")
+        self.assertEqual(res_snaps.status_code, 200)
+        self.assertEqual(len(res_snaps.json()), 1)
+
+        # Non-existent repository still returns 404 truthfully
+        res_404 = self.client.get("/repositories/non-existent-unknown-999/graph")
+        self.assertEqual(res_404.status_code, 404)
 
 
 if __name__ == "__main__":

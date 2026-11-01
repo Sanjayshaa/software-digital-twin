@@ -38,17 +38,7 @@ def _resolve_repo(
     repository_id: str,
     principal: Optional[AuthenticatedPrincipal] = None,
 ) -> Optional[Repository]:
-    repo = resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
-    if repo:
-        return repo
-    if not principal:
-        return db.query(Repository).filter(
-            or_(
-                Repository.id == repository_id,
-                Repository.name == repository_id,
-            )
-        ).first()
-    return None
+    return resolve_authorized_repo(db=db, repository_id=repository_id, principal=principal)
 
 
 @router.get("/{repository_id}/impact-analysis", response_model=Dict[str, Any])
@@ -270,6 +260,108 @@ def get_snapshot_diff(
         target_snapshot_id=target_snapshot_id,
     )
     return change_set.model_dump()
+
+
+class LiveIncrementalAnalysisRequest(BaseModel):
+    base_snapshot_id: Optional[str] = Field(None, description="Optional baseline snapshot ID against which working tree is compared")
+    max_depth: Optional[int] = Field(5, ge=1, le=10, description="Max blast radius propagation depth")
+    include_tests: Optional[bool] = Field(True, description="Trace impacted test suites")
+    include_apis: Optional[bool] = Field(True, description="Trace impacted API endpoints")
+
+
+@router.get("/{repository_id}/live-changes", response_model=Dict[str, Any])
+def get_live_working_tree_changes(
+    repository_id: str,
+    base_snapshot_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """
+    Fast query inspecting the active working tree for uncommitted staged/unstaged changes
+    and mapping them to AST symbols in the repository baseline snapshot.
+    """
+    repo = _resolve_repo(db, repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository '{repository_id}' not found.",
+        )
+
+    from app.services.impact.change_detector import change_detector, map_changes_to_proposed_mutations
+    change_set = change_detector.detect_live_changes(
+        db=db,
+        repository_id=repo.id,
+        base_snapshot_id=base_snapshot_id,
+    )
+
+    proposed_mutations = map_changes_to_proposed_mutations(change_set.changes)
+
+    return {
+        "status": "SUCCESS",
+        "repository_id": repo.id,
+        "repository_name": repo.name,
+        "working_tree_status": change_set.summary.get("working_tree_status", "CLEAN"),
+        "is_verified_zero": change_set.is_verified_zero,
+        "base_snapshot_id": change_set.base_snapshot_id,
+        "target_snapshot_id": change_set.target_snapshot_id,
+        "message": change_set.message,
+        "total_changes": len(change_set.changes),
+        "changes": [c.model_dump() for c in change_set.changes],
+        "proposed_mutations": proposed_mutations,
+        "summary": change_set.summary,
+    }
+
+
+@router.post("/{repository_id}/live-incremental-analysis", response_model=Dict[str, Any])
+@router.get("/{repository_id}/live-incremental-analysis", response_model=Dict[str, Any])
+def run_live_incremental_analysis_endpoint(
+    repository_id: str,
+    base_snapshot_id: Optional[str] = Query(None),
+    max_depth: int = Query(5, ge=1, le=10),
+    body: Optional[LiveIncrementalAnalysisRequest] = None,
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """
+    Executes live incremental change-analysis:
+    1. Inspects local working tree for uncommitted additions, removals, and modifications
+    2. Maps diff hunks to AST symbols (functions, classes, endpoints) in the Digital Twin
+    3. Traverses typed knowledge graph edges to calculate live blast radius (Tier 1 & Tier 2)
+    4. Identifies targeted test suites impacted by uncommitted changes
+    5. Converts live changes into What-If simulation proposed mutations for 1-click virtual testing
+    """
+    repo = _resolve_repo(db, repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository '{repository_id}' not found.",
+        )
+
+    effective_base = (body.base_snapshot_id if body and body.base_snapshot_id else None) or base_snapshot_id
+    effective_depth = (body.max_depth if body and body.max_depth else None) or max_depth
+    include_tests = body.include_tests if body and body.include_tests is not None else True
+    include_apis = body.include_apis if body and body.include_apis is not None else True
+
+    config = ImpactConfig(
+        max_depth=effective_depth,
+        include_tests=include_tests,
+        include_apis=include_apis,
+    )
+
+    try:
+        result = change_impact_service.run_live_incremental_analysis(
+            db=db,
+            repository_id=repo.id,
+            base_snapshot_id=effective_base,
+            config=config,
+        )
+        return result
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Live incremental analysis failed: {str(exc)}",
+        )
+
 
 
 class EntityBlastRadiusRequest(BaseModel):

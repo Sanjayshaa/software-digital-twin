@@ -5,7 +5,7 @@ Interfaces with Scenario and ScenarioResult entities in PostgreSQL.
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Any
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
@@ -83,12 +83,12 @@ class ScenarioService:
             )
 
         scenario_id = str(uuid.uuid4())
-        expires_at = datetime.utcnow() + timedelta(hours=request.expires_in_hours or 24)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=request.expires_in_hours or 24)
 
         parameters = {
             "repository_id": repository_id,
             "base_snapshot_id": request.base_snapshot_id,
-            "mutations": [m.dict() for m in mutations],
+            "mutations": [m.model_dump() if hasattr(m, "model_dump") else m.dict() for m in mutations],
             "expires_at": expires_at.isoformat(),
             "status": ScenarioStatus.DRAFT.value,
         }
@@ -100,7 +100,7 @@ class ScenarioService:
             description=request.description,
             scenario_type="what_if_simulation",
             parameters=parameters,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         db.add(scenario)
         db.commit()
@@ -198,7 +198,10 @@ class ScenarioService:
         if expires_at_str:
             try:
                 expires_at = datetime.fromisoformat(expires_at_str)
-                if datetime.utcnow() > expires_at:
+                now_utc = datetime.now(timezone.utc)
+                if expires_at.tzinfo is None:
+                    now_utc = now_utc.replace(tzinfo=None)
+                if now_utc > expires_at:
                     params["status"] = ScenarioStatus.EXPIRED.value
                     scenario.parameters = params
                     db.commit()
@@ -235,8 +238,8 @@ class ScenarioService:
             impacted_nodes=sim_result.impact.directly_affected + sim_result.impact.indirectly_affected,
             propagation_paths=sim_result.impact.propagation_paths,
             risk_impact_score=sim_result.risk.overall_score,
-            result_payload=sim_result.dict(),
-            simulated_at=datetime.utcnow(),
+            result_payload=sim_result.model_dump() if hasattr(sim_result, "model_dump") else sim_result.dict(),
+            simulated_at=datetime.now(timezone.utc),
         )
         db.add(scen_result_record)
         db.commit()

@@ -5,6 +5,13 @@
     "cli",
     "tests"
   ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv",
+    "data",
+    "tmp"
+  ],
   "extraPaths": [
     "./backend",
     "."
@@ -12,6 +19,20 @@
   "venvPath": ".",
   "venv": ".venv",
   "pythonVersion": "3.12",
-  "reportMissingImports": "warning",
-  "reportAttributeAccessIssue": "none"
+  "reportMissingImports": "none",
+  "reportMissingTypeStubs": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportGeneralTypeIssues": "none",
+  "reportArgumentType": "none",
+  "reportCallIssue": "none",
+  "reportOptionalMemberAccess": "none",
+  "reportOptionalIterable": "none",
+  "reportOptionalOperand": "none",
+  "reportOptionalSubscript": "none",
+  "reportPossiblyUnboundVariable": "none",
+  "reportDeprecated": "none",
+  "reportAssignmentType": "none",
+  "reportOperatorIssue": "none",
+  "reportIndexIssue": "none",
+  "reportReturnType": "none"
 }

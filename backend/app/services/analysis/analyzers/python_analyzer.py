@@ -520,7 +520,9 @@ class PythonStructuralAnalyzer(StructuralAnalyzerBase):
             if desc.node_type == "call":
                 func_node = desc.children[0] if desc.children else None
                 if func_node:
-                    called_name = func_node.text
+                    called_name = " ".join(func_node.text.split())
+                    if len(called_name) > 512:
+                        called_name = called_name[:512]
                     # Avoid trivial builtin calls like print, len, range
                     if called_name not in {"print", "len", "range", "str", "int", "float", "dict", "list", "set"}:
                         rel_id = build_relationship_id(context.snapshot_id, fn_art.id, RelationshipType.CALLS.value, called_name)

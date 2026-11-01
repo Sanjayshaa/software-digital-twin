@@ -6,7 +6,7 @@ Structured Evidence Findings, and Advisory Remediation Roadmaps.
 
 from enum import Enum
 from typing import List, Dict, Any, Optional, Set
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 
@@ -97,6 +97,8 @@ class DiscoveryCompleteness(BaseModel):
     tests_discovered: int = Field(0, description="Total test cases and test suites identified")
     tests_linked: int = Field(0, description="Tests deterministically linked to tested source components")
     coverage_percentage: float = Field(0.0, description="Percentage of code files covered by AST analysis")
+    code_coverage_pct: float = Field(0.0, description="Alias for coverage_percentage")
+    test_to_component_ratio: float = Field(0.0, description="Ratio of linked tests to core components")
     unsupported_extensions: List[str] = Field(default_factory=list, description="Extensions of unsupported files")
     explanation: str = Field(..., description="Transparent statement of analysis scope and limitations")
 
@@ -158,9 +160,10 @@ class TechnicalAssessmentResult(BaseModel):
     repository_name: str = Field(..., description="Repository name")
     snapshot_id: str = Field(..., description="Snapshot UUID")
     commit_hash: str = Field(..., description="Exact 40-character commit hash")
-    assessed_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    assessed_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     completeness: DiscoveryCompleteness
     dimensional_scores: List[DimensionalScore]
+    overall_health_score: Optional[float] = Field(None, description="Deterministic overall health score 0-100 or None if unknown")
     findings: List[AssessmentFinding]
     roadmap: List[RoadmapRecommendation]
     executive_summary: str

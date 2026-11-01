@@ -85,7 +85,8 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str = Field(..., min_length=1, max_length=64)
+    username: Optional[str] = Field(None, min_length=1, max_length=255)
+    email: Optional[str] = Field(None, min_length=1, max_length=255)
     password: str = Field(..., min_length=1, max_length=128)
 
 
@@ -185,10 +186,18 @@ def register(req: RegisterRequest, request: Request, db: Session = Depends(get_d
 @router.post("/login", response_model=AuthTokenResponse)
 def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
     """Authenticates user, sets HttpOnly session cookie, and returns signed JWT access token."""
-    username_clean = req.username.strip()
+    from sqlalchemy import func
+
+    raw_ident = (req.username or req.email or "").strip()
+    if not raw_ident:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email is required.",
+        )
+    identifier_clean = raw_ident
 
     # Check brute-force lockout
-    is_locked, remaining_seconds = login_rate_limiter.is_locked(username_clean)
+    is_locked, remaining_seconds = login_rate_limiter.is_locked(identifier_clean.lower())
     if is_locked:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -196,9 +205,16 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
             headers={"Retry-After": str(remaining_seconds)},
         )
 
-    user = db.query(User).filter((User.username == username_clean) | (User.email == username_clean.lower())).first()
+    user = (
+        db.query(User)
+        .filter(
+            (func.lower(func.trim(User.username)) == identifier_clean.lower())
+            | (func.lower(func.trim(User.email)) == identifier_clean.lower())
+        )
+        .first()
+    )
     if not user or not verify_password(req.password, user.hashed_password):
-        login_rate_limiter.record_failure(username_clean)
+        login_rate_limiter.record_failure(identifier_clean.lower())
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password.",
@@ -206,7 +222,7 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
         )
 
     # Success: clear failure counters
-    login_rate_limiter.record_success(username_clean)
+    login_rate_limiter.record_success(identifier_clean.lower())
 
     if not user.is_active:
         raise HTTPException(

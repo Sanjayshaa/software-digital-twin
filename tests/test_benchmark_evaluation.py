@@ -18,14 +18,30 @@ VENV_SITE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".venv
 if os.path.isdir(VENV_SITE) and VENV_SITE not in sys.path:
     sys.path.insert(0, VENV_SITE)
 
+from typing import Any, Dict, Optional
+
+# Forward declarations to satisfy static analyzers
+SessionLocal: Any = None
+benchmark_lab_service: Any = None
+BENCHMARK_SCENARIOS: Dict[str, Any] = {}
+GROUND_TRUTH_DIR: str = ""
+TestClient: Any = None
+app: Any = None
+
 try:
-    from app.core.database import SessionLocal
-    from app.evaluation.benchmark_lab import benchmark_lab_service
-    from app.evaluation.ground_truth import BENCHMARK_SCENARIOS, GROUND_TRUTH_DIR
-    from fastapi.testclient import TestClient
-    from main import app
+    from app.core.database import SessionLocal as _SessionLocal
+    from app.evaluation.benchmark_lab import benchmark_lab_service as _benchmark_lab_service
+    from app.evaluation.ground_truth import BENCHMARK_SCENARIOS as _BENCHMARK_SCENARIOS, GROUND_TRUTH_DIR as _GROUND_TRUTH_DIR
+    from fastapi.testclient import TestClient as _TestClient
+    from main import app as _app
+    SessionLocal = _SessionLocal
+    benchmark_lab_service = _benchmark_lab_service
+    BENCHMARK_SCENARIOS = _BENCHMARK_SCENARIOS
+    GROUND_TRUTH_DIR = _GROUND_TRUTH_DIR
+    TestClient = _TestClient
+    app = _app
     DEPS_LOADED = True
-except ImportError:
+except (ImportError, Exception):
     DEPS_LOADED = False
 
 
@@ -34,9 +50,12 @@ class TestBenchmarkEvaluationRegression(unittest.TestCase):
     Regression test suite for the Controlled Benchmark Evaluation Lab.
     """
 
+    db: Any = None
+    client: Any = None
+
     @classmethod
     def setUpClass(cls):
-        if DEPS_LOADED:
+        if DEPS_LOADED and SessionLocal is not None and TestClient is not None and app is not None:
             cls.db = SessionLocal()
             cls.client = TestClient(app)
         else:
@@ -63,7 +82,7 @@ class TestBenchmarkEvaluationRegression(unittest.TestCase):
 
     def test_01_fixture_integrity(self):
         """Validates that the synthetic fixture exists with all 8 commits, 3 tags, and branches."""
-        if not DEPS_LOADED:
+        if not DEPS_LOADED or benchmark_lab_service is None:
             self.skipTest("Handled by test_00_subprocess_runner_if_deps_missing")
         manifest = benchmark_lab_service.ensure_fixture()
         self.assertIsNotNone(manifest)
@@ -85,7 +104,7 @@ class TestBenchmarkEvaluationRegression(unittest.TestCase):
 
     def test_03_history_and_snapshot_lifecycle(self):
         """Executes all 10 History and Snapshot lifecycle tests."""
-        if not DEPS_LOADED:
+        if not DEPS_LOADED or benchmark_lab_service is None or self.db is None:
             self.skipTest("Handled by test_00_subprocess_runner_if_deps_missing")
         report = benchmark_lab_service.run_history_and_snapshot_tests(self.db)
         self.assertEqual(report["total_tests"], 10)
@@ -95,7 +114,7 @@ class TestBenchmarkEvaluationRegression(unittest.TestCase):
 
     def test_04_payment_scenario_evaluation(self):
         """Evaluates SCENARIO_PAYMENT_FEE_MODIFICATION against production TwinCore engines."""
-        if not DEPS_LOADED:
+        if not DEPS_LOADED or benchmark_lab_service is None or self.db is None:
             self.skipTest("Handled by test_00_subprocess_runner_if_deps_missing")
         report = benchmark_lab_service.run_scenario(self.db, "SCENARIO_PAYMENT_FEE_MODIFICATION")
         self.assertTrue(report["is_synthetic_benchmark"])
@@ -109,7 +128,7 @@ class TestBenchmarkEvaluationRegression(unittest.TestCase):
 
     def test_05_api_endpoints(self):
         """Verifies the Benchmark Evaluation Lab API endpoints."""
-        if not DEPS_LOADED:
+        if not DEPS_LOADED or self.client is None:
             self.skipTest("Handled by test_00_subprocess_runner_if_deps_missing")
         # GET /api/v1/evaluation/scenarios
         r_scen = self.client.get("/api/v1/evaluation/scenarios")

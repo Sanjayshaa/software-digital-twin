@@ -32,6 +32,7 @@ from app.models.entities import (
     StructuralArtifact, ArtifactRelationship, User
 )
 from app.core.database import get_db
+from app.core.auth import get_current_user_optional
 from app.services.analysis.graph.projection import twin_graph_projection
 
 # In-memory SQLite with StaticPool so all connections share the same in-memory DB
@@ -58,6 +59,8 @@ app.dependency_overrides[get_db] = override_get_db
 
 class TestBlastRadiusAndWhatIf(unittest.TestCase):
     def setUp(self):
+        app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides.pop(get_current_user_optional, None)
         self.client = TestClient(app)
         self.db = TestingSessionLocal()
 
@@ -76,6 +79,7 @@ class TestBlastRadiusAndWhatIf(unittest.TestCase):
                 project_id="test-proj-1",
                 vcs_type="git",
                 local_path="/tmp/test-repo",
+                environment="TEST",
             )
             self.db.add(self.repo)
 
@@ -181,6 +185,10 @@ class TestBlastRadiusAndWhatIf(unittest.TestCase):
 
     def tearDown(self):
         self.db.close()
+
+    @classmethod
+    def tearDownClass(cls):
+        app.dependency_overrides.clear()
 
     def test_blast_radius_candidates_discovery(self):
         """GET /blast-radius returns candidate components when no target is passed."""

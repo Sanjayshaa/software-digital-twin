@@ -16,9 +16,13 @@ Zero hallucinated graph entities. Pure deterministic grounding with full provena
 import re
 import uuid
 import time
+import logging
 from typing import List, Dict, Any, Optional, Set, Tuple
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.models.entities import (
     StructuralArtifact,
@@ -197,7 +201,7 @@ class MultiAgentScenarioOrchestrator:
         lower_q = q.lower()
 
         # 1. Fetch available artifacts for target resolution
-        if not base_snapshot_id or str(base_snapshot_id).strip().lower() in ("null", "undefined", ""):
+        if not base_snapshot_id or base_snapshot_id.strip().lower() in ("null", "undefined", ""):
             latest_snap = (
                 db.query(RepositorySnapshot)
                 .filter_by(repository_id=repository_id)
@@ -209,9 +213,18 @@ class MultiAgentScenarioOrchestrator:
 
         snap_obj = (
             db.query(RepositorySnapshot)
-            .filter_by(id=base_snapshot_id, repository_id=repository_id)
+            .filter(
+                RepositorySnapshot.repository_id == repository_id,
+                or_(
+                    RepositorySnapshot.id == base_snapshot_id,
+                    RepositorySnapshot.commit_hash == base_snapshot_id,
+                    RepositorySnapshot.commit_hash.startswith(base_snapshot_id),
+                ),
+            )
             .first()
         ) if base_snapshot_id else None
+        if snap_obj:
+            base_snapshot_id = snap_obj.id
 
         if not snap_obj:
             return NaturalLanguageScenarioPlan(
@@ -262,9 +275,14 @@ class MultiAgentScenarioOrchestrator:
         is_schema = any(kw in lower_q for kw in ["schema", "table", "column", "migration", "database", "sql"])
         is_upgrade = any(kw in lower_q for kw in ["upgrade", "bump", "version", "update package", "library"])
         is_failure = any(kw in lower_q for kw in ["fail", "crash", "down", "outage", "timeout", "kill", "exception", "unavailable"])
-        is_capacity = any(kw in lower_q for kw in ["capacity", "workload", "10x", "traffic", "throughput", "concurrency", "load", "qps", "rps"])
+        is_capacity = any(kw in lower_q for kw in [
+            "capacity", "workload", "10x", "traffic", "throughput", "concurrency",
+            "concurrent", "load", "qps", "rps", "users", "at the same time", "simultaneous", "stress"
+        ])
 
-        if is_removal or is_dep_remove:
+        if is_capacity:
+            change_type = MutationType.CONCURRENCY_SPIKE
+        elif is_removal or is_dep_remove:
             change_type = MutationType.REMOVE_DEPENDENCY if is_dep_remove else MutationType.MODIFY_SYMBOL
         elif is_dep_add:
             change_type = MutationType.ADD_DEPENDENCY
@@ -292,9 +310,13 @@ class MultiAgentScenarioOrchestrator:
                     # Look for CamelCase or snake_case symbols
                     symbol_matches = re.findall(r'\b[A-Za-z_][A-Za-z0-9_]{3,}(?:\.[A-Za-z0-9_]+)?\b', q)
                     stopwords = {
-                        "what", "would", "happen", "if", "we", "the", "remove", "delete", "modify",
-                        "change", "service", "module", "function", "system", "database", "fails",
-                        "down", "crash", "upgrade", "component", "endpoint", "connection"
+                        "what", "would", "happen", "if", "we", "the", "a", "an", "at", "same", "time",
+                        "users", "user", "submit", "submits", "request", "requests", "concurrently",
+                        "simultaneously", "remove", "delete", "modify", "change", "service", "module",
+                        "function", "system", "database", "fails", "down", "crash", "upgrade",
+                        "component", "endpoint", "connection", "traffic", "load", "spike", "concurrency",
+                        "stress", "test", "there", "this", "that", "these", "those", "have", "with",
+                        "send", "calling", "calls", "many", "much", "more", "less"
                     }
                     candidates_token = [s for s in symbol_matches if s.lower() not in stopwords]
                     if candidates_token:
@@ -305,7 +327,38 @@ class MultiAgentScenarioOrchestrator:
         is_ambiguous = False
         candidates_list: List[Dict[str, Any]] = []
 
-        if target_token:
+        # Special handling for Capacity / Concurrency spikes:
+        # Prefer actual API endpoints or services receiving traffic, rather than picking arbitrary internal methods
+        if is_capacity and not explicit_target:
+            api_artifacts = [a for a in artifacts if a.artifact_type in ("API_ENDPOINT", "ROUTE", "SERVICE", "CONTROLLER")]
+            # Check if query specifically mentions a route or method in an API endpoint
+            if "submit" in lower_q:
+                submit_apis = [a for a in api_artifacts if "submit" in a.name.lower() or "submit" in a.qualified_name.lower()]
+                if len(submit_apis) == 1:
+                    resolved_artifact = submit_apis[0]
+                elif submit_apis:
+                    is_ambiguous = True
+                    for m in submit_apis[:10]:
+                        candidates_list.append({
+                            "id": m.id,
+                            "name": m.name,
+                            "qualified_name": m.qualified_name,
+                            "artifact_type": str(m.artifact_type),
+                            "location": m.location,
+                        })
+            if not resolved_artifact and not candidates_list:
+                # Ambiguous concurrency query on whole system: ask user to select the endpoint receiving load
+                is_ambiguous = True
+                for m in (api_artifacts[:10] if api_artifacts else artifacts[:10]):
+                    candidates_list.append({
+                        "id": m.id,
+                        "name": m.name,
+                        "qualified_name": m.qualified_name,
+                        "artifact_type": str(m.artifact_type),
+                        "location": m.location,
+                    })
+
+        elif target_token:
             # Check exact matches
             if target_token in art_map:
                 resolved_artifact = art_map[target_token]
@@ -419,6 +472,14 @@ class MultiAgentScenarioOrchestrator:
             plan_status = "EMPTY_GRAPH"
             block_reason = f"Knowledge graph for snapshot '{base_snapshot_id}' is empty (0 artifacts indexed). Analysis cannot determine impact."
             missing_info.append("Snapshot has 0 indexed artifacts.")
+        elif is_capacity and is_ambiguous:
+            can_execute = False
+            plan_status = "AMBIGUOUS"
+            block_reason = (
+                f"Concurrency / load spike scenario detected for: '{q}'. "
+                f"Please select the specific API endpoint or service receiving this traffic from the candidate endpoints below."
+            )
+            missing_info.append("Specific API endpoint target required to evaluate downstream call graph and database fan-out.")
         elif target_token and not resolved_artifact:
             # The user requested a specific target, but it was NOT found in the active snapshot graph!
             can_execute = False
@@ -523,7 +584,7 @@ class MultiAgentScenarioOrchestrator:
         actual_type = explicit_type or mutation_type_override
 
         # Snapshot metadata
-        if not base_snapshot_id or str(base_snapshot_id).strip().lower() in ("null", "undefined", ""):
+        if not base_snapshot_id or base_snapshot_id.strip().lower() in ("null", "undefined", ""):
             latest_snap = (
                 db.query(RepositorySnapshot)
                 .filter_by(repository_id=repository_id)
@@ -535,9 +596,18 @@ class MultiAgentScenarioOrchestrator:
 
         snapshot = (
             db.query(RepositorySnapshot)
-            .filter_by(id=base_snapshot_id, repository_id=repository_id)
+            .filter(
+                RepositorySnapshot.repository_id == repository_id,
+                or_(
+                    RepositorySnapshot.id == base_snapshot_id,
+                    RepositorySnapshot.commit_hash == base_snapshot_id,
+                    RepositorySnapshot.commit_hash.startswith(base_snapshot_id),
+                ),
+            )
             .first()
         )
+        if snapshot:
+            base_snapshot_id = snapshot.id
         if not snapshot:
             elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
             missing_snap_sim = ScenarioAnalysisResult(

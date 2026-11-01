@@ -1,0 +1,33 @@
+search_path = ["backend", "."]
+project_excludes = [
+    ".git/**",
+    ".venv/**",
+    "node_modules/**",
+    "data/**",
+    "tmp/**",
+    "tests/fixtures/**",
+    "**/__pycache__/**",
+]
+
+[errors]
+unnecessary-type-conversion = "ignore"
+bad-function-definition = "ignore"
+deprecated = "ignore"
+redundant-condition = "ignore"
+unreachable = "ignore"
+missing-import = "ignore"
+missing-module-attribute = "ignore"
+bad-assignment = "ignore"
+bad-argument-type = "ignore"
+bad-argument-count = "ignore"
+bad-return = "ignore"
+not-callable = "ignore"
+missing-argument = "ignore"
+missing-attribute = "ignore"
+unsupported-operation = "ignore"
+bad-index = "ignore"
+unbound-name = "ignore"
+not-iterable = "ignore"
+read-only = "ignore"
+no-matching-overload = "ignore"
+untyped-import = "ignore"

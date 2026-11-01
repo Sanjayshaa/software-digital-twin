@@ -92,28 +92,24 @@
 <body class="bg-background font-body text-on-surface antialiased min-h-screen flex flex-col justify-between selection:bg-secondary-fixed selection:text-on-secondary-fixed">
 
   <!-- ==================================================================== -->
+  <!-- ==================================================================== -->
   <!-- HEADER -->
   <!-- ==================================================================== -->
-  <header class="w-full bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-50">
-    <div class="w-full max-w-7xl mx-auto px-6 lg:px-12 h-16 flex items-center justify-between">
-      <a href="/app" class="flex items-center gap-3 group focus:outline-none" title="Software Digital Twin Home">
-        <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-sm group-hover:bg-primary-container transition-colors">
+  <header class="w-full bg-surface/80 backdrop-blur-xl border-b border-outline-variant/20 z-50">
+    <div class="w-full max-w-6xl mx-auto px-6 lg:px-10 h-16 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-3 group focus:outline-none" title="Software Digital Twin Home">
+        <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-xs group-hover:bg-primary-container transition-colors">
           <span class="material-symbols-outlined text-on-primary text-[20px]">hub</span>
         </div>
-        <span class="font-headline font-semibold text-base tracking-tight text-on-surface">TwinCore</span>
+        <div class="flex flex-col">
+          <span class="font-headline font-semibold text-base tracking-tight text-on-surface">TwinCore</span>
+        </div>
       </a>
       
-      <div class="flex items-center gap-2 sm:gap-3">
-        <div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-on-surface-variant text-xs font-medium border border-outline-variant/30">
-          <span class="material-symbols-outlined text-primary text-[14px]">account_tree</span>
-          <span>AST Code Twin</span>
-        </div>
-        <div class="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-on-surface-variant text-xs font-medium border border-outline-variant/30">
-          <span class="material-symbols-outlined text-primary text-[14px]">shield</span>
-          <span>Isolated Sandboxes</span>
-        </div>
-        <a href="/app" class="px-3 py-1 rounded-full text-xs font-medium text-primary hover:text-on-surface hover:bg-surface-container transition-colors">
-          Explore Demo Twin
+      <div class="flex items-center gap-3">
+        <a href="/demo" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-surface-container text-primary hover:bg-primary hover:text-white border border-outline-variant/30 transition-all shadow-2xs">
+          <span class="material-symbols-outlined text-[16px]">visibility</span>
+          <span>Explore Interactive Demo</span>
         </a>
       </div>
     </div>
@@ -122,21 +118,20 @@
   <!-- ==================================================================== -->
   <!-- MAIN SIGN-IN SECTION -->
   <!-- ==================================================================== -->
-  <main class="flex-1 flex flex-col items-center justify-center w-full px-6 py-12 relative">
+  <main class="flex-1 flex flex-col items-center justify-center w-full px-6 py-10 relative">
     <div class="flex flex-col w-full">
-      <div class="relative w-full max-w-5xl mx-auto flex flex-col items-center">
-        <!-- Ambient Radial Glow Effects -->
-        <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-96 bg-gradient-to-br from-primary-fixed-dim/35 via-secondary-container/20 to-transparent rounded-full blur-3xl pointer-events-none -z-10"></div>
-        <div class="absolute top-1/3 -right-24 w-72 h-72 bg-surface-tint/5 rounded-full blur-2xl pointer-events-none -z-10"></div>
+      <div class="relative w-full max-w-4xl mx-auto flex flex-col items-center">
+        <!-- Ambient Subtle Glow -->
+        <div class="absolute -top-20 left-1/2 -translate-x-1/2 w-80 h-80 bg-gradient-to-br from-primary-fixed-dim/25 via-secondary-container/15 to-transparent rounded-full blur-3xl pointer-events-none -z-10"></div>
 
         <!-- Central Card -->
-        <div class="w-full max-w-lg bg-surface-container-lowest shadow-xl rounded-2xl p-8 sm:p-10 relative border border-outline-variant/20">
+        <div class="w-full max-w-md bg-surface-container-lowest shadow-lg rounded-2xl p-7 sm:p-9 relative border border-outline-variant/25">
           
           <!-- Card Header & Icon -->
-          <div class="flex flex-col items-center text-center mb-8">
-            <div class="relative mb-5">
-              <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-container to-primary flex items-center justify-center shadow-md">
-                <svg class="w-7 h-7 text-on-primary" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+          <div class="flex flex-col items-center text-center mb-6">
+            <div class="relative mb-3.5">
+              <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary-container to-primary flex items-center justify-center shadow-sm">
+                <svg class="w-6 h-6 text-on-primary" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
                   <circle cx="18" cy="5" r="3"></circle>
                   <circle cx="6" cy="12" r="3"></circle>
                   <circle cx="18" cy="19" r="3"></circle>
@@ -144,46 +139,44 @@
                   <line x1="15.41" x2="8.59" y1="6.51" y2="10.49"></line>
                 </svg>
               </div>
-              <span class="absolute -bottom-1 -right-1 flex h-3.5 w-3.5">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-fixed-dim opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-primary"></span>
-              </span>
             </div>
 
-            <h1 id="page-heading" class="font-headline font-semibold text-2xl sm:text-[28px] tracking-tight text-on-surface">
+            <h1 id="page-heading" class="font-headline font-semibold text-2xl tracking-tight text-on-surface">
               Sign in to TwinCore
             </h1>
-            <p id="page-subheading" class="font-body text-sm text-on-surface-variant mt-2 max-w-sm leading-relaxed">
-              Access your living codebase model, change impact simulations, and incident intelligence.
+            <p id="page-subheading" class="font-body text-xs sm:text-sm text-on-surface-variant mt-1.5 max-w-xs leading-relaxed">
+              Understand the impact of every code change.
             </p>
           </div>
 
-          <!-- OAuth & SSO Buttons (Accurate Capabilities, No Fake Redirects) -->
-          <div class="flex flex-col gap-3">
-            <button class="group relative w-full h-11 px-4 rounded-full bg-inverse-surface text-inverse-on-surface font-label font-medium text-sm flex items-center justify-between shadow-sm hover:opacity-95 transition-all active:scale-[0.99]" id="btn-github" type="button">
-              <div class="flex items-center gap-3">
-                <svg aria-hidden="true" class="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                  <path clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" fill-rule="evenodd"></path>
-                </svg>
-                <span>Continue with GitHub</span>
-              </div>
-              <span class="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-mono font-medium">Config Required</span>
+          <!-- OAuth Buttons (Clean, Uncluttered, Honest Requirements) -->
+          <div class="flex flex-col gap-2.5">
+            <button class="group w-full h-10 px-4 rounded-full bg-inverse-surface text-inverse-on-surface font-label font-medium text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-2xs hover:opacity-95 transition-all active:scale-[0.99]" id="btn-github" type="button" title="Sign in with GitHub account">
+              <svg aria-hidden="true" class="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                <path clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" fill-rule="evenodd"></path>
+              </svg>
+              <span>Continue with GitHub</span>
             </button>
 
-            <button class="w-full h-11 px-4 rounded-full bg-surface-container-low text-on-surface font-label font-medium text-sm flex items-center justify-between hover:bg-surface-container transition-colors active:scale-[0.99] border border-outline-variant/30" id="btn-sso" type="button">
-              <div class="flex items-center gap-3">
-                <span class="material-symbols-outlined text-primary text-[19px]">domain_verification</span>
-                <span>Enterprise SSO / SAML</span>
-              </div>
-              <span class="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[10px] font-mono font-medium">Enterprise Only</span>
+            <button class="w-full h-10 px-4 rounded-full bg-white text-on-surface font-label font-medium text-xs sm:text-sm flex items-center justify-center gap-2.5 hover:bg-surface-container transition-colors active:scale-[0.99] border border-outline-variant/30 shadow-2xs" id="btn-google" type="button" title="Sign in with Google account">
+              <svg aria-hidden="true" class="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <span>Continue with Google</span>
             </button>
+
+            <!-- Hidden SSO trigger keeping event listeners attached -->
+            <button id="btn-sso" type="button" class="hidden" aria-hidden="true"></button>
           </div>
 
           <!-- Divider -->
-          <div class="relative my-7 flex items-center justify-center">
+          <div class="relative my-6 flex items-center justify-center">
             <div class="w-full h-px bg-surface-container-high"></div>
             <span class="absolute px-3 bg-surface-container-lowest text-[11px] font-label font-medium uppercase tracking-wider text-outline">
-              Or sign in with email &amp; password
+              Or continue with email
             </span>
           </div>
 
@@ -207,8 +200,8 @@
                 Username *
               </label>
               <div class="relative flex items-center">
-                <span class="absolute left-3.5 material-symbols-outlined text-outline text-[18px] pointer-events-none">person</span>
-                <input class="w-full h-11 pl-10 pr-9 rounded-lg bg-surface-container-low text-on-surface text-sm placeholder:text-outline focus:outline-none focus:bg-surface-container border border-transparent focus:border-primary-container transition-colors" id="account-username" name="username" placeholder="alex_dev" autocomplete="username" type="text"/>
+                <span class="absolute left-3.5 material-symbols-outlined text-outline text-[18px] pointer-events-none" aria-hidden="true">person</span>
+                <input class="w-full h-10 pl-10 pr-9 rounded-lg bg-surface-container-low text-on-surface text-sm placeholder:text-outline focus:outline-none focus:bg-surface-container border border-transparent focus:border-primary-container transition-colors" id="account-username" name="username" placeholder="alex_dev" autocomplete="username" type="text"/>
               </div>
             </div>
 
@@ -218,13 +211,12 @@
                 Work Email or Username
               </label>
               <div class="relative flex items-center">
-                <span class="absolute left-3.5 material-symbols-outlined text-outline text-[18px] pointer-events-none">mail</span>
-                <input class="w-full h-11 pl-10 pr-9 rounded-lg bg-surface-container-low text-on-surface text-sm placeholder:text-outline focus:outline-none focus:bg-surface-container border border-transparent focus:border-primary-container transition-colors" id="work-email" name="email" placeholder="alex@company.com" required="" type="text" autocomplete="username"/>
+                <span class="absolute left-3.5 material-symbols-outlined text-outline text-[18px] pointer-events-none" aria-hidden="true">mail</span>
+                <input class="w-full h-10 pl-10 pr-9 rounded-lg bg-surface-container-low text-on-surface text-sm placeholder:text-outline focus:outline-none focus:bg-surface-container border border-transparent focus:border-primary-container transition-colors" id="work-email" name="email" placeholder="alex@company.com" required="" type="text" autocomplete="username"/>
                 <button aria-label="Clear email input" class="absolute right-3 hidden text-outline hover:text-on-surface transition-colors" id="clear-email-btn" type="button">
-                  <span class="material-symbols-outlined text-[16px]">close</span>
+                  <span class="material-symbols-outlined text-[16px]" aria-hidden="true">close</span>
                 </button>
               </div>
-              <p class="text-[11px] text-on-surface-variant mt-1.5 ml-1">Use your registered username or organization email address.</p>
             </div>
 
             <!-- Password Field -->
@@ -238,16 +230,16 @@
                 </button>
               </div>
               <div class="relative flex items-center">
-                <span class="absolute left-3.5 material-symbols-outlined text-outline text-[18px] pointer-events-none">lock</span>
-                <input class="w-full h-11 pl-10 pr-10 rounded-lg bg-surface-container-low text-on-surface text-sm placeholder:text-outline focus:outline-none focus:bg-surface-container border border-transparent focus:border-primary-container transition-colors" id="account-password" name="password" placeholder="••••••••••••" required="" type="password" autocomplete="current-password"/>
+                <span class="absolute left-3.5 material-symbols-outlined text-outline text-[18px] pointer-events-none" aria-hidden="true">lock</span>
+                <input class="w-full h-10 pl-10 pr-10 rounded-lg bg-surface-container-low text-on-surface text-sm placeholder:text-outline focus:outline-none focus:bg-surface-container border border-transparent focus:border-primary-container transition-colors" id="account-password" name="password" placeholder="••••••••••••" required="" type="password" autocomplete="current-password"/>
                 <button aria-label="Toggle password visibility" class="absolute right-3 text-outline hover:text-on-surface transition-colors p-1" id="toggle-password" type="button">
-                  <span class="material-symbols-outlined text-[18px]" id="eye-icon">visibility</span>
+                  <span class="material-symbols-outlined text-[18px]" id="eye-icon" aria-hidden="true">visibility</span>
                 </button>
               </div>
             </div>
 
             <!-- Checkbox Row -->
-            <div class="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div class="pt-0.5 flex items-center justify-between">
               <label class="flex items-center gap-2 cursor-pointer select-none">
                 <input class="sr-only peer" id="remember-device" type="checkbox" checked/>
                 <div class="w-4 h-4 rounded bg-surface-container-high peer-checked:bg-primary flex items-center justify-center transition-colors">
@@ -256,100 +248,70 @@
                 <span class="text-xs text-on-surface-variant font-body">Remember workstation</span>
               </label>
 
-              <button id="btn-show-matrix" class="flex items-center gap-1.5 self-start sm:self-auto px-2.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[11px] font-label border border-outline-variant/30 hover:bg-surface-container-high transition-colors" type="button">
-                <span class="material-symbols-outlined text-primary text-[14px]">tune</span>
-                <span>Provider Matrix</span>
-              </button>
+              <!-- Hidden matrix trigger preserving JS listeners -->
+              <button id="btn-show-matrix" class="hidden" type="button"></button>
             </div>
 
             <!-- Submit Button -->
-            <div class="pt-2">
-              <button id="btn-submit-auth" class="w-full h-11 rounded-full bg-primary-container text-on-primary font-label font-medium text-sm flex items-center justify-center gap-2 hover:bg-primary transition-colors shadow-sm active:scale-[0.99]" type="submit">
+            <div class="pt-1.5">
+              <button id="btn-submit-auth" class="w-full h-10 rounded-full bg-primary-container text-on-primary font-label font-medium text-xs sm:text-sm flex items-center justify-center gap-2 hover:bg-primary transition-colors shadow-2xs active:scale-[0.99]" type="submit">
                 <span id="btn-submit-text">Sign In</span>
                 <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
               </button>
             </div>
           </form>
 
-          <!-- Account Verification & Recovery Links -->
-          <div class="mt-6 flex flex-col items-center gap-3 border-t border-surface-container-high pt-4">
-            <div class="flex items-center gap-3 text-xs font-label">
-              <button id="btn-verify-email-modal" class="text-primary hover:text-primary-container transition-colors flex items-center gap-1" type="button">
-                <span class="material-symbols-outlined text-[15px]">mark_email_read</span>
-                <span>Verify Email</span>
-              </button>
-              <span class="text-outline-variant">•</span>
-              <button id="btn-reset-password-modal" class="text-on-surface-variant hover:text-on-surface transition-colors flex items-center gap-1" type="button">
-                <span class="material-symbols-outlined text-[15px]">password</span>
-                <span>Reset with Token</span>
-              </button>
+          <!-- Interactive Demo Callout Banner -->
+          <div class="mt-5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-between text-xs">
+            <div class="flex items-center gap-2 text-on-surface-variant">
+              <span class="material-symbols-outlined text-primary text-[18px]">play_circle</span>
+              <span>Want to test without an account?</span>
             </div>
+            <a href="/demo" class="font-medium text-primary hover:underline flex items-center gap-0.5">
+              <span>Explore Interactive Demo</span>
+              <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+            </a>
           </div>
 
           <!-- Bottom Switcher Box -->
-          <div class="mt-6 pt-5 bg-surface-container-low rounded-xl p-3 text-center border border-outline-variant/20">
+          <div class="mt-4 pt-4 border-t border-surface-container-high text-center">
             <p id="bottom-prompt" class="text-xs text-on-surface-variant">
               Don't have an account? 
-              <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Register new account</button>
+              <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Create Account</button>
               <span class="text-outline-variant mx-1.5">•</span>
-              <a class="text-on-surface font-medium hover:underline" href="/app">Explore demo</a>
+              <a class="text-on-surface font-medium hover:underline" href="/demo">Explore demo</a>
             </p>
+          </div>
+
+          <!-- Account Verification & Recovery Links -->
+          <div class="mt-3 flex items-center justify-center gap-3 text-xs text-outline">
+            <button id="btn-verify-email-modal" class="hover:text-on-surface transition-colors flex items-center gap-1" type="button">
+              <span class="material-symbols-outlined text-[14px]">mark_email_read</span>
+              <span>Verify Email</span>
+            </button>
+            <span class="text-outline-variant">•</span>
+            <button id="btn-reset-password-modal" class="hover:text-on-surface transition-colors flex items-center gap-1" type="button">
+              <span class="material-symbols-outlined text-[14px]">password</span>
+              <span>Reset with Token</span>
+            </button>
           </div>
         </div>
 
-        <!-- 4 Verifiable Architecture & Security Badges Grid -->
-        <div class="w-full max-w-4xl mt-12 mb-4">
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="p-4 rounded-xl bg-surface-container-low flex items-start gap-3 border border-outline-variant/20">
-              <div class="p-2 rounded-lg bg-surface-container text-primary">
-                <span class="material-symbols-outlined text-[20px]">account_tree</span>
-              </div>
-              <div>
-                <h4 class="text-xs font-headline font-semibold text-on-surface">Tree-Sitter AST Analysis</h4>
-                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Deterministic syntax parsing &amp; call-graph extraction</p>
-              </div>
-            </div>
-
-            <div class="p-4 rounded-xl bg-surface-container-low flex items-start gap-3 border border-outline-variant/20">
-              <div class="p-2 rounded-lg bg-surface-container text-primary">
-                <span class="material-symbols-outlined text-[20px]">shield</span>
-              </div>
-              <div>
-                <h4 class="text-xs font-headline font-semibold text-on-surface">Repository Isolation</h4>
-                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Analyzed in local sandboxes without third-party exposure</p>
-              </div>
-            </div>
-
-            <div class="p-4 rounded-xl bg-surface-container-low flex items-start gap-3 border border-outline-variant/20">
-              <div class="p-2 rounded-lg bg-surface-container text-primary">
-                <span class="material-symbols-outlined text-[20px]">key</span>
-              </div>
-              <div>
-                <h4 class="text-xs font-headline font-semibold text-on-surface">In-Flight Token Safety</h4>
-                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Access tokens &amp; PATs used strictly in-flight; never stored</p>
-              </div>
-            </div>
-
-            <div class="p-4 rounded-xl bg-surface-container-low flex items-start gap-3 border border-outline-variant/20">
-              <div class="p-2 rounded-lg bg-surface-container text-primary">
-                <span class="material-symbols-outlined text-[20px]">lock</span>
-              </div>
-              <div>
-                <h4 class="text-xs font-headline font-semibold text-on-surface">JWT Session Governance</h4>
-                <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">Signed HMAC-SHA256 session tokens with server-side revocation</p>
-              </div>
-            </div>
+        <!-- Quiet Trust Bar -->
+        <div class="mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-on-surface-variant/80">
+          <div class="flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-primary text-[15px]">account_tree</span>
+            <span>AST Structural Model</span>
           </div>
-
-          <!-- Live Status Indicator -->
-          <div class="mt-6 flex items-center justify-center gap-2 text-xs text-on-surface-variant">
-            <span class="relative flex h-2 w-2">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-            </span>
-            <span class="font-medium text-on-surface">TwinCore Backend &amp; Database Connected</span>
-            <span class="text-outline-variant">•</span>
-            <span class="font-mono text-[11px]">API Version: 0.1.0</span>
+          <span class="text-outline-variant">•</span>
+          <div class="flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-primary text-[15px]">shield</span>
+            <span>Local Sandbox Isolation</span>
+          </div>
+          <span class="text-outline-variant">•</span>
+          <div class="flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-primary text-[15px]">lock</span>
+            <span>PBKDF2-HMAC Token Safety</span>
           </div>
         </div>
 
@@ -613,6 +575,15 @@
         }
       }
 
+      function getSafeRedirectUrl() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const redirect = urlParams.get('redirect');
+        if (redirect && redirect.startsWith('/') && !redirect.startsWith('//')) {
+          return redirect;
+        }
+        return '/app';
+      }
+
       // Check if user is already logged in
       const existingToken = localStorage.getItem('jwt_token');
       if (existingToken) {
@@ -620,7 +591,7 @@
           headers: { 'Authorization': `Bearer ${existingToken}` }
         }).then(res => {
           if (res.ok) {
-            window.location.replace('/app');
+            window.location.replace(getSafeRedirectUrl());
           }
         }).catch(() => {});
       }
@@ -632,7 +603,7 @@
 
         if (isRegisterMode) {
           pageHeading.textContent = 'Create your TwinCore Account';
-          pageSubheading.textContent = 'Join engineering teams evaluating change impact, architecture, and living software twins.';
+          pageSubheading.textContent = 'Understand the impact of every code change.';
           usernameContainer.style.display = 'block';
           usernameInput.required = true;
           labelEmail.textContent = 'Work Email *';
@@ -641,14 +612,14 @@
           submitBtnText.textContent = 'Create Account & Sign In';
           bottomPrompt.innerHTML = `
             Already have an account? 
-            <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Sign in</button>
+            <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Sign In</button>
             <span class="text-outline-variant mx-1.5">•</span>
-            <a class="text-on-surface font-medium hover:underline" href="/app">Explore demo</a>
+            <a class="text-on-surface font-medium hover:underline" href="/demo">Explore demo</a>
           `;
           document.getElementById('btn-switch-mode').addEventListener('click', () => toggleMode(false));
         } else {
           pageHeading.textContent = 'Sign in to TwinCore';
-          pageSubheading.textContent = 'Access your living codebase model, change impact simulations, and incident intelligence.';
+          pageSubheading.textContent = 'Understand the impact of every code change.';
           usernameContainer.style.display = 'none';
           usernameInput.required = false;
           labelEmail.textContent = 'Work Email or Username';
@@ -656,9 +627,9 @@
           submitBtnText.textContent = 'Sign In';
           bottomPrompt.innerHTML = `
             Don't have an account? 
-            <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Register new account</button>
+            <button id="btn-switch-mode" class="text-primary font-medium hover:underline ml-0.5" type="button">Create Account</button>
             <span class="text-outline-variant mx-1.5">•</span>
-            <a class="text-on-surface font-medium hover:underline" href="/app">Explore demo</a>
+            <a class="text-on-surface font-medium hover:underline" href="/demo">Explore demo</a>
           `;
           document.getElementById('btn-switch-mode').addEventListener('click', () => toggleMode(true));
         }
@@ -666,6 +637,12 @@
 
       if (switchModeBtn) {
         switchModeBtn.addEventListener('click', () => toggleMode(true));
+      }
+
+      // Auto-detect register mode from path or URL parameter
+      const initialParams = new URLSearchParams(window.location.search);
+      if (window.location.pathname === '/register' || window.location.pathname === '/signup' || initialParams.get('mode') === 'register') {
+        toggleMode(true);
       }
 
       // Email Clear Button
@@ -736,12 +713,16 @@
           try {
             if (isRegisterMode) {
               // 1. Register User
+              const rawFallback = (emailOrUser.includes('@') ? emailOrUser.split('@')[0] : emailOrUser).replace(/[^a-zA-Z0-9_\-\.]/g, '_').slice(0, 32);
+              const finalUsername = (username && username.trim()) || (rawFallback.length >= 3 ? rawFallback : `user_${Date.now().toString().slice(-6)}`);
+              const regEmail = emailOrUser.includes('@') ? emailOrUser.trim() : `${finalUsername}@session.local`;
+
               const regRes = await fetch('/api/v1/auth/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  username: username || emailOrUser.split('@')[0],
-                  email: emailOrUser.includes('@') ? emailOrUser : `${emailOrUser}@session.local`,
+                  username: finalUsername,
+                  email: regEmail,
                   password: password,
                   role: 'engineer'
                 })
@@ -758,7 +739,8 @@
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                username: isRegisterMode && username ? username : emailOrUser,
+                username: emailOrUser.trim(),
+                email: emailOrUser.includes('@') ? emailOrUser.trim() : undefined,
                 password: password
               })
             });
@@ -777,9 +759,7 @@
             `;
 
             setTimeout(() => {
-              const urlParams = new URLSearchParams(window.location.search);
-              const redirectUrl = urlParams.get('redirect') || '/app';
-              window.location.replace(redirectUrl);
+              window.location.replace(getSafeRedirectUrl());
             }, 500);
 
           } catch (err) {
@@ -800,6 +780,13 @@
         showModalInfo(
           'GitHub OAuth Configuration Required',
           'GitHub OAuth login requires a registered GitHub OAuth Application with GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET configured in your TwinCore deployment. To analyze public or private GitHub repositories without OAuth login, sign in with email/password and enter your repository URL in the workspace.'
+        );
+      });
+
+      document.getElementById('btn-google')?.addEventListener('click', () => {
+        showModalInfo(
+          'Google OAuth Configuration Required',
+          'Google OAuth login requires a registered Google Cloud Console OAuth 2.0 Client ID with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET configured in your TwinCore deployment. To analyze repositories now, sign in with email/password or create an account.'
         );
       });
 

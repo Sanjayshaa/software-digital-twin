@@ -308,7 +308,7 @@ class ScenarioSimulationEngine:
             out_degree = sum(1 for r in base_rels if r.source_artifact_id == target_art.id)
             is_leaf = (in_degree == 0)
             art_type_str = (target_art.artifact_type.value if hasattr(target_art.artifact_type, "value") else str(target_art.artifact_type or "")).lower()
-            loc_str = str(target_art.file_path or target_art.location or "").lower()
+            loc_str = (target_art.file_path or target_art.location or "").lower()
             name_str = str(target_art.qualified_name or target_art.name or "").lower()
             is_test_entity = ("test" in art_type_str or "test" in loc_str or "test" in name_str)
 
@@ -469,11 +469,11 @@ class ScenarioSimulationEngine:
         # 9. Comparison: Current Baseline vs Scenario Twin
         baseline_failed_rules = {g.rule_id for g in baseline_guardrails if g.status == GuardrailStatus.VIOLATION}
         new_violations = [
-            g.dict() for g in sim_guardrails
+            (g.model_dump() if hasattr(g, "model_dump") else g.dict()) for g in sim_guardrails
             if g.status == GuardrailStatus.VIOLATION and g.rule_id not in baseline_failed_rules
         ]
         base_violations = [
-            g.dict() for g in baseline_guardrails
+            (g.model_dump() if hasattr(g, "model_dump") else g.dict()) for g in baseline_guardrails
             if g.status == GuardrailStatus.VIOLATION
         ]
 
@@ -548,7 +548,7 @@ class ScenarioSimulationEngine:
             affected_tests=sim_impact.affected_categories.get("affected_tests", []),
             max_propagation_depth=sim_impact.summary.max_depth_reached,
             propagation_paths_count=len(sim_impact.paths),
-            propagation_paths=[p.dict() for p in sim_impact.paths[:25]],
+            propagation_paths=[(p.model_dump() if hasattr(p, "model_dump") else p.dict()) for p in sim_impact.paths[:25]],
         )
 
         directly_tests = [
@@ -576,27 +576,36 @@ class ScenarioSimulationEngine:
             confidence_level=sim_risk.confidence.value,
             confidence_score=sim_risk.confidence_score,
             overall_score=sim_risk.overall_score,
-            risk_factors=[rf.dict() for rf in sim_risk.risk_factors],
+            risk_factors=[(rf.model_dump() if hasattr(rf, "model_dump") else rf.dict()) for rf in sim_risk.risk_factors],
             explanation=risk_explanation,
         )
 
-        # Explicit Scenario Status Determination
+        # Explicit Scenario Status Determination with Strict Zero vs Unknown Distinction
         total_affected = len(impact_summary.affected_components) + len(impact_summary.affected_apis) + len(impact_summary.affected_services)
-        if total_affected == 0:
-            status = ScenarioStatus.VERIFIED_ZERO_IMPACT
+        if len(base_rels) == 0:
+            status = ScenarioStatus.INSUFFICIENT_GRAPH_DATA
+            status_explanation = (
+                f"Impact could not be calculated: Snapshot knowledge graph contains 0 indexed relationships. "
+                f"Zero detected impact reflects unmapped graph dependencies, not proof of safety."
+            )
+        elif total_affected == 0:
             if is_test_entity:
+                status = ScenarioStatus.VERIFIED_ZERO_IMPACT
                 status_explanation = (
                     f"Verified Zero Downstream Impact: Target '{target_details.qualified_name if target_details else primary_target_str}' "
                     f"is an isolated test artifact with 0 inbound callers (in-degree: 0). Modifications to test suites do not propagate breaking changes to production services."
                 )
-            elif is_leaf:
+            elif is_leaf and in_degree == 0:
+                status = ScenarioStatus.VERIFIED_ZERO_IMPACT
                 status_explanation = (
                     f"Verified Zero Downstream Impact: Target '{target_details.qualified_name if target_details else primary_target_str}' "
-                    f"has in-degree = 0 (no callers depend on this entity in the snapshot graph). The mutation is structurally isolated."
+                    f"has verified 0 inbound callers across {len(base_rels)} indexed relationships in the snapshot graph. The mutation is structurally isolated."
                 )
             else:
+                status = ScenarioStatus.PARTIAL_ANALYSIS
                 status_explanation = (
-                    f"Verified Zero Downstream Impact: No downstream components, APIs, or breaking paths detected for this hypothetical mutation."
+                    f"Downstream Impact Inconclusive: Target '{target_details.qualified_name if target_details else primary_target_str}' "
+                    f"produced 0 detected downstream nodes, but inbound caller verification is unconfirmed. Zero detected nodes must not be interpreted as guaranteed zero risk."
                 )
         else:
             status = ScenarioStatus.DOWNSTREAM_IMPACT_DETECTED
@@ -649,7 +658,7 @@ class ScenarioSimulationEngine:
             impact=impact_summary,
             tests=test_summary,
             risk=risk_summary,
-            guardrails=[g.dict() for g in sim_guardrails],
+            guardrails=[(g.model_dump() if hasattr(g, "model_dump") else g.dict()) for g in sim_guardrails],
             evidence=evidence_items,
             assumptions=assumptions,
             unknowns=unknown_evidence_signals + validation.unknown_entities,

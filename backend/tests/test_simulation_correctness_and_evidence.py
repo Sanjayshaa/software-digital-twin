@@ -334,6 +334,10 @@ class TestSimulationCorrectnessAndEvidence(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
+    @classmethod
+    def tearDownClass(cls):
+        app.dependency_overrides.clear()
+
     # ====================================================================
     # PHASE 6: KNOWLEDGE GRAPH PRECISION & RECALL VERIFICATION
     # ====================================================================
@@ -664,6 +668,168 @@ class TestSimulationCorrectnessAndEvidence(unittest.TestCase):
         plan = data["plan"]
         self.assertFalse(plan["can_execute"])
         self.assertGreater(len(plan["candidate_entities"]), 0)
+
+    def test_discovery_honest_health_score_with_zero_tests_and_unobserved_runtime(self):
+        """
+        Verifies that Discovery Assessment does not assign a high health score
+        when tests are 0/5 and runtime telemetry is disconnected (unobserved).
+        """
+        from app.services.discovery.assessment_engine import technical_assessment_engine
+        res = technical_assessment_engine.assess_repository(self.db, self.repo.id, snapshot_id=self.snapshot.id)
+        
+        # Check dimensional score for Runtime & Incident Evidence
+        dim_runtime = next(d for d in res.dimensional_scores if d.dimension_name == "Runtime & Incident Evidence")
+        self.assertEqual(dim_runtime.status, "UNKNOWN")
+        self.assertEqual(dim_runtime.score, 0.0)
+
+        # Check overall health score is penalized for zero tests
+        self.assertIsNotNone(res.overall_health_score)
+        # Because tests are 0, overall health score must be capped <= 45.0
+        self.assertLessEqual(res.overall_health_score, 45.0)
+
+    def test_snapshot_consistency_commit_sha_and_prefix(self):
+        """
+        Verifies that What-If simulation and Discovery resolve snapshots consistently
+        whether provided by UUID, 40-char SHA, or short 8-char SHA prefix.
+        """
+        # Test What-If with short commit prefix
+        res = self.client.post(
+            f"/repositories/{self.repo.id}/scenarios/orchestrate",
+            json={
+                "query": "What if we remove PaymentGateway?",
+                "base_snapshot_id": self.snapshot.commit_hash[:8],
+                "target_override": "PaymentGateway",
+            },
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertNotEqual(data["simulation"]["status"], ScenarioStatus.MISSING_SNAPSHOT)
+
+        # Test Discovery with short commit prefix
+        res_disc = self.client.post(
+            f"/repositories/{self.repo.id}/discovery/assess?snapshot_id={self.snapshot.commit_hash[:8]}"
+        )
+        self.assertEqual(res_disc.status_code, 200)
+        disc_data = res_disc.json()
+        self.assertEqual(disc_data["snapshot_id"], self.snapshot.id)
+
+
+    def test_concurrency_query_classification_and_target_disambiguation(self):
+        """
+        Verifies that a concurrency query ('what if 100 users submit at the same time')
+        is classified as CONCURRENCY_SPIKE rather than capturing 'users', 'submit', or
+        'time' as arbitrary source symbols like server.runWithJudge0.
+        """
+        from app.services.simulation.orchestration import multi_agent_scenario_orchestrator
+        from app.services.simulation.models import MutationType
+
+        plan = multi_agent_scenario_orchestrator.plan_scenario(
+            db=self.db,
+            repository_id=self.repo.id,
+            base_snapshot_id=self.snapshot.id,
+            query="what if 100 users submit at the same time",
+        )
+
+        # 1. Intent must be identified as concurrency/capacity spike
+        self.assertEqual(plan.change_type, MutationType.CONCURRENCY_SPIKE)
+
+        # 2. Must NOT capture random English words as target symbol
+        self.assertNotIn(plan.target_entity, ["users", "submit", "same", "time", "server.runWithJudge0"])
+
+        # 3. If target is ambiguous, must flag ambiguity and require selection
+        if plan.status == "AMBIGUOUS":
+            self.assertTrue(plan.is_ambiguous)
+            self.assertIn("concurrency", plan.execution_block_reason.lower())
+
+    def test_zero_versus_unknown_impact_strict_distinction(self):
+        """
+        Verifies that 0 affected nodes is NOT presented as confident zero impact
+        when the snapshot has 0 indexed relationships (INSUFFICIENT_GRAPH_DATA).
+        """
+        from app.services.simulation.engine import scenario_simulation_engine
+        from app.services.simulation.models import ProposedMutation, MutationType, ScenarioStatus
+        from app.models.entities import RepositorySnapshot, StructuralArtifact
+
+        snap_no_rels = RepositorySnapshot(
+            id="snap_test_no_rels",
+            repository_id=self.repo.id,
+            commit_hash="c0ffee1234567890",
+            branch_name="main",
+            total_files=1,
+            total_symbols=1,
+        )
+        self.db.add(snap_no_rels)
+        art = StructuralArtifact(
+            id="art_test_no_rels_1",
+            repository_id=self.repo.id,
+            snapshot_id=snap_no_rels.id,
+            name="UnconnectedService",
+            qualified_name="UnconnectedService",
+            artifact_type="SERVICE",
+            language="python",
+        )
+        self.db.add(art)
+        self.db.commit()
+
+        # 1. Test against snapshot with 0 relationships
+        res_empty = scenario_simulation_engine.simulate_scenario(
+            db=self.db,
+            repository_id=self.repo.id,
+            base_snapshot_id=snap_no_rels.id,
+            name="Test No Rels",
+            proposed_changes=[
+                ProposedMutation(
+                    mutation_id="mut_test_isolated",
+                    mutation_type=MutationType.MODIFY_SYMBOL,
+                    target="UnconnectedService",
+                    target_entity="UnconnectedService",
+                )
+            ],
+        )
+
+        self.assertEqual(res_empty.status, ScenarioStatus.INSUFFICIENT_GRAPH_DATA)
+        self.assertIn("0 indexed relationships", res_empty.status_explanation)
+
+    def test_project_overview_purpose_and_entrypoint_extraction(self):
+        """
+        Verifies that project purpose, entry points, and test inventory are extracted
+        without throwing exceptions or fabricating fake data.
+        """
+        from app.services.discovery.project_overview import (
+            extract_project_purpose,
+            extract_entry_points,
+            extract_test_inventory_and_coverage,
+        )
+
+        purpose = extract_project_purpose(".", default_name="TwinCore")
+        self.assertIsInstance(purpose, str)
+        self.assertGreater(len(purpose), 5)
+
+        entry_points = extract_entry_points(".", self.artifacts)
+        self.assertIsInstance(entry_points, list)
+
+        test_info = extract_test_inventory_and_coverage(self.artifacts, self.relationships)
+        self.assertIn(test_info["coverage_status"], ["UNKNOWN / NOT MEASURED", "MEASURED"])
+
+    def test_structural_artifact_string_length_safety(self):
+        """
+        Verifies that StructuralArtifact truncates long names and qualified names
+        to fit PostgreSQL VARCHAR column boundaries (StringDataRightTruncation protection).
+        """
+        from app.models.entities import StructuralArtifact
+
+        long_name = "A" * 300
+        long_qual = "B" * 2500
+        art = StructuralArtifact(
+            id="art_safety_test",
+            name=long_name,
+            qualified_name=long_qual,
+            location="test.py:1",
+            artifact_type="FUNCTION",
+        )
+
+        self.assertLessEqual(len(art.name), 255)
+        self.assertLessEqual(len(art.qualified_name), 1024)
 
 
 if __name__ == "__main__":

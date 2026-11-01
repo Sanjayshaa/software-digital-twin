@@ -26,8 +26,9 @@ class APIDetector:
                               f"SOAP WSDL/XSD definition: {f.file_name}", "file_existence:wsdl")
 
         # 2. GraphQL files
-        if ".graphql" in inventory.files_by_ext or ".gql" in inventory.files_by_ext:
-            sample_f = (inventory.files_by_ext.get(".graphql") or inventory.files_by_ext.get(".gql"))[0]
+        gql_list = inventory.files_by_ext.get(".graphql") or inventory.files_by_ext.get(".gql") or []
+        if gql_list:
+            sample_f = gql_list[0]
             self._add_api(api_techs, "graphql", 1.0, sample_f.relative_path,
                           "GraphQL schema / query file", "extension:graphql")
 

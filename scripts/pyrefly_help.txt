@@ -1,0 +1,1032 @@
+Full type checking on a file or a project
+
+Usage: pyrefly check [OPTIONS] [FILES]...
+
+Arguments:
+  [FILES]...  Files to check (glob supported). If no file is specified, switch
+              to project-checking mode where the files to check are determined
+              from the closest configuration file. When supplied,
+              `project_excludes` in any config files loaded for these files to
+              check are ignored, and we use the default excludes unless
+              overridden with the `--project-excludes` flag
+
+Options:
+  -j, --threads <THREADS>
+          Number of threads to use for parallelization. Setting the value to 1
+          implies sequential execution without any parallelism. Setting the
+          value to 0 means to pick the number of threads automatically using
+          default heuristics [env: PYREFLY_THREADS=] [default: 0]
+      --project-excludes <PROJECT_EXCLUDES>
+          Files to exclude when type checking
+  -c, --config <FILE>
+          Explicitly set the Pyrefly configuration to use when type checking. In
+          "single-file checking mode," this config is applied to all files being
+          checked, ignoring the config's `project_includes` and
+          `project_excludes` and ignoring any config-finding approach that would
+          otherwise be used. When not set, Pyrefly will perform an
+          upward-filesystem-walk approach to find the nearest pyrefly.toml or
+          pyproject.toml with `tool.pyrefly` section'. If no config is found,
+          Pyrefly exits with error. If both a pyrefly.toml and valid
+          pyproject.toml are found, pyrefly.toml takes precedence [env:
+          PYREFLY_CONFIG=]
+      --color <COLOR>
+          Control whether colored output is used [env: PYREFLY_COLOR=] [default:
+          auto] [possible values: auto, always, never]
+  -v, --verbose
+          Enable verbose logging [env: PYREFLY_VERBOSE=]
+      --watch
+          Watch for file changes and re-check them. (Warning: This mode is
+          highly experimental!)
+  -h, --help
+          Print help (see more with '--help')
+
+Output:
+  -o, --output <[FORMAT:]DESTINATION>
+          Write errors to an output destination. Repeat for multiple outputs.
+          Use `-` as the destination for stdout. Prefix a destination with
+          `FORMAT:` to override `--output-format`
+      --output-format <OUTPUT_FORMAT>
+          Set the default error output format [possible values: min-text,
+          full-text, full-text-with-github, json, github, junit-xml,
+          code-climate, sarif, omit-errors]
+      --debug-info <OUTPUT_FILE>
+          Produce debugging information about the type checking process
+      --report-binding-memory <OUTPUT_FILE>
+          Report the memory usage of bindings
+      --report-trace <OUTPUT_FILE>
+          Report type traces
+      --dependency-graph <OUTPUT_FILE>
+          Experimental: generate a JSON dependency graph of all modules to the
+          specified file. This is unstable and should only be used for debugging
+      --report-timings <OUTPUT_FILE>
+          Process each module individually to figure out how long each step
+          takes
+      --report-glean <OUTPUT_FILE>
+          Generate a Glean-compatible JSON file for each module
+      --report-glean-ownership
+          Make each module's file the Glean ownership unit of its facts in the
+          Glean report
+      --report-pysa <OUTPUT_FILE>
+          Generate a Pysa-compatible JSON file for each module
+      --report-pysa-format <REPORT_PYSA_FORMAT>
+          Format for pysa report output (json or capnp) [default: capnp]
+          [possible values: capnp, json]
+      --report-demand-tree <OUTPUT_FILE>
+          Report the cross-module demand tree (aggregated summary of
+          LookupAnswer and LookupExport calls). Useful for analyzing laziness
+          properties
+      --count-errors[=<N>]
+          Count the number of each error kind. Prints the top N [default=5]
+          errors, sorted by count, or all errors if N is 0
+      --summarize-errors[=<INDEX>]
+          Summarize errors by directory. The optional index argument specifies
+          which file path segment will be used to group errors. The default
+          index is 0. For errors in `/foo/bar/...`, this will group errors by
+          `/foo`. If index is 1, errors will be grouped by `/foo/bar`. An index
+          larger than the number of path segments will group by the final path
+          element, i.e. the file name
+      --only <ERROR_KIND>
+          Filter errors to show only a specific error kind (e.g.,
+          bad-assignment, missing-return, etc.). Can be passed multiple times or
+          as a comma-separated list
+      --summary[=<SUMMARY>]
+          By default show a progress bar and the number of errors. Pass
+          `--summary` to additionally show information about lines checked and
+          time/memory, or `--summary=none` to hide the progress bar and summary
+          line entirely [default: default] [possible values: none, default,
+          full]
+      --progress-bar <PROGRESS_BAR>
+          Set the progress bar style. `interactive` (default) shows a visual
+          progress bar. `simple` prints periodic log-style progress messages
+          (suitable for piping or non-interactive use). `no` disables progress
+          reporting entirely [possible values: interactive, simple, no]
+      --relative-to <RELATIVE_TO>
+          When specified, strip this prefix from any paths in the output. Pass
+          "" to show absolute paths. When omitted, we will use the current
+          working directory
+      --baseline <BASELINE_FILE>
+          Path to baseline file for comparing type errors
+      --baseline-error-level <BASELINE_ERROR_LEVEL>
+          Severity assigned to errors that match the baseline. Defaults to
+          "ignore" [possible values: ignore, info, warn, error]
+      --update-baseline
+          When specified, emit a sorted/formatted JSON of the errors to the
+          baseline file
+      --prune-baseline
+          Rewrite the baseline file to drop stale entries without recording new
+          errors. Existing entries for files outside the current check are
+          retained
+      --error-stale-baseline
+          Exit with a non-zero status when the checked scope makes baseline
+          entries stale
+      --min-severity <MIN_SEVERITY>
+          Minimum severity level for errors to be displayed. Errors below this
+          severity will not be shown. Defaults to "error" [possible values:
+          ignore, info, warn, error]
+
+Behavior:
+  -a, --check-all
+          Check all reachable modules, not just the ones that are passed in
+          explicitly on CLI positional arguments
+      --suppress-errors
+          Suppress errors found in the input files
+      --expectations
+          Check against any `E:` lines in the file
+      --remove-unused-ignores[=<KIND>]
+          Remove unused ignores from the input files, optionally selecting
+          `pyrefly`, `type`, or `all`. Defaults to `pyrefly` when no kind is
+          specified [possible values: pyrefly, type, all]
+
+Config Overrides:
+  -p, --preset <PRESET>                                                              A
+                                                                                     named
+                                                                                     collection
+                                                                                     of
+                                                                                     error
+                                                                                     severities
+                                                                                     and
+                                                                                     behavior
+                                                                                     settings
+                                                                                     that
+                                                                                     serves
+                                                                                     as
+                                                                                     the
+                                                                                     base
+                                                                                     configuration.
+                                                                                     Any
+                                                                                     explicit
+                                                                                     settings
+                                                                                     you
+                                                                                     specify
+                                                                                     override
+                                                                                     the
+                                                                                     preset
+                                                                                     [possible
+                                                                                     values:
+                                                                                     off,
+                                                                                     basic,
+                                                                                     legacy,
+                                                                                     default,
+                                                                                     strict,
+                                                                                     all]
+      --disable-project-excludes-heuristics[=<DISABLE_PROJECT_EXCLUDES_HEURISTICS>]  Configures
+                                                                                     Pyrefly
+                                                                                     to
+                                                                                     replace
+                                                                                     `project-excludes`
+                                                                                     fully
+                                                                                     rather
+                                                                                     than
+                                                                                     append
+                                                                                     whatever
+                                                                                     is
+                                                                                     in
+                                                                                     your
+                                                                                     configuration
+                                                                                     or
+                                                                                     passed
+                                                                                     by
+                                                                                     CLI
+                                                                                     to
+                                                                                     Pyrefly's
+                                                                                     defaults
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --search-path <SEARCH_PATH>                                                    The
+                                                                                     list
+                                                                                     of
+                                                                                     directories
+                                                                                     where
+                                                                                     imports
+                                                                                     are
+                                                                                     imported
+                                                                                     from,
+                                                                                     including
+                                                                                     type
+                                                                                     checked
+                                                                                     files
+      --disable-search-path-heuristics[=<DISABLE_SEARCH_PATH_HEURISTICS>]            Disable
+                                                                                     Pyrefly
+                                                                                     default
+                                                                                     heuristics,
+                                                                                     specifically
+                                                                                     those
+                                                                                     around
+                                                                                     constructing
+                                                                                     a
+                                                                                     modified
+                                                                                     search
+                                                                                     path.
+                                                                                     Setting
+                                                                                     this
+                                                                                     flag
+                                                                                     will
+                                                                                     instruct
+                                                                                     Pyrefly
+                                                                                     to
+                                                                                     use
+                                                                                     the
+                                                                                     exact
+                                                                                     `search_path`
+                                                                                     you
+                                                                                     give
+                                                                                     it
+                                                                                     through
+                                                                                     your
+                                                                                     config
+                                                                                     file
+                                                                                     and
+                                                                                     CLI
+                                                                                     args
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --enable-fallback-search-path[=<ENABLE_FALLBACK_SEARCH_PATH>]                  Enable
+                                                                                     walk-up
+                                                                                     fallback
+                                                                                     search
+                                                                                     paths,
+                                                                                     where
+                                                                                     Pyrefly
+                                                                                     walks
+                                                                                     up
+                                                                                     from
+                                                                                     each
+                                                                                     importing
+                                                                                     file's
+                                                                                     directory
+                                                                                     to
+                                                                                     the
+                                                                                     config
+                                                                                     root
+                                                                                     to
+                                                                                     best-effort
+                                                                                     resolve
+                                                                                     imports
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --python-version <PYTHON_VERSION>                                              The
+                                                                                     Python
+                                                                                     version
+                                                                                     any
+                                                                                     `sys.version`
+                                                                                     checks
+                                                                                     should
+                                                                                     evaluate
+                                                                                     against
+      --python-platform <PYTHON_PLATFORM>                                            The
+                                                                                     platform
+                                                                                     any
+                                                                                     `sys.platform`
+                                                                                     checks
+                                                                                     should
+                                                                                     evaluate
+                                                                                     against
+      --site-packages-path <SITE_PACKAGE_PATH>                                       Directories
+                                                                                     containing
+                                                                                     third-party
+                                                                                     package
+                                                                                     imports,
+                                                                                     searched
+                                                                                     after
+                                                                                     first
+                                                                                     checking
+                                                                                     `search_path`
+                                                                                     and
+                                                                                     `typeshed`
+                                                                                     [alias:
+                                                                                     --site-package-path]
+      --conda-environment <CONDA_ENVIRONMENT>                                        Use
+                                                                                     a
+                                                                                     specific
+                                                                                     Conda
+                                                                                     environment
+                                                                                     to
+                                                                                     query
+                                                                                     Python
+                                                                                     environment
+                                                                                     information,
+                                                                                     even
+                                                                                     if
+                                                                                     it
+                                                                                     isn't
+                                                                                     activated
+      --python-interpreter-path <EXE_PATH>                                           The
+                                                                                     path
+                                                                                     to
+                                                                                     a
+                                                                                     Python
+                                                                                     executable
+                                                                                     that
+                                                                                     will
+                                                                                     be
+                                                                                     queried
+                                                                                     for
+                                                                                     `python-version`
+                                                                                     `python-platform`,
+                                                                                     or
+                                                                                     `site-packages-path`
+                                                                                     if
+                                                                                     any
+                                                                                     of
+                                                                                     the
+                                                                                     values
+                                                                                     are
+                                                                                     missing
+      --fallback-python-interpreter-name <COMMAND>                                   The
+                                                                                     Python
+                                                                                     executable
+                                                                                     name
+                                                                                     available
+                                                                                     on
+                                                                                     your
+                                                                                     PATH
+                                                                                     that
+                                                                                     will
+                                                                                     be
+                                                                                     queried
+                                                                                     for
+                                                                                     your
+                                                                                     `python-version`,
+                                                                                     `python-platform`,
+                                                                                     or
+                                                                                     `site-packages-path`
+                                                                                     if
+                                                                                     any
+                                                                                     of
+                                                                                     the
+                                                                                     values
+                                                                                     are
+                                                                                     missing.
+                                                                                     We
+                                                                                     execute
+                                                                                     `which
+                                                                                     <COMMAND>`
+                                                                                     to
+                                                                                     fill
+                                                                                     in
+                                                                                     your
+                                                                                     `python-interpreter-path`,
+                                                                                     which
+                                                                                     is
+                                                                                     useful
+                                                                                     if
+                                                                                     you
+                                                                                     don't
+                                                                                     know
+                                                                                     where
+                                                                                     the
+                                                                                     Python
+                                                                                     executable
+                                                                                     will
+                                                                                     be
+                                                                                     on
+                                                                                     a
+                                                                                     given
+                                                                                     machine,
+                                                                                     but
+                                                                                     want
+                                                                                     to
+                                                                                     use
+                                                                                     one
+                                                                                     other
+                                                                                     than
+                                                                                     the
+                                                                                     default.
+                                                                                     When
+                                                                                     this
+                                                                                     and
+                                                                                     `python-interpreter-path`
+                                                                                     are
+                                                                                     unset,
+                                                                                     we
+                                                                                     query
+                                                                                     for
+                                                                                     `python3`
+                                                                                     and
+                                                                                     `python`
+      --skip-interpreter-query                                                       Skip
+                                                                                     doing
+                                                                                     any
+                                                                                     automatic
+                                                                                     querying
+                                                                                     for
+                                                                                     `python-interpreter-path`,
+                                                                                     `fallback-python-interpreter-name`,
+                                                                                     or
+                                                                                     `conda-environment`
+      --typeshed-path <TYPESHED_PATH>                                                Override
+                                                                                     the
+                                                                                     bundled
+                                                                                     typeshed
+                                                                                     with
+                                                                                     a
+                                                                                     custom
+                                                                                     path
+      --replace-imports-with-any <REPLACE_IMPORTS_WITH_ANY>                          Always
+                                                                                     replace
+                                                                                     specified
+                                                                                     imports
+                                                                                     with
+                                                                                     typing.Any,
+                                                                                     suppressing
+                                                                                     related
+                                                                                     import
+                                                                                     errors
+                                                                                     even
+                                                                                     if
+                                                                                     the
+                                                                                     module
+                                                                                     is
+                                                                                     found
+      --ignore-missing-imports <IGNORE_MISSING_IMPORTS>                              If
+                                                                                     the
+                                                                                     specified
+                                                                                     imported
+                                                                                     module
+                                                                                     can't
+                                                                                     be
+                                                                                     found,
+                                                                                     replace
+                                                                                     it
+                                                                                     with
+                                                                                     typing.Any,
+                                                                                     suppressing
+                                                                                     related
+                                                                                     import
+                                                                                     errors
+      --replace-untyped-imports-with-any <REPLACE_UNTYPED_IMPORTS_WITH_ANY>          Replace
+                                                                                     specified
+                                                                                     third-party
+                                                                                     imports
+                                                                                     with
+                                                                                     typing.Any
+                                                                                     when
+                                                                                     no
+                                                                                     stubs
+                                                                                     or
+                                                                                     py.typed
+                                                                                     marker
+                                                                                     exist
+      --ignore-errors-in-generated-code[=<IGNORE_ERRORS_IN_GENERATED_CODE>]          Whether
+                                                                                     to
+                                                                                     ignore
+                                                                                     type
+                                                                                     errors
+                                                                                     in
+                                                                                     generated
+                                                                                     code
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --infer-with-first-use[=<INFER_WITH_FIRST_USE>]                                If
+                                                                                     this
+                                                                                     is
+                                                                                     true,
+                                                                                     infer
+                                                                                     type
+                                                                                     variables
+                                                                                     not
+                                                                                     determined
+                                                                                     by
+                                                                                     a
+                                                                                     call
+                                                                                     or
+                                                                                     constructor
+                                                                                     based
+                                                                                     on
+                                                                                     their
+                                                                                     first
+                                                                                     usage.
+                                                                                     For
+                                                                                     example,
+                                                                                     the
+                                                                                     type
+                                                                                     of
+                                                                                     an
+                                                                                     empty
+                                                                                     container
+                                                                                     would
+                                                                                     be
+                                                                                     determined
+                                                                                     by
+                                                                                     the
+                                                                                     first
+                                                                                     thing
+                                                                                     you
+                                                                                     put
+                                                                                     into
+                                                                                     it.
+                                                                                     If
+                                                                                     this
+                                                                                     is
+                                                                                     false,
+                                                                                     any
+                                                                                     unsolved
+                                                                                     type
+                                                                                     variables
+                                                                                     at
+                                                                                     the
+                                                                                     end
+                                                                                     of
+                                                                                     a
+                                                                                     call
+                                                                                     or
+                                                                                     constructor
+                                                                                     will
+                                                                                     be
+                                                                                     replaced
+                                                                                     with
+                                                                                     `Any`.
+                                                                                     Defaults
+                                                                                     to
+                                                                                     true
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --use-ignore-files[=<USE_IGNORE_FILES>]                                        Whether
+                                                                                     to
+                                                                                     respect
+                                                                                     ignore
+                                                                                     files
+                                                                                     (.gitignore,
+                                                                                     .ignore,
+                                                                                     .git/exclude)
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --untyped-def-behavior <UNTYPED_DEF_BEHAVIOR>                                  Deprecated:
+                                                                                     use
+                                                                                     --check-unannotated-defs
+                                                                                     and
+                                                                                     --infer-return-types
+                                                                                     instead.
+                                                                                     Controls
+                                                                                     how
+                                                                                     Pyrefly
+                                                                                     analyzes
+                                                                                     function
+                                                                                     definitions
+                                                                                     that
+                                                                                     lack
+                                                                                     type
+                                                                                     annotations
+                                                                                     on
+                                                                                     parameters
+                                                                                     and
+                                                                                     return
+                                                                                     values
+                                                                                     [possible
+                                                                                     values:
+                                                                                     check-and-infer-return-type,
+                                                                                     check-and-infer-return-any,
+                                                                                     skip-and-infer-return-any]
+      --check-unannotated-defs[=<CHECK_UNANNOTATED_DEFS>]                            Whether
+                                                                                     to
+                                                                                     type
+                                                                                     check
+                                                                                     the
+                                                                                     bodies
+                                                                                     of
+                                                                                     unannotated
+                                                                                     function
+                                                                                     definitions
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --infer-return-types <INFER_RETURN_TYPES>                                      Controls
+                                                                                     when
+                                                                                     return
+                                                                                     types
+                                                                                     are
+                                                                                     inferred
+                                                                                     for
+                                                                                     functions
+                                                                                     without
+                                                                                     return
+                                                                                     annotations.
+                                                                                     Values:
+                                                                                     never,
+                                                                                     annotated,
+                                                                                     checked
+                                                                                     (default).
+                                                                                     Only
+                                                                                     applies
+                                                                                     to
+                                                                                     functions
+                                                                                     whose
+                                                                                     bodies
+                                                                                     are
+                                                                                     checked;
+                                                                                     unannotated
+                                                                                     functions
+                                                                                     are
+                                                                                     only
+                                                                                     eligible
+                                                                                     when
+                                                                                     --check-unannotated-defs
+                                                                                     is
+                                                                                     true
+                                                                                     [possible
+                                                                                     values:
+                                                                                     never,
+                                                                                     annotated,
+                                                                                     checked]
+      --permissive-ignores[=<PERMISSIVE_IGNORES>]                                    Whether
+                                                                                     Pyrefly
+                                                                                     will
+                                                                                     respect
+                                                                                     ignore
+                                                                                     statements
+                                                                                     for
+                                                                                     other
+                                                                                     tools,
+                                                                                     e.g.
+                                                                                     `#
+                                                                                     pyright:
+                                                                                     ignore`.
+                                                                                     Equivalent
+                                                                                     to
+                                                                                     passing
+                                                                                     the
+                                                                                     names
+                                                                                     of
+                                                                                     all
+                                                                                     tools
+                                                                                     to
+                                                                                     `--enabled-ignores`
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --enabled-ignores <ENABLED_IGNORES>                                            Respect
+                                                                                     ignore
+                                                                                     directives
+                                                                                     from
+                                                                                     only
+                                                                                     these
+                                                                                     tools.
+                                                                                     Can
+                                                                                     be
+                                                                                     passed
+                                                                                     multiple
+                                                                                     times
+                                                                                     or
+                                                                                     as
+                                                                                     a
+                                                                                     comma-separated
+                                                                                     list.
+                                                                                     Defaults
+                                                                                     to
+                                                                                     type,pyrefly.
+                                                                                     Passing
+                                                                                     the
+                                                                                     names
+                                                                                     of
+                                                                                     all
+                                                                                     tools
+                                                                                     is
+                                                                                     equivalent
+                                                                                     to
+                                                                                     `--permissive-ignores`
+                                                                                     [possible
+                                                                                     values:
+                                                                                     type,
+                                                                                     pyrefly,
+                                                                                     pyright,
+                                                                                     mypy,
+                                                                                     ty,
+                                                                                     pyre,
+                                                                                     zuban]
+      --type-ignore-unknown-tag-behavior <TYPE_IGNORE_UNKNOWN_TAG_BEHAVIOR>          How
+                                                                                     `#
+                                                                                     type:
+                                                                                     ignore[...]`
+                                                                                     comments
+                                                                                     with
+                                                                                     non-Pyrefly
+                                                                                     tags
+                                                                                     affect
+                                                                                     diagnostics
+                                                                                     [possible
+                                                                                     values:
+                                                                                     no-effect,
+                                                                                     downgrade-to-warning,
+                                                                                     suppress]
+      --error <ERROR>                                                                Force
+                                                                                     this
+                                                                                     rule
+                                                                                     to
+                                                                                     emit
+                                                                                     an
+                                                                                     error.
+                                                                                     Can
+                                                                                     be
+                                                                                     passed
+                                                                                     multiple
+                                                                                     times
+                                                                                     or
+                                                                                     as
+                                                                                     a
+                                                                                     comma-separated
+                                                                                     list
+      --warn <WARN>                                                                  Force
+                                                                                     this
+                                                                                     rule
+                                                                                     to
+                                                                                     emit
+                                                                                     a
+                                                                                     warning.
+                                                                                     Can
+                                                                                     be
+                                                                                     passed
+                                                                                     multiple
+                                                                                     times
+                                                                                     or
+                                                                                     as
+                                                                                     a
+                                                                                     comma-separated
+                                                                                     list
+      --ignore <IGNORE>                                                              Do
+                                                                                     not
+                                                                                     emit
+                                                                                     diagnostics
+                                                                                     for
+                                                                                     this
+                                                                                     rule.
+                                                                                     Can
+                                                                                     be
+                                                                                     passed
+                                                                                     multiple
+                                                                                     times
+                                                                                     or
+                                                                                     as
+                                                                                     a
+                                                                                     comma-separated
+                                                                                     list
+      --info <INFO>                                                                  Force
+                                                                                     this
+                                                                                     rule
+                                                                                     to
+                                                                                     emit
+                                                                                     an
+                                                                                     info-level
+                                                                                     diagnostic.
+                                                                                     Can
+                                                                                     be
+                                                                                     passed
+                                                                                     multiple
+                                                                                     times
+                                                                                     or
+                                                                                     as
+                                                                                     a
+                                                                                     comma-separated
+                                                                                     list
+      --recursion-depth-limit <RECURSION_DEPTH_LIMIT>                                Maximum
+                                                                                     recursion
+                                                                                     depth
+                                                                                     before
+                                                                                     triggering
+                                                                                     overflow
+                                                                                     protection.
+                                                                                     Set
+                                                                                     to
+                                                                                     0
+                                                                                     to
+                                                                                     disable
+                                                                                     (default).
+                                                                                     This
+                                                                                     helps
+                                                                                     detect
+                                                                                     potential
+                                                                                     stack
+                                                                                     overflow
+                                                                                     situations
+      --recursion-overflow-handler <RECURSION_OVERFLOW_HANDLER>                      How
+                                                                                     to
+                                                                                     handle
+                                                                                     when
+                                                                                     recursion
+                                                                                     depth
+                                                                                     limit
+                                                                                     is
+                                                                                     exceeded
+                                                                                     [possible
+                                                                                     values:
+                                                                                     break-with-placeholder,
+                                                                                     panic-with-debug-info]
+      --pytorch-efficiency-lints <PYTORCH_EFFICIENCY_LINTS>                          Deprecated:
+                                                                                     use
+                                                                                     `--warn=pytorch-efficiency-lints`
+                                                                                     instead.
+                                                                                     Enable
+                                                                                     PyTorch
+                                                                                     efficiency
+                                                                                     lints
+                                                                                     that
+                                                                                     detect
+                                                                                     common
+                                                                                     GPU
+                                                                                     performance
+                                                                                     anti-patterns
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --tensor-shapes <TENSOR_SHAPES>                                                Deprecated
+                                                                                     no-op.
+                                                                                     Tensor
+                                                                                     shape
+                                                                                     support
+                                                                                     is
+                                                                                     derived
+                                                                                     from
+                                                                                     whether
+                                                                                     `shape_extensions`
+                                                                                     is
+                                                                                     resolvable
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --strict-callable-subtyping[=<STRICT_CALLABLE_SUBTYPING>]                      Whether
+                                                                                     to
+                                                                                     strictly
+                                                                                     check
+                                                                                     callable
+                                                                                     subtyping
+                                                                                     for
+                                                                                     signatures
+                                                                                     with
+                                                                                     `*args:
+                                                                                     Any,
+                                                                                     **kwargs:
+                                                                                     Any`.
+                                                                                     When
+                                                                                     false
+                                                                                     (the
+                                                                                     default),
+                                                                                     callables
+                                                                                     with
+                                                                                     `*args:
+                                                                                     Any,
+                                                                                     **kwargs:
+                                                                                     Any`
+                                                                                     are
+                                                                                     treated
+                                                                                     as
+                                                                                     compatible
+                                                                                     with
+                                                                                     any
+                                                                                     signature
+                                                                                     (similar
+                                                                                     to
+                                                                                     `...`
+                                                                                     behavior).
+                                                                                     When
+                                                                                     true,
+                                                                                     parameter
+                                                                                     list
+                                                                                     compatibility
+                                                                                     is
+                                                                                     checked
+                                                                                     strictly
+                                                                                     even
+                                                                                     when
+                                                                                     `*args:
+                                                                                     Any,
+                                                                                     **kwargs:
+                                                                                     Any`
+                                                                                     is
+                                                                                     present
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --strict-partial-subtyping[=<STRICT_PARTIAL_SUBTYPING>]                        Whether
+                                                                                     to
+                                                                                     strictly
+                                                                                     check
+                                                                                     the
+                                                                                     remaining
+                                                                                     parameters
+                                                                                     of
+                                                                                     a
+                                                                                     `functools.partial(...)`
+                                                                                     when
+                                                                                     it
+                                                                                     is
+                                                                                     assigned
+                                                                                     to
+                                                                                     a
+                                                                                     callable.
+                                                                                     When
+                                                                                     false
+                                                                                     (the
+                                                                                     default),
+                                                                                     its
+                                                                                     parameters
+                                                                                     are
+                                                                                     treated
+                                                                                     as
+                                                                                     gradual
+                                                                                     (like
+                                                                                     `...`)
+                                                                                     for
+                                                                                     subtyping,
+                                                                                     matching
+                                                                                     the
+                                                                                     typeshed
+                                                                                     `partial`
+                                                                                     stub.
+                                                                                     When
+                                                                                     true,
+                                                                                     their
+                                                                                     parameter
+                                                                                     types
+                                                                                     and
+                                                                                     arity
+                                                                                     are
+                                                                                     checked
+                                                                                     precisely
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --spec-compliant-overloads[=<SPEC_COMPLIANT_OVERLOADS>]                        Whether
+                                                                                     to
+                                                                                     use
+                                                                                     spec-compliant
+                                                                                     overload
+                                                                                     evaluation
+                                                                                     semantics.
+                                                                                     When
+                                                                                     false
+                                                                                     (the
+                                                                                     default),
+                                                                                     Pyrefly
+                                                                                     attempts
+                                                                                     to
+                                                                                     resolve
+                                                                                     ambiguous
+                                                                                     calls
+                                                                                     precisely.
+                                                                                     When
+                                                                                     true,
+                                                                                     overload
+                                                                                     evaluation
+                                                                                     follows
+                                                                                     the
+                                                                                     typing
+                                                                                     spec
+                                                                                     exactly,
+                                                                                     falling
+                                                                                     back
+                                                                                     to
+                                                                                     `Any`
+                                                                                     more
+                                                                                     frequently
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --legacy-overload-expansion[=<LEGACY_OVERLOAD_EXPANSION>]                      Whether
+                                                                                     to
+                                                                                     expand
+                                                                                     union
+                                                                                     arguments
+                                                                                     to
+                                                                                     narrow
+                                                                                     an
+                                                                                     already-matched
+                                                                                     overloaded
+                                                                                     call.
+                                                                                     Off
+                                                                                     by
+                                                                                     default
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]
+      --treat-all-caps-as-final[=<TREAT_ALL_CAPS_AS_FINAL>]                          Treat
+                                                                                     ALL_CAPS
+                                                                                     names
+                                                                                     as
+                                                                                     final
+                                                                                     after
+                                                                                     their
+                                                                                     first
+                                                                                     assignment
+                                                                                     [possible
+                                                                                     values:
+                                                                                     true,
+                                                                                     false]

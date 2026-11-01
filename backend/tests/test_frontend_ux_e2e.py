@@ -15,6 +15,19 @@ import time
 import unittest
 import urllib.request
 
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except Exception:
+    pass
+
+import builtins
+_orig_print = builtins.print
+def _flush_print(*args, **kwargs):
+    kwargs.setdefault('flush', True)
+    _orig_print(*args, **kwargs)
+builtins.print = _flush_print
+
 if sys.version_info < (3, 11):
     venv_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".venv", "bin", "python3"))
     if os.path.exists(venv_py):
@@ -143,7 +156,19 @@ class CDPClient:
             await self.ws.close()
 
 
+def kill_existing_chrome_on_port(port):
+    try:
+        res = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True)
+        if res.stdout.strip():
+            for pid in res.stdout.strip().split():
+                subprocess.run(["kill", "-9", pid], capture_output=True)
+            time.sleep(0.5)
+    except Exception:
+        pass
+
+
 def launch_chrome(profile_dir, port):
+    kill_existing_chrome_on_port(port)
     if os.path.exists(profile_dir):
         shutil.rmtree(profile_dir, ignore_errors=True)
     os.makedirs(profile_dir, exist_ok=True)
@@ -208,14 +233,14 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         # Navigate to target page and wait for document to load with real HTTP origin
         await self.cdp.send("Page.navigate", {"url": TARGET_URL})
         for _ in range(40):
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.05)
             try:
                 origin = await self.cdp.eval_js("window.location.origin")
                 if origin and origin != "null" and "http" in origin:
                     break
             except Exception:
                 pass
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.1)
         # Clear any initial navigation errors
         self.cdp.console_errors.clear()
         self.cdp.network_failures.clear()
@@ -317,14 +342,18 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         for route_name, expected_panel_id in routes_to_test:
             target_hash_url = f"{TARGET_URL}#{route_name}"
             await self.cdp.send("Page.navigate", {"url": target_hash_url})
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.08)
             await self.cdp.send("Page.reload")
-            for _ in range(25):
-                await asyncio.sleep(0.15)
-                st = await self.cdp.eval_js("window.TwinApp?.state?.appState")
-                if st in ("READY", "NO_REPOSITORY"):
-                    break
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.25)
+            for _ in range(60):
+                await asyncio.sleep(0.08)
+                try:
+                    st = await self.cdp.eval_js("window.TwinApp?.state?.appState")
+                    if st in ("READY", "NO_REPOSITORY"):
+                        break
+                except Exception:
+                    pass
+            await asyncio.sleep(0.05)
             reload_debug = await self.cdp.eval_js(f"""
                 ({{
                     hash: window.location.hash,
@@ -353,11 +382,11 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         print(f"  Repositories detected: {len(repos)}")
         if len(repos) > 1:
             await self.cdp.eval_js(f"window.TwinApp.selectRepository('{repos[1]}')", await_promise=True)
-            await asyncio.sleep(1.2)
+            await asyncio.sleep(0.4)
             curr_repo = await self.cdp.eval_js("window.TwinApp?.state?.currentRepoId")
             self.assertEqual(curr_repo, repos[1])
             await self.cdp.eval_js(f"window.TwinApp.selectRepository('{repos[0]}')", await_promise=True)
-            await asyncio.sleep(1.2)
+            await asyncio.sleep(0.4)
         await self.cdp.capture_screenshot("03_repo_switching.png")
 
         # 4. Snapshot Switching
@@ -366,11 +395,11 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         print(f"  Snapshots detected: {len(snapshots)}")
         if len(snapshots) > 1:
             await self.cdp.eval_js(f"window.TwinApp.selectSnapshot('{snapshots[1]}')", await_promise=True)
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.3)
             curr_snap = await self.cdp.eval_js("window.TwinApp?.state?.currentSnapshotId")
             self.assertEqual(curr_snap, snapshots[1])
             await self.cdp.eval_js(f"window.TwinApp.selectSnapshot('{snapshots[0]}')", await_promise=True)
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.3)
         await self.cdp.capture_screenshot("04_snapshot_switching.png")
 
         # 5. Connect and Disconnect Workflows (Modal Safety)
@@ -390,15 +419,15 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         # 6. Discovery Assessment Execution & Retrieval
         print("\n[Step 6] Discovery Assessment Execution...")
         await self.cdp.eval_js("window.TwinApp.switchPrimaryView('discovery')")
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(0.3)
         await self.cdp.eval_js("window.TwinApp.runTechnicalAssessment()")
-        await asyncio.sleep(0.5)
-        # Poll for assessment completion (up to 15s)
-        for _ in range(30):
+        await asyncio.sleep(0.3)
+        # Poll for assessment completion (up to 30s)
+        for _ in range(60):
             is_running = await self.cdp.eval_js("document.getElementById('btn-run-assessment')?.disabled")
             if not is_running:
                 break
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.3)
         disc_status = await self.cdp.eval_js("document.getElementById('disc-status-badge')?.innerText || ''")
         disc_err = await self.cdp.eval_js("document.getElementById('disc-error-box')?.innerText || ''")
         print(f"  Discovery Assessment Status: {disc_status}")
@@ -416,7 +445,7 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         # 8. Changes Comparison
         print("\n[Step 8] Changes Comparison...")
         await self.cdp.eval_js("window.TwinApp.switchPrimaryView('changes')")
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(0.3)
         changes_visible = await self.cdp.eval_js("document.getElementById('view-changes')?.style.display !== 'none'")
         self.assertTrue(changes_visible, "Changes panel not visible")
         await self.cdp.capture_screenshot("08_changes_comparison.png")
@@ -424,10 +453,10 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         # 9. Change Impact Execution & Propagation Paths
         print("\n[Step 9] Change Impact Execution...")
         await self.cdp.eval_js("window.TwinApp.switchPrimaryView('impact')")
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(0.3)
         await self.cdp.eval_js("window.TwinApp.executeChangeImpactAnalysis()")
         for _ in range(30):
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.3)
             is_running = await self.cdp.eval_js("document.getElementById('btn-run-impact-action')?.disabled")
             if not is_running:
                 break
@@ -438,14 +467,14 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         # 10. What-If Guided Scenario Designer & Target Autocomplete
         print("\n[Step 10] What-If Scenario Designer & Target Autocomplete...")
         await self.cdp.eval_js("window.TwinApp.switchPrimaryView('simulation')")
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(0.3)
 
         # Click archetype card
         await self.cdp.eval_js("""
             const card = document.querySelector('.sim-archetype-card[data-type="REMOVE_DEPENDENCY"]');
             if (card) card.click();
         """)
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.2)
 
         # Autocomplete typing
         await self.cdp.eval_js("""
@@ -455,7 +484,7 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
                 inp.dispatchEvent(new Event('input', { bubbles: true }));
             }
         """)
-        await asyncio.sleep(0.6)
+        await asyncio.sleep(0.3)
 
         # Select target
         await self.cdp.eval_js("""
@@ -466,7 +495,7 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
                 window.TwinApp.selectResolvedTarget('PaymentService');
             }
         """)
-        await asyncio.sleep(0.4)
+        await asyncio.sleep(0.2)
 
         resolved_badge_visible = await self.cdp.eval_js("""
             document.getElementById('sim-resolved-target-badge')?.style.display !== 'none'
@@ -479,7 +508,7 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         print("\n[Step 11] Truthful Simulation Result / Failure Handling...")
         await self.cdp.eval_js("window.TwinApp.runSimulationAction()")
         for _ in range(30):
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.3)
             is_running = await self.cdp.eval_js("document.getElementById('btn-run-simulation')?.disabled")
             if not is_running:
                 break
@@ -493,22 +522,51 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         # 12. Navigation Round-Trip
         print("\n[Step 12] Navigation Round-Trip...")
         await self.cdp.eval_js("window.TwinApp.switchPrimaryView('overview')")
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.2)
         await self.cdp.eval_js("window.TwinApp.switchPrimaryView('discovery')")
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.2)
         curr_view = await self.cdp.eval_js("window.TwinApp?.state?.currentPrimaryView")
         self.assertEqual(curr_view, "discovery")
         await self.cdp.capture_screenshot("12_roundtrip_navigation.png")
 
-        # 13. Responsive Layouts
-        print("\n[Step 13] Responsive Layouts...")
-        await self.cdp.send("Emulation.setDeviceMetricsOverride", {
-            "width": 768,
-            "height": 1024,
-            "deviceScaleFactor": 1,
-            "mobile": True
-        })
-        await asyncio.sleep(0.5)
+        # 13. Responsive Layouts & Routing Verification
+        print("\n[Step 13] Responsive Layouts & Routing Verification...")
+        viewports_to_verify = [
+            ("Desktop", 1440, 900, False),
+            ("Laptop", 1280, 800, False),
+            ("Small Laptop", 1024, 768, False),
+            ("Tablet", 768, 1024, True),
+            ("Mobile", 375, 667, True),
+        ]
+
+        for vp_name, width, height, is_mobile in viewports_to_verify:
+            await self.cdp.send("Emulation.setDeviceMetricsOverride", {
+                "width": width,
+                "height": height,
+                "deviceScaleFactor": 1,
+                "mobile": is_mobile
+            })
+            await asyncio.sleep(0.15)
+            layout_check = await self.cdp.eval_js("""
+                (() => {
+                    const docWidth = document.documentElement.clientWidth;
+                    const header = document.querySelector('header');
+                    const main = document.getElementById('main-content');
+                    const headerRight = header ? header.getBoundingClientRect().right : 0;
+                    const mainScrollWidth = main ? main.scrollWidth : 0;
+                    const mainClientWidth = main ? main.clientWidth : 0;
+                    return {
+                        docWidth,
+                        headerRight,
+                        headerOverflow: headerRight > docWidth + 2,
+                        mainHasHorizontalOverflow: mainScrollWidth > mainClientWidth + 2
+                    };
+                })()
+            """)
+            print(f"  Viewport {vp_name} ({width}x{height}): {layout_check}")
+            self.assertFalse(layout_check["headerOverflow"], f"Header overflow detected in {vp_name} ({width}px)")
+            self.assertFalse(layout_check["mainHasHorizontalOverflow"], f"Main content horizontal overflow detected in {vp_name}")
+
         await self.cdp.capture_screenshot("13_responsive_tablet.png")
         await self.cdp.send("Emulation.setDeviceMetricsOverride", {
             "width": 1440,
@@ -516,7 +574,30 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
             "deviceScaleFactor": 1,
             "mobile": False
         })
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.2)
+
+        # Verify buttons & routing rules
+        print("  Verifying routing & button destinations...")
+        # Rule: Sign In link points to login with redirect
+        login_href = await self.cdp.eval_js("document.getElementById('top-btn-login')?.getAttribute('href')")
+        self.assertIn("/login", login_href or "")
+
+        # Rule: Investigate button routes to discovery when 0 incidents, NOT incidents
+        await self.cdp.eval_js("window.TwinApp.switchPrimaryView('overview')")
+        await asyncio.sleep(0.15)
+        await self.cdp.eval_js("window.TwinApp.investigateOverview()")
+        await asyncio.sleep(0.15)
+        current_view_after_investigate = await self.cdp.eval_js("window.TwinApp.state.currentPrimaryView")
+        print(f"  View after clicking investigate with 0 incidents: {current_view_after_investigate}")
+        self.assertEqual(current_view_after_investigate, "discovery", "Investigate erroneously redirected to incidents with 0 incidents!")
+
+        # Rule: Connect repo modal opens safely
+        await self.cdp.eval_js("window.TwinApp.openConnectModal('github')")
+        await asyncio.sleep(0.2)
+        connect_modal_open = await self.cdp.eval_js("document.getElementById('modal-onboard')?.style.display !== 'none'")
+        self.assertTrue(connect_modal_open, "Connect modal failed to open from Connect Repo action")
+        await self.cdp.eval_js("window.TwinApp.closeConnectModal()")
+        await asyncio.sleep(0.15)
 
         # 14. Zero Console Errors
         print("\n[Step 14] Browser Console & Network Telemetry...")
@@ -534,12 +615,12 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         print("VERIFYING ALL 8 CANONICAL UI STATES & LIFECYCLE RECOVERY")
         print("=" * 70)
 
-        # The browser is already navigated to TARGET_URL in asyncSetUp. Wait for app readiness.
-        for _ in range(30):
+        # The browser is already navigated to TARGET_URL in asyncSetUp. Wait for app boot to settle.
+        for _ in range(50):
             await asyncio.sleep(0.1)
             try:
-                ready = await self.cdp.eval_js("Boolean(window.TwinApp && typeof window.TwinApp.setAppState === 'function')")
-                if ready is True:
+                st = await self.cdp.eval_js("window.TwinApp?.state?.appState")
+                if st in ("READY", "NO_REPOSITORY"):
                     break
             except Exception:
                 pass
@@ -579,8 +660,9 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         await self.cdp.eval_js("""
             window.TwinApp.setAppState('PARTIAL_AVAILABILITY', { message: 'Telemetry stream temporarily degraded.' })
         """)
+        await asyncio.sleep(0.1)
         partial_banner = await self.cdp.eval_js("""
-            document.getElementById('app-recovery-banner')?.innerText || ''
+            document.getElementById('app-recovery-banner')?.textContent || ''
         """)
         self.assertIn("Partial Availability", partial_banner)
         self.assertIn("Telemetry stream temporarily degraded", partial_banner)
@@ -590,8 +672,9 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         await self.cdp.eval_js("""
             window.TwinApp.setAppState('RECOVERABLE_ERROR', { error: 'Failed to communicate with Digital Twin engine.' })
         """)
+        await asyncio.sleep(0.1)
         error_banner = await self.cdp.eval_js("""
-            document.getElementById('app-recovery-banner')?.innerText || ''
+            document.getElementById('app-recovery-banner')?.textContent || ''
         """)
         self.assertIn("Initialization Error", error_banner)
         self.assertIn("Failed to communicate with Digital Twin engine", error_banner)
@@ -605,14 +688,16 @@ class TestFrontendUXReliabilityE2E(unittest.IsolatedAsyncioTestCase):
         await self.cdp.eval_js("""
             window.TwinApp.setAppState('SESSION_EXPIRED', { message: 'Authentication token has expired.' })
         """)
+        await asyncio.sleep(0.1)
         expired_banner = await self.cdp.eval_js("""
-            document.getElementById('app-recovery-banner')?.innerText || ''
+            document.getElementById('app-recovery-banner')?.textContent || ''
         """)
         self.assertIn("Session Expired", expired_banner)
         self.assertIn("Sign In", expired_banner)
 
         # Clean recovery back to READY
         await self.cdp.eval_js("window.TwinApp.setAppState('READY')")
+        await asyncio.sleep(0.1)
         final_banner_hidden = await self.cdp.eval_js("document.getElementById('app-recovery-banner')?.style.display === 'none'")
         self.assertTrue(final_banner_hidden, "Recovery banner remained visible after resolving to READY")
 

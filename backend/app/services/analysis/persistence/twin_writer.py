@@ -28,6 +28,13 @@ class TwinPersistenceWriter:
         commit_hash: str = "HEAD",
         branch_name: str = "main",
     ) -> AnalysisRunModel:
+        # Ensure schema compatibility for wide identifiers on Postgres
+        try:
+            from app.core.database import ensure_database_schema_compatibility
+            ensure_database_schema_compatibility()
+        except Exception:
+            pass
+
         repo = db.query(Repository).filter_by(id=repository_id).first()
         if not repo:
             raise ValueError(f"Repository '{repository_id}' does not exist.")
@@ -103,21 +110,26 @@ class TwinPersistenceWriter:
         for art in result.artifacts:
             file_id = file_record_map.get(art.file_path)
             if art.id not in existing_art_ids:
+                # Name up to 255, qualified_name up to 1024, location up to 1024 (aligned with PostgreSQL schema)
+                art_name = (art.name or "")[:255]
+                art_qual = (art.qualified_name or "")[:1024]
+                art_type_str = (art.artifact_type.value if hasattr(art.artifact_type, "value") else str(art.artifact_type))[:50]
+                art_loc = f"{art.file_path}:{art.line_start or 1}"[:1024]
                 db_art = StructuralArtifactModel(
-                    id=art.id,
+                    id=str(art.id)[:128],
                     repository_id=repository_id,
                     snapshot_id=snapshot_id,
                     file_id=file_id,
-                    artifact_type=art.artifact_type.value,
-                    language=art.language,
-                    name=art.name,
-                    qualified_name=art.qualified_name,
+                    artifact_type=art_type_str,
+                    language=str(art.language)[:50],
+                    name=art_name,
+                    qualified_name=art_qual,
                     signature=art.signature,
                     docstring=art.docstring,
-                    location=f"{art.file_path}:{art.line_start or 1}",
+                    location=art_loc,
                     line_start=art.line_start,
                     line_end=art.line_end,
-                    analyzer_source=art.analyzer_source,
+                    analyzer_source=str(art.analyzer_source)[:100] if art.analyzer_source else None,
                     confidence=art.confidence,
                     metadata_payload=art.metadata,
                 )
@@ -148,15 +160,18 @@ class TwinPersistenceWriter:
                     qualified_name=rel.source_qualified_name,
                 )
                 if src_id not in existing_art_ids:
+                    # Synthetic source node: name up to 255, qualified_name up to 1024
+                    src_name = (rel.source_qualified_name.split(".")[-1] if rel.source_qualified_name else "source")[:255]
+                    src_qual = (rel.source_qualified_name or "")[:1024]
                     src_rec = StructuralArtifactModel(
-                        id=src_id,
+                        id=str(src_id)[:128],
                         repository_id=repository_id,
                         snapshot_id=snapshot_id,
                         file_id=None,
-                        artifact_type=ArtifactType.PACKAGE.value,
+                        artifact_type=ArtifactType.PACKAGE.value[:50],
                         language="generic",
-                        name=rel.source_qualified_name.split(".")[-1],
-                        qualified_name=rel.source_qualified_name,
+                        name=src_name,
+                        qualified_name=src_qual,
                         location="<source>",
                         analyzer_source="source_resolver",
                         confidence=1.0,
@@ -165,11 +180,11 @@ class TwinPersistenceWriter:
                     db.add(src_rec)
                     existing_art_ids.add(src_id)
                     result.artifacts.append(ExtractedArtifact(
-                        id=src_id,
+                        id=str(src_id)[:128],
                         artifact_type=ArtifactType.PACKAGE,
                         language="generic",
-                        name=rel.source_qualified_name.split(".")[-1],
-                        qualified_name=rel.source_qualified_name,
+                        name=src_name,
+                        qualified_name=src_qual,
                         file_path="<source>",
                         line_start=1,
                         line_end=1,
@@ -189,15 +204,18 @@ class TwinPersistenceWriter:
                     qualified_name=rel.target_qualified_name,
                 )
                 if tgt_id not in existing_art_ids:
+                    # Synthetic target dependency node: name up to 255, qualified_name up to 1024
+                    tgt_name = (rel.target_qualified_name.split(".")[-1] if rel.target_qualified_name else "dependency")[:255]
+                    tgt_qual = (rel.target_qualified_name or "")[:1024]
                     ext_rec = StructuralArtifactModel(
-                        id=tgt_id,
+                        id=str(tgt_id)[:128],
                         repository_id=repository_id,
                         snapshot_id=snapshot_id,
                         file_id=None,
-                        artifact_type=ArtifactType.EXTERNAL_DEPENDENCY.value,
+                        artifact_type=ArtifactType.EXTERNAL_DEPENDENCY.value[:50],
                         language="external",
-                        name=rel.target_qualified_name.split(".")[-1],
-                        qualified_name=rel.target_qualified_name,
+                        name=tgt_name,
+                        qualified_name=tgt_qual,
                         location="<external>",
                         analyzer_source="external_dependency_resolver",
                         confidence=1.0,
@@ -206,11 +224,11 @@ class TwinPersistenceWriter:
                     db.add(ext_rec)
                     existing_art_ids.add(tgt_id)
                     result.artifacts.append(ExtractedArtifact(
-                        id=tgt_id,
+                        id=str(tgt_id)[:128],
                         artifact_type=ArtifactType.EXTERNAL_DEPENDENCY,
                         language="external",
-                        name=rel.target_qualified_name.split(".")[-1],
-                        qualified_name=rel.target_qualified_name,
+                        name=tgt_name,
+                        qualified_name=tgt_qual,
                         file_path="<external>",
                         line_start=1,
                         line_end=1,
@@ -222,16 +240,17 @@ class TwinPersistenceWriter:
 
             if src_id and tgt_id:
                 if rel.id not in existing_rel_ids:
+                    rel_type_str = (rel.relationship_type.value if hasattr(rel.relationship_type, "value") else str(rel.relationship_type))[:50]
                     db_rel = ArtifactRelationshipModel(
-                        id=rel.id,
+                        id=str(rel.id)[:128],
                         repository_id=repository_id,
                         snapshot_id=snapshot_id,
-                        source_artifact_id=src_id,
-                        target_artifact_id=tgt_id,
-                        relationship_type=rel.relationship_type.value,
+                        source_artifact_id=str(src_id)[:128],
+                        target_artifact_id=str(tgt_id)[:128],
+                        relationship_type=rel_type_str,
                         confidence=rel.confidence,
-                        detection_method=rel.detection_method,
-                        source_location=rel.source_location,
+                        detection_method=str(rel.detection_method)[:100],
+                        source_location=str(rel.source_location)[:2048] if rel.source_location else None,
                         metadata_payload=rel.metadata,
                     )
                     db.add(db_rel)
