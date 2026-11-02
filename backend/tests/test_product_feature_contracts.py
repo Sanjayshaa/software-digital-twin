@@ -28,6 +28,18 @@ Validates the complete 24-step product journey across all 16 feature groups (A t
 24. Sign out & token revocation
 """
 
+import os
+import sys
+
+if sys.version_info < (3, 11):
+    venv_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".venv", "bin", "python3"))
+    if os.path.exists(venv_py):
+        os.execv(venv_py, [venv_py, "-m", "pytest"] + sys.argv[1:])
+
+backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
 import uuid
 import pytest
 from fastapi.testclient import TestClient

@@ -120,6 +120,7 @@ class TestLiveIncrementalAnalysisWorkflow(unittest.TestCase):
             name="live-ecommerce-service",
             local_path=self.test_dir,
             default_branch="main",
+            environment="TEST",
         )
         self.db.add(self.repo)
 

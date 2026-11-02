@@ -3100,6 +3100,42 @@ body.theme-dark [tabindex]:focus-visible {
     width: 68px !important;
   }
 
+  body.sidebar-desktop-collapsed #app-sidebar #sidebar-brand-block {
+    display: none !important;
+  }
+
+  body.sidebar-desktop-collapsed #app-sidebar .sidebar-toggle-pill {
+    margin: 0 auto !important;
+  }
+
+  .sidebar-toggle-pill {
+    background-color: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+  }
+
+  .sidebar-toggle-pill:hover {
+    background-color: #e2e8f0;
+    color: #0f172a;
+  }
+
+  html.dark .sidebar-toggle-pill,
+  body.theme-dark .sidebar-toggle-pill {
+    background-color: #1e293b;
+    color: #cbd5e1;
+    border: 1px solid #334155;
+  }
+
+  html.dark .sidebar-toggle-pill:hover,
+  body.theme-dark .sidebar-toggle-pill:hover {
+    background-color: #334155;
+    color: #f8fafc;
+  }
+
+  body.sidebar-desktop-collapsed #app-sidebar .sidebar-collapse-icon {
+    transform: rotate(180deg);
+  }
+
   body.sidebar-desktop-collapsed #app-sidebar .sidebar-text-label,
   body.sidebar-desktop-collapsed #app-sidebar .sidebar-badge-label,
   body.sidebar-desktop-collapsed #app-sidebar #sidebar-brand-text,
@@ -3130,6 +3166,41 @@ body.theme-dark [tabindex]:focus-visible {
   }
 }
 
+/* Dark Theme Pervasive Styling */
+html.dark body, body.theme-dark {
+  background-color: #0B1120 !important;
+  color: #F8FAFC !important;
+}
+
+html.dark #app-sidebar, body.theme-dark #app-sidebar {
+  background-color: #0F172A !important;
+  border-color: #1E293B !important;
+}
+
+html.dark header, body.theme-dark header {
+  background-color: #0F172A !important;
+  border-color: #1E293B !important;
+}
+
+html.dark .twin-card, body.theme-dark .twin-card {
+  background-color: #0F172A !important;
+  border-color: #1E293B !important;
+  color: #F8FAFC !important;
+}
+
+html.dark input, html.dark select, html.dark textarea,
+body.theme-dark input, body.theme-dark select, body.theme-dark textarea {
+  background-color: #1E293B !important;
+  color: #F8FAFC !important;
+  border-color: #334155 !important;
+}
+
+html.dark .modal-overlay > div, body.theme-dark .modal-overlay > div {
+  background-color: #0F172A !important;
+  border-color: #1E293B !important;
+  color: #F8FAFC !important;
+}
+
 /* Reduced Motion Override */
 @media (prefers-reduced-motion: reduce) {
   #app-sidebar,
@@ -3137,6 +3208,110 @@ body.theme-dark [tabindex]:focus-visible {
     transition: none !important;
   }
 }
+
+/* ==================================================================== */
+/* REPOWISE-STYLE DEPENDENCY CLUSTER CARDS & KNOWLEDGE GRAPH */
+/* ==================================================================== */
+.dep-cluster-card {
+  background: #131E32;
+  border: 1px solid #2A3952;
+  border-radius: 1rem;
+  padding: 1rem;
+  color: #F8FAFC;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  position: relative;
+  z-index: 10;
+}
+
+.dep-cluster-card:hover {
+  border-color: #38BDF8;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(56, 189, 248, 0.15);
+}
+
+.dep-cluster-card.active-cluster {
+  border-color: #38BDF8 !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+}
+
+.dep-health-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  overflow: hidden;
+  margin-top: 0.75rem;
+}
+
+.dep-health-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+.dep-badge-critical {
+  color: #F87171;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.dep-badge-warning {
+  color: #FB923C;
+  background: rgba(249, 115, 22, 0.15);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+}
+
+.dep-badge-fair {
+  color: #FDE047;
+  background: rgba(234, 179, 8, 0.15);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.dep-badge-good {
+  color: #2DD4BF;
+  background: rgba(20, 184, 166, 0.15);
+  border: 1px solid rgba(20, 184, 166, 0.3);
+}
+
+.dep-badge-excellent {
+  color: #34D399;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+/* Floating Ask Twin Draggable & Styling */
+#floating-ask-twin-container {
+  touch-action: none;
+}
+
+#floating-ask-twin-btn:active {
+  cursor: grabbing;
+}
+
+#floating-ask-twin-panel {
+  box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+html.dark #floating-ask-twin-panel,
+body.theme-dark #floating-ask-twin-panel {
+  background: #0F172A !important;
+  border-color: #334155 !important;
+}
+
+html.dark #floating-ask-messages,
+body.theme-dark #floating-ask-messages {
+  background: #0B1120 !important;
+}
+
+html.dark #floating-ask-messages .bg-white,
+body.theme-dark #floating-ask-messages .bg-white {
+  background: #1E293B !important;
+  border-color: #334155 !important;
+  color: #F8FAFC !important;
+}
+
 
 
 

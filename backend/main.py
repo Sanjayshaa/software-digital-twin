@@ -30,6 +30,7 @@ from app.api.github import router as github_router
 from app.api.twin_knowledge import router as twin_knowledge_router
 from app.api.evaluation import router as evaluation_router
 from app.api.demo import router as demo_router
+from app.api.integrations import router as integrations_router
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -242,6 +243,8 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(auth_router)
 app.include_router(github_router, prefix="/api/v1")
 app.include_router(github_router)
+app.include_router(integrations_router, prefix="/api/v1")
+app.include_router(integrations_router)
 app.include_router(evaluation_router, prefix="/api/v1")
 app.include_router(evaluation_router)
 app.include_router(demo_router)

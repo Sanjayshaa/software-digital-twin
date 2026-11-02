@@ -12,6 +12,20 @@ Validates:
 8. End-to-end multi-language analysis on polyglot_microservice fixture.
 """
 
+import sys
+import os
+
+backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
+# Auto re-exec under project virtualenv if running under system python
+if sys.version_info < (3, 11):
+    venv_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".venv", "bin", "python3"))
+    if os.path.exists(venv_py):
+        os.environ["PYTHONPATH"] = backend_dir
+        os.execv(venv_py, [venv_py, "-m", "unittest", os.path.abspath(__file__)])
+
 from pathlib import Path
 import pytest
 from sqlalchemy.orm import Session

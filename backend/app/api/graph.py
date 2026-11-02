@@ -936,6 +936,97 @@ def get_repository_overview(
     """
     if repository_id in ["repo-demo-ecommerce-001", "synthetic-online-shop"]:
         from app.services.demo.fixture import DEMO_REPO_METADATA, DEMO_NODES, DEMO_EDGES
+        demo_glance = {
+            "has_architecture": True,
+            "architecture_style": "Microservices E-Commerce Platform (Gateway + Services + Relational DB)",
+            "summary": {
+                "detected_layers_count": 5,
+                "entry_points_count": 3,
+                "major_components_count": 6,
+                "key_flows_count": 5,
+            },
+            "layers": {
+                "frontend": {
+                    "label": "Frontend & Presentation",
+                    "status": "DETECTED",
+                    "count": 2,
+                    "description": "Client-side React components and checkout view templates.",
+                    "items": [
+                        {"id": "node-fe-checkout", "name": "CheckoutView.tsx", "type": "COMPONENT", "location": "frontend/src/views/CheckoutView.tsx:1", "node_id": "art-fe-checkout"},
+                        {"id": "node-fe-catalog", "name": "ProductList.tsx", "type": "COMPONENT", "location": "frontend/src/components/ProductList.tsx:1", "node_id": "art-fe-catalog"},
+                    ],
+                },
+                "api": {
+                    "label": "API & Ingress Boundaries",
+                    "status": "DETECTED",
+                    "count": 14,
+                    "description": "Declared HTTP routes, REST endpoints, and reverse proxy routes.",
+                    "items": [
+                        {"id": "node-api-checkout", "name": "POST /api/v1/checkout", "type": "API_ENDPOINT", "location": "services/order_service.py:45", "method": "POST", "path": "/api/v1/checkout", "node_id": "art-order"},
+                        {"id": "node-api-orders", "name": "GET /api/v1/orders", "type": "API_ENDPOINT", "location": "services/order_service.py:110", "method": "GET", "path": "/api/v1/orders", "node_id": "art-order"},
+                        {"id": "node-api-payment", "name": "POST /api/v1/payments", "type": "API_ENDPOINT", "location": "services/payment_service.py:30", "method": "POST", "path": "/api/v1/payments", "node_id": "art-pay"},
+                        {"id": "node-api-auth", "name": "POST /api/v1/auth/login", "type": "API_ENDPOINT", "location": "services/auth_service.py:20", "method": "POST", "path": "/api/v1/auth/login", "node_id": "art-auth"},
+                    ],
+                },
+                "services": {
+                    "label": "Core Business Logic & Services",
+                    "status": "DETECTED",
+                    "count": 6,
+                    "description": "Domain microservices, payment orchestrators, and order processors.",
+                    "items": [
+                        {"id": "art-gw", "name": "ApiGateway", "type": "GATEWAY", "location": "gateway/router.py:15", "fan_in": 0, "fan_out": 4, "node_id": "art-gw"},
+                        {"id": "art-order", "name": "OrderService", "type": "SERVICE", "location": "services/order_service.py:15", "fan_in": 1, "fan_out": 3, "node_id": "art-order"},
+                        {"id": "art-pay", "name": "PaymentService", "type": "SERVICE", "location": "services/payment_service.py:15", "fan_in": 1, "fan_out": 2, "node_id": "art-pay"},
+                        {"id": "art-auth", "name": "AuthService", "type": "SERVICE", "location": "services/auth_service.py:10", "fan_in": 1, "fan_out": 1, "node_id": "art-auth"},
+                        {"id": "art-inv", "name": "InventoryService", "type": "SERVICE", "location": "services/inventory_service.py:15", "fan_in": 1, "fan_out": 1, "node_id": "art-inv"},
+                        {"id": "art-prod", "name": "ProductService", "type": "SERVICE", "location": "services/product_service.py:12", "fan_in": 1, "fan_out": 1, "node_id": "art-prod"},
+                    ],
+                },
+                "storage": {
+                    "label": "Data Access & Persistence",
+                    "status": "DETECTED",
+                    "count": 5,
+                    "description": "PostgreSQL relational tables and SQLAlchemy ORM models.",
+                    "items": [
+                        {"id": "art-db-orders", "name": "orders", "type": "TABLE", "location": "models/orders.py:10", "node_id": "art-db-orders"},
+                        {"id": "art-db-pay", "name": "payments", "type": "TABLE", "location": "models/payments.py:10", "node_id": "art-db-pay"},
+                        {"id": "art-db-users", "name": "users", "type": "TABLE", "location": "models/users.py:8", "node_id": "art-db-users"},
+                        {"id": "art-db-prod", "name": "products", "type": "TABLE", "location": "models/products.py:12", "node_id": "art-db-prod"},
+                        {"id": "art-db-inv", "name": "inventory", "type": "TABLE", "location": "models/inventory.py:10", "node_id": "art-db-inv"},
+                    ],
+                },
+                "external": {
+                    "label": "External Integrations",
+                    "status": "DETECTED",
+                    "count": 2,
+                    "description": "Third-party payment gateway and distributed in-memory cache.",
+                    "items": [
+                        {"name": "Stripe Gateway", "provider": "Stripe API", "role": "Card processing & idempotency", "location": "services/payment_service.py:65"},
+                        {"name": "Redis Distributed Lock", "provider": "Redis", "role": "Inventory reservation session locking", "location": "services/inventory_service.py:40"},
+                    ],
+                },
+            },
+            "entry_points": [
+                {"file_path": "gateway/router.py", "role": "API Gateway Reverse Proxy Ingress", "type": "SERVER"},
+                {"file_path": "services/order_service.py", "role": "Order Processing Microservice Entry Point", "type": "SERVER"},
+                {"file_path": "frontend/src/index.tsx", "role": "Client Single Page Application Root Component", "type": "CLIENT"},
+            ],
+            "major_components": [
+                {"id": "art-gw", "name": "ApiGateway", "type": "GATEWAY", "location": "gateway/router.py:15", "in_degree": 0, "out_degree": 4, "connectivity": 4, "role": "Ingress reverse proxy and TLS boundary", "node_id": "art-gw"},
+                {"id": "art-order", "name": "OrderService", "type": "SERVICE", "location": "services/order_service.py:15", "in_degree": 1, "out_degree": 3, "connectivity": 4, "role": "Order lifecycle and checkout orchestration", "node_id": "art-order"},
+                {"id": "art-pay", "name": "PaymentService", "type": "SERVICE", "location": "services/payment_service.py:15", "in_degree": 1, "out_degree": 2, "connectivity": 3, "role": "Payment tokenization and settlement", "node_id": "art-pay"},
+                {"id": "art-auth", "name": "AuthService", "type": "SERVICE", "location": "services/auth_service.py:10", "in_degree": 1, "out_degree": 1, "connectivity": 2, "role": "JWT authentication and RBAC authorization", "node_id": "art-auth"},
+                {"id": "art-inv", "name": "InventoryService", "type": "SERVICE", "location": "services/inventory_service.py:15", "in_degree": 1, "out_degree": 1, "connectivity": 2, "role": "Stock level queries and reservation", "node_id": "art-inv"},
+                {"id": "art-prod", "name": "ProductService", "type": "SERVICE", "location": "services/product_service.py:12", "in_degree": 1, "out_degree": 1, "connectivity": 2, "role": "Product catalog queries and search", "node_id": "art-prod"},
+            ],
+            "key_flows": [
+                {"source": {"id": "art-gw", "name": "ApiGateway", "type": "GATEWAY", "location": "gateway/router.py:15"}, "target": {"id": "art-order", "name": "OrderService", "type": "SERVICE", "location": "services/order_service.py:15"}, "relation": "CALLS", "description": "ApiGateway routes checkout traffic to OrderService"},
+                {"source": {"id": "art-order", "name": "OrderService", "type": "SERVICE", "location": "services/order_service.py:15"}, "target": {"id": "art-pay", "name": "PaymentService", "type": "SERVICE", "location": "services/payment_service.py:15"}, "relation": "CALLS", "description": "OrderService orchestrates payment authorization via PaymentService"},
+                {"source": {"id": "art-order", "name": "OrderService", "type": "SERVICE", "location": "services/order_service.py:15"}, "target": {"id": "art-inv", "name": "InventoryService", "type": "SERVICE", "location": "services/inventory_service.py:15"}, "relation": "CALLS", "description": "OrderService reserves stock through InventoryService"},
+                {"source": {"id": "art-order", "name": "OrderService", "type": "SERVICE", "location": "services/order_service.py:15"}, "target": {"id": "art-db-orders", "name": "orders", "type": "TABLE", "location": "models/orders.py:10"}, "relation": "PERSISTS", "description": "OrderService persists confirmed orders in database"},
+                {"source": {"id": "art-pay", "name": "PaymentService", "type": "SERVICE", "location": "services/payment_service.py:15"}, "target": {"id": "art-db-pay", "name": "payments", "type": "TABLE", "location": "models/payments.py:10"}, "relation": "PERSISTS", "description": "PaymentService persists transaction ledger"},
+            ],
+        }
         return {
             "repository": DEMO_REPO_METADATA,
             "snapshot": {
@@ -961,6 +1052,8 @@ def get_repository_overview(
                 "processes": 4,
                 "violations": 0,
             },
+            "architecture_glance": demo_glance,
+            "architecture_packages": [],
             "is_demo": True,
             "provenance": "DETERMINISTIC_REFERENCE_FIXTURE"
         }
@@ -1051,6 +1144,26 @@ def get_repository_overview(
             },
             "component_breakdown": {},
             "architecture_packages": [],
+            "architecture_glance": {
+                "has_architecture": False,
+                "architecture_style": "Unknown / Not detected",
+                "summary": {
+                    "detected_layers_count": 0,
+                    "entry_points_count": 0,
+                    "major_components_count": 0,
+                    "key_flows_count": 0,
+                },
+                "layers": {
+                    "frontend": {"label": "Frontend & Presentation", "status": "NOT_DETECTED", "count": 0, "description": "No client-side UI components detected.", "items": []},
+                    "api": {"label": "API & Ingress Boundaries", "status": "NOT_DETECTED", "count": 0, "description": "No HTTP route contracts detected.", "items": []},
+                    "services": {"label": "Core Business Logic & Services", "status": "NOT_DETECTED", "count": 0, "description": "No domain services detected.", "items": []},
+                    "storage": {"label": "Data Access & Persistence", "status": "NOT_DETECTED", "count": 0, "description": "No database tables or ORM models detected.", "items": []},
+                    "external": {"label": "External Integrations", "status": "NOT_DETECTED", "count": 0, "description": "No third-party SDKs or cloud integrations detected.", "items": []},
+                },
+                "entry_points": [],
+                "major_components": [],
+                "key_flows": [],
+            },
         }
 
     if snapshot_id:
@@ -1214,6 +1327,7 @@ def get_repository_overview(
         extract_service_and_api_inventory,
         extract_database_entities,
         extract_test_inventory_and_coverage,
+        extract_project_architecture_glance,
     )
 
     project_purpose = extract_project_purpose(repo.local_path, default_name=repo.name)
@@ -1221,6 +1335,7 @@ def get_repository_overview(
     services_and_apis = extract_service_and_api_inventory(artifacts)
     database_entities = extract_database_entities(artifacts)
     test_inventory_info = extract_test_inventory_and_coverage(artifacts, relationships)
+    architecture_glance = extract_project_architecture_glance(repo.local_path, artifacts, relationships)
 
     # Technology profile extraction
     tech_stack = {}
@@ -1277,6 +1392,7 @@ def get_repository_overview(
         },
         "component_breakdown": breakdown,
         "architecture_packages": arch_packages,
+        "architecture_glance": architecture_glance,
         "latest_impact": latest_impact_data,
         "analysis_status": {
             "discovery": "Complete",
@@ -1307,6 +1423,210 @@ def get_repository_overview(
             for d in violations[:20]
         ],
     }
+
+
+@router.get("/{repository_id}/report", response_model=Dict[str, Any])
+def get_repository_report(
+    repository_id: str,
+    snapshot_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """
+    Returns the comprehensive developer repository architecture report.
+    Gives a developer a detailed, readable understanding of the whole repository.
+    """
+    if repository_id in ["repo-demo-ecommerce-001", "synthetic-online-shop"]:
+        from app.services.discovery.page_services import _build_demo_report_data
+        return _build_demo_report_data()
+
+    repo = _resolve_repo(db, repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
+
+    snapshot = None
+    if snapshot_id:
+        snapshot = db.query(RepositorySnapshot).filter_by(id=snapshot_id, repository_id=repo.id).first()
+    if not snapshot:
+        snapshot = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).order_by(RepositorySnapshot.created_at.desc()).first()
+
+    from app.services.discovery.page_services import build_report_page_data
+    return build_report_page_data(repo, snapshot, db)
+
+
+@router.get("/{repository_id}/docs", response_model=Dict[str, Any])
+def get_repository_docs(
+    repository_id: str,
+    snapshot_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """
+    Returns structured living project documentation explaining how implementation is organized.
+    Documents whole project without relying on commit history.
+    """
+    if repository_id in ["repo-demo-ecommerce-001", "synthetic-online-shop"]:
+        from app.services.discovery.page_services import _build_demo_docs_data
+        return _build_demo_docs_data()
+
+    repo = _resolve_repo(db, repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
+
+    snapshot = None
+    if snapshot_id:
+        snapshot = db.query(RepositorySnapshot).filter_by(id=snapshot_id, repository_id=repo.id).first()
+    if not snapshot:
+        snapshot = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).order_by(RepositorySnapshot.created_at.desc()).first()
+
+    from app.services.discovery.page_services import build_docs_page_data
+    return build_docs_page_data(repo, snapshot, db)
+
+
+@router.get("/{repository_id}/stats", response_model=Dict[str, Any])
+def get_repository_stats(
+    repository_id: str,
+    snapshot_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """
+    Returns measurable repository evidence and unique project signals:
+    size, composition, timeline, work patterns, change records, and analysis coverage.
+    Distinct from Code Health.
+    """
+    if repository_id in ["repo-demo-ecommerce-001", "synthetic-online-shop"]:
+        from app.services.discovery.page_services import _build_demo_stats_data
+        return _build_demo_stats_data()
+
+    repo = _resolve_repo(db, repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
+
+    snapshot = None
+    if snapshot_id:
+        snapshot = db.query(RepositorySnapshot).filter_by(id=snapshot_id, repository_id=repo.id).first()
+    if not snapshot:
+        snapshot = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).order_by(RepositorySnapshot.created_at.desc()).first()
+
+    from app.services.discovery.page_services import build_stats_page_data
+    return build_stats_page_data(repo, snapshot, db)
+
+
+@router.get("/{repository_id}/security", response_model=Dict[str, Any])
+def get_repository_security(
+    repository_id: str,
+    snapshot_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """
+    Returns detected security findings, vulnerabilities, and severity hierarchy for the snapshot.
+    """
+    if repository_id in ["repo-demo-ecommerce-001", "synthetic-online-shop"]:
+        from app.services.discovery.page_services import _build_demo_security_data
+        return _build_demo_security_data()
+
+    repo = _resolve_repo(db, repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
+
+    snapshot = None
+    if snapshot_id:
+        snapshot = db.query(RepositorySnapshot).filter_by(id=snapshot_id, repository_id=repo.id).first()
+    if not snapshot:
+        snapshot = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).order_by(RepositorySnapshot.created_at.desc()).first()
+
+    from app.services.discovery.page_services import build_security_page_data
+    return build_security_page_data(repo, snapshot, db)
+
+
+@router.post("/{repository_id}/security/scan", response_model=Dict[str, Any])
+def trigger_repository_security_scan(
+    repository_id: str,
+    snapshot_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """
+    Triggers an active static security audit across repository files, secrets, and incident telemetry.
+    """
+    if repository_id in ["repo-demo-ecommerce-001", "synthetic-online-shop"]:
+        from app.services.discovery.page_services import _build_demo_security_data
+        return _build_demo_security_data()
+
+    repo = _resolve_repo(db, repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
+
+    snapshot = None
+    if snapshot_id:
+        snapshot = db.query(RepositorySnapshot).filter_by(id=snapshot_id, repository_id=repo.id).first()
+    if not snapshot:
+        snapshot = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).order_by(RepositorySnapshot.created_at.desc()).first()
+
+    from app.services.discovery.page_services import run_repository_security_scan
+    return run_repository_security_scan(repo, snapshot, db)
+
+
+@router.get("/{repository_id}/test-reachability", response_model=Dict[str, Any])
+def get_repository_test_reachability(
+    repository_id: str,
+    snapshot_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """
+    Returns graph test reachability, defect-health scores, and weak unreached files matching Repowise Tests.
+    """
+    if repository_id in ["repo-demo-ecommerce-001", "synthetic-online-shop"]:
+        from app.services.discovery.page_services import _build_demo_test_reachability_data
+        return _build_demo_test_reachability_data()
+
+    repo = _resolve_repo(db, repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
+
+    snapshot = None
+    if snapshot_id:
+        snapshot = db.query(RepositorySnapshot).filter_by(id=snapshot_id, repository_id=repo.id).first()
+    if not snapshot:
+        snapshot = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).order_by(RepositorySnapshot.created_at.desc()).first()
+
+    from app.services.discovery.page_services import build_test_reachability_data
+    return build_test_reachability_data(repo, snapshot, db)
+
+
+@router.get("/{repository_id}/dependency-map", response_model=Dict[str, Any])
+def get_repository_dependency_map(
+    repository_id: str,
+    snapshot_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """
+    Returns the interactive cluster-level dependency intelligence and risk map matching
+    the Repowise Knowledge Graph reference and TwinCore Service Dependency Risk Map.
+    """
+    if repository_id in ["repo-demo-ecommerce-001", "synthetic-online-shop"] or repository_id.startswith("demo-"):
+        from app.services.discovery.page_services import _build_demo_dependency_map_data
+        return _build_demo_dependency_map_data()
+
+    repo = _resolve_repo(db, repository_id, principal=principal)
+    if not repo:
+        if "demo" in repository_id.lower():
+            from app.services.discovery.page_services import _build_demo_dependency_map_data
+            return _build_demo_dependency_map_data()
+        raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found.")
+
+    snapshot = None
+    if snapshot_id:
+        snapshot = db.query(RepositorySnapshot).filter_by(id=snapshot_id, repository_id=repo.id).first()
+    if not snapshot:
+        snapshot = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).order_by(RepositorySnapshot.created_at.desc()).first()
+
+    from app.services.discovery.page_services import build_dependency_map_data
+    return build_dependency_map_data(repo, snapshot, db)
 
 
 @router.get("/{repository_id}/components", response_model=Dict[str, Any])

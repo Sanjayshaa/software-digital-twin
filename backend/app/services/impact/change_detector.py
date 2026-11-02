@@ -373,7 +373,12 @@ class ChangeDetector:
             # 5a. Added Symbols
             for q in sorted(added_quals):
                 art = target_qual_map[q]
-                is_symbol = art.artifact_type not in ("MODULE", "PACKAGE", "DIRECTORY")
+                # Filter out synthetic external dependency placeholders for relative import paths
+                if art.artifact_type == "EXTERNAL_DEPENDENCY" and (
+                    art.location == "<external>" or art.qualified_name.startswith((".", "/"))
+                ):
+                    continue
+                is_symbol = art.artifact_type not in ("MODULE", "PACKAGE", "DIRECTORY", "EXTERNAL_DEPENDENCY")
                 src_file = (art.location or "").split(":")[0]
                 if src_file:
                     files_with_symbols.add(src_file)
@@ -400,7 +405,11 @@ class ChangeDetector:
             # 5b. Removed Symbols
             for q in sorted(removed_quals):
                 art = base_qual_map[q]
-                is_symbol = art.artifact_type not in ("MODULE", "PACKAGE", "DIRECTORY")
+                if art.artifact_type == "EXTERNAL_DEPENDENCY" and (
+                    art.location == "<external>" or art.qualified_name.startswith((".", "/"))
+                ):
+                    continue
+                is_symbol = art.artifact_type not in ("MODULE", "PACKAGE", "DIRECTORY", "EXTERNAL_DEPENDENCY")
                 src_file = (art.location or "").split(":")[0]
                 if src_file:
                     files_with_symbols.add(src_file)
@@ -428,6 +437,10 @@ class ChangeDetector:
             for q in sorted(common_quals):
                 b_art = base_qual_map[q]
                 t_art = target_qual_map[q]
+                if t_art.artifact_type == "EXTERNAL_DEPENDENCY" and (
+                    t_art.location == "<external>" or t_art.qualified_name.startswith((".", "/"))
+                ):
+                    continue
 
                 is_modified = False
                 mod_reasons = []
