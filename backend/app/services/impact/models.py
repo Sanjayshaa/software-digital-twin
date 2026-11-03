@@ -51,6 +51,15 @@ class ImpactClassification(str, Enum):
     UNKNOWN = "UNKNOWN"                        # Incomplete coverage or unresolvable relationship
 
 
+class ImpactPreconditionError(ValueError):
+    """Exception raised when impact analysis preconditions fail (HTTP 409 Conflict)."""
+    def __init__(self, message: str, status_code: int = 409, error_code: str = "PRECONDITION_FAILED"):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+        self.error_code = error_code
+
+
 class RelationshipImpactRule(BaseModel):
     """
     Centralized declaration for how typed Digital Twin relationships propagate impact.
@@ -151,6 +160,16 @@ class ImpactFinding(BaseModel):
     snapshot_id: Optional[str] = None
     provenance: Optional[str] = "DERIVED"
     traversal_depth: int = 1
+    # Phase 1 P0: Traceable evidence fields (no arbitrary percentage)
+    source_file: Optional[str] = None
+    line_start: Optional[int] = None
+    line_end: Optional[int] = None
+    evidence_completeness: str = "COMPLETE"  # COMPLETE, PARTIAL, MISSING, UNKNOWN
+    relationship_used: Optional[str] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.relationship_used is None:
+            self.relationship_used = self.relationship_type
 
     @property
     def affected_artifact_name(self) -> str:
@@ -194,6 +213,11 @@ class ImpactSummary(BaseModel):
     affected_processes: int = 0
     affected_tests: int = 0
     max_depth_reached: int = 0
+    max_propagation_depth: Optional[int] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.max_propagation_depth is None:
+            self.max_propagation_depth = self.max_depth_reached
 
     @property
     def root_changes_count(self) -> int:
@@ -229,3 +253,33 @@ class ImpactResult(BaseModel):
     impact_tree: Optional[Dict[str, Any]] = None
     execution_time_ms: float = 0.0
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Phase 1 P0: Explicit Provenance and Traceability Fields
+    base_commit_sha: Optional[str] = None
+    target_commit_sha: Optional[str] = None
+    analysis_status: Optional[str] = None
+    changed_count: Optional[int] = None
+    directly_affected_count: Optional[int] = None
+    indirectly_affected_count: Optional[int] = None
+    total_affected_count: Optional[int] = None
+    propagation_depth: Optional[int] = None
+    causal_paths: List[Any] = Field(default_factory=list)
+    generated_at: Optional[datetime] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.analysis_status is None:
+            self.analysis_status = self.status.upper() if self.status else "COMPLETE"
+        if self.changed_count is None:
+            self.changed_count = self.summary.changed
+        if self.directly_affected_count is None:
+            self.directly_affected_count = self.summary.directly_affected
+        if self.indirectly_affected_count is None:
+            self.indirectly_affected_count = self.summary.indirectly_affected
+        if self.total_affected_count is None:
+            self.total_affected_count = self.summary.unique_affected
+        if self.propagation_depth is None:
+            self.propagation_depth = self.summary.max_propagation_depth or self.summary.max_depth_reached
+        if self.generated_at is None:
+            self.generated_at = self.created_at
+        if not self.causal_paths and self.paths:
+            self.causal_paths = [p.model_dump() if hasattr(p, "model_dump") else p for p in self.paths]

@@ -61,34 +61,67 @@ class StructuralTwinEngine:
         snap_raw = f"{repo.id}::{resolved_commit}::{resolved_branch}"
         snapshot_id = f"snap_{hashlib.sha256(snap_raw.encode('utf-8')).hexdigest()[:16]}"
 
-        # 4. Build Analysis Context
-        context = AnalysisContext(
-            repository_id=repo.id,
-            repository_path=scan_path,
-            snapshot_id=snapshot_id,
-            commit_hash=resolved_commit,
-            branch_name=resolved_branch,
-            project_id=repo.project_id,
-        )
+        from datetime import datetime, timezone
+        from app.models.entities import RepositorySnapshot, SnapshotStatus
 
-        # 5. Scan Repository Inventory from scan_path
-        inventory = self._scanner.scan(scan_path)
+        snapshot = db.query(RepositorySnapshot).filter_by(id=snapshot_id).first()
+        if not snapshot:
+            snapshot = RepositorySnapshot(
+                id=snapshot_id,
+                repository_id=repo.id,
+                commit_hash=resolved_commit,
+                branch_name=resolved_branch,
+                snapshot_metadata={"status": SnapshotStatus.SCANNING},
+            )
+            db.add(snapshot)
+        else:
+            snapshot.status = SnapshotStatus.SCANNING
+        db.commit()
 
-        # 6. Execute Analyzer Runtime
-        result = analyzer_runner.run(context, plan, inventory)
+        try:
+            # 4. Build Analysis Context
+            context = AnalysisContext(
+                repository_id=repo.id,
+                repository_path=scan_path,
+                snapshot_id=snapshot_id,
+                commit_hash=resolved_commit,
+                branch_name=resolved_branch,
+                project_id=repo.project_id,
+            )
 
-        # 7. Idempotently persist Twin into PostgreSQL
-        twin_writer.write_twin(
-            db=db,
-            repository_id=repo.id,
-            snapshot_id=snapshot_id,
-            inventory=inventory,
-            result=result,
-            commit_hash=resolved_commit,
-            branch_name=resolved_branch,
-        )
+            # 5. Scan Repository Inventory from scan_path
+            inventory = self._scanner.scan(scan_path)
 
-        return snapshot_id, result
+            snapshot.status = SnapshotStatus.PARSING
+            db.commit()
+
+            # 6. Execute Analyzer Runtime
+            result = analyzer_runner.run(context, plan, inventory)
+
+            # 7. Idempotently persist Twin into database
+            twin_writer.write_twin(
+                db=db,
+                repository_id=repo.id,
+                snapshot_id=snapshot_id,
+                inventory=inventory,
+                result=result,
+                commit_hash=resolved_commit,
+                branch_name=resolved_branch,
+            )
+
+            return snapshot_id, result
+        except Exception as exc:
+            db.rollback()
+            try:
+                fail_snap = db.query(RepositorySnapshot).filter_by(id=snapshot_id).first()
+                if fail_snap:
+                    fail_snap.status = SnapshotStatus.FAILED
+                    fail_snap.error_message = str(exc)
+                    fail_snap.failed_at = datetime.now(timezone.utc).isoformat()
+                    db.commit()
+            except Exception:
+                pass
+            raise
 
 
 structural_twin_engine = StructuralTwinEngine()

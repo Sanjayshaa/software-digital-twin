@@ -9,7 +9,14 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 from fastapi.encoders import jsonable_encoder
 
-from app.models.entities import Repository, RepositorySnapshot, AnalysisRun, StructuralArtifact, ArtifactRelationship
+from app.models.entities import (
+    Repository,
+    RepositorySnapshot,
+    AnalysisRun,
+    StructuralArtifact,
+    ArtifactRelationship,
+    SnapshotStatus,
+)
 from app.services.impact.models import (
     ImpactConfig,
     ImpactResult,
@@ -17,7 +24,9 @@ from app.services.impact.models import (
     ImpactSummary,
     ChangeItem,
     ImpactPath,
+    ImpactPreconditionError,
 )
+from app.services.acquisition.git_provider import check_git_ancestry
 from app.services.impact.analyzer import change_impact_analyzer, ChangeImpactAnalyzer
 from app.services.impact.change_detector import change_detector, map_changes_to_proposed_mutations
 
@@ -48,14 +57,60 @@ class ChangeImpactService:
         base_snap = db.query(RepositorySnapshot).filter_by(id=base_snapshot_id).first()
         if not base_snap:
             raise ValueError(f"Base snapshot '{base_snapshot_id}' not found.")
+        # Precondition P0-1: Repository scope enforcement (HTTP 400 Bad Request)
         if base_snap.repository_id != repository_id:
-            raise ValueError(f"Base snapshot '{base_snapshot_id}' does not belong to repository '{repository_id}'.")
+            raise ImpactPreconditionError(
+                f"Base snapshot '{base_snapshot_id}' does not belong to repository '{repository_id}'.",
+                status_code=400,
+                error_code="CROSS_REPO_MISMATCH",
+            )
 
         target_snap = db.query(RepositorySnapshot).filter_by(id=target_snapshot_id).first()
         if not target_snap:
             raise ValueError(f"Target snapshot '{target_snapshot_id}' not found.")
         if target_snap.repository_id != repository_id:
-            raise ValueError(f"Target snapshot '{target_snapshot_id}' does not belong to repository '{repository_id}'.")
+            raise ImpactPreconditionError(
+                f"Target snapshot '{target_snapshot_id}' does not belong to repository '{repository_id}'.",
+                status_code=400,
+                error_code="CROSS_REPO_MISMATCH",
+            )
+
+        # Precondition P0-1/P0-2: Baseline snapshot must be READY
+        if base_snap.status != SnapshotStatus.READY:
+            raise ImpactPreconditionError(
+                f"Baseline snapshot '{base_snapshot_id}' is not in READY state (current status: {base_snap.status}). Analysis requires both snapshots to be READY.",
+                status_code=409,
+                error_code="SNAPSHOT_NOT_READY",
+            )
+
+        # Precondition P0-1/P0-2: Target snapshot must be READY
+        if target_snap.status != SnapshotStatus.READY:
+            raise ImpactPreconditionError(
+                f"Target snapshot '{target_snapshot_id}' is not in READY state (current status: {target_snap.status}). Analysis requires both snapshots to be READY.",
+                status_code=409,
+                error_code="SNAPSHOT_NOT_READY",
+            )
+
+        # Precondition P0-2: Same-commit contract
+        if (base_snap.commit_hash or "").strip().lower() == (target_snap.commit_hash or "").strip().lower():
+            raise ImpactPreconditionError(
+                "Baseline and target refer to the same commit; no change can be computed.",
+                status_code=409,
+                error_code="SAME_COMMIT",
+            )
+
+        # Precondition P0-2: Git Ancestry Check
+        is_ancestor, ancestry_err = check_git_ancestry(
+            workspace_path=repo.local_path,
+            base_sha=base_snap.commit_hash,
+            target_sha=target_snap.commit_hash,
+        )
+        if not is_ancestor:
+            raise ImpactPreconditionError(
+                ancestry_err or f"Baseline commit '{base_snap.commit_hash}' is not an ancestor of target commit '{target_snap.commit_hash}'.",
+                status_code=409,
+                error_code="ANCESTRY_VIOLATION",
+            )
 
         # Execute deterministic impact analysis
         result = self.analyzer.analyze(
@@ -65,6 +120,10 @@ class ChangeImpactService:
             target_snapshot_id=target_snapshot_id,
             config=config,
         )
+
+        # Phase 1 P0: Ensure provenance is attached to result
+        result.base_commit_sha = base_snap.commit_hash
+        result.target_commit_sha = target_snap.commit_hash
 
         # Persist AnalysisRun record
         analysis_run = AnalysisRun(

@@ -8,7 +8,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%230071e3'><circle cx='12' cy='12' r='8'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script id="tailwind-config">
     tailwind.config = {
@@ -65,10 +65,10 @@
     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.22); }
   </style>
 </head>
-<body class="booting state-signed-out bg-[#F8FAFC] font-body text-[#1a1c1d] flex h-screen overflow-hidden selection:bg-indigo-100">
+<body class="state-signed-out bg-[#F8FAFC] font-body text-[#1a1c1d] flex h-screen overflow-hidden selection:bg-indigo-100">
 
-  <!-- FULL-PAGE BOOT SCREEN (Guarantees zero layout shift / no Cmd+Shift+R shell flash) -->
-  <div id="boot-screen" class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#F8FAFC] transition-opacity duration-300">
+  <!-- FULL-PAGE BOOT SCREEN (Guarantees zero layout shift / instant 300ms transition) -->
+  <div id="boot-screen" class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#F8FAFC] transition-opacity duration-200">
     <div class="flex flex-col items-center gap-4">
       <div class="w-12 h-12 rounded-2xl bg-[#0071e3] flex items-center justify-center text-white shadow-md animate-pulse">
         <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -88,6 +88,27 @@
       </div>
     </div>
   </div>
+
+  <script>
+    // Immediate Boot Fail-Safe: Never leave the user stuck on the boot screen if network is slow
+    (function() {
+      function dismissBootEarly() {
+        var bs = document.getElementById('boot-screen');
+        if (bs) {
+          bs.style.opacity = '0';
+          bs.style.pointerEvents = 'none';
+          setTimeout(function() { if (bs) bs.style.display = 'none'; }, 100);
+        }
+        if (document.body) document.body.classList.remove('booting');
+        var shell = document.getElementById('app-shell');
+        if (shell) shell.style.visibility = 'visible';
+      }
+      setTimeout(dismissBootEarly, 350);
+      window.addEventListener('DOMContentLoaded', function() {
+        setTimeout(dismissBootEarly, 250);
+      });
+    })();
+  </script>
 
   <!-- APPLICATION SHELL WRAPPER (Hidden during boot) -->
   <div id="app-shell" class="flex h-screen w-full overflow-hidden">
@@ -269,6 +290,13 @@
         <!-- Section: Settings & Integrations -->
         <div class="space-y-1">
           <div class="px-2.5 py-1 text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider">Settings</div>
+          <button data-view="settings" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all" title="Repository preferences, exclusions, and analysis configuration" aria-label="Settings">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-[18px] text-[#0071e3]">settings</span>
+              <span class="sidebar-text-label">Settings</span>
+            </div>
+            <span class="sidebar-badge-label text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 uppercase">Config</span>
+          </button>
           <button data-view="connections" class="view-tab w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all" title="GitHub, GitLab, and Local MCP Integrations" aria-label="Connections">
             <div class="flex items-center gap-2.5">
               <span class="material-symbols-outlined text-[18px] text-[#059669]">cable</span>
@@ -344,10 +372,10 @@
 
         <div id="header-workspace-separator" class="hidden sm:block h-5 w-[1px] bg-[#E2E8F0] dark:bg-[#334155] mx-1"></div>
 
-        <!-- Codebase & Snapshot Selector Group -->
-        <div id="header-workspace-controls" class="flex items-center gap-2">
+        <!-- Codebase & Branch & Snapshot Selector Group -->
+        <div id="header-workspace-controls" class="flex items-center gap-1.5 sm:gap-2">
           <!-- Codebase Selector -->
-          <div class="relative flex items-center bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] px-2.5 h-9 rounded-lg text-xs text-[#0F172A] dark:text-[#F8FAFC] w-48 sm:w-60 shadow-2xs hover:border-[#CBD5E1] transition-colors">
+          <div class="relative flex items-center bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] px-2.5 h-9 rounded-lg text-xs text-[#0F172A] dark:text-[#F8FAFC] w-44 sm:w-56 shadow-2xs hover:border-[#CBD5E1] transition-colors">
             <span class="material-symbols-outlined text-[#465E8B] dark:text-[#60A5FA] text-[18px] mr-1.5 shrink-0">code_blocks</span>
             <select id="repo-select" class="w-full bg-transparent text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC] outline-none cursor-pointer truncate" aria-label="Select Codebase">
               <option value="" disabled selected>-- Select Codebase --</option>
@@ -356,8 +384,18 @@
 
           <span class="hidden md:inline text-[#94A3B8] font-bold">/</span>
 
+          <!-- Branch Selector (Dedicated Branch Switch Box) -->
+          <div id="branch-select-wrap" class="hidden md:flex relative items-center bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] px-2.5 h-9 rounded-lg text-xs text-[#0F172A] dark:text-[#F8FAFC] w-36 sm:w-44 shadow-2xs hover:border-[#CBD5E1] transition-colors">
+            <span class="material-symbols-outlined text-[#0071e3] text-[16px] mr-1.5 shrink-0">call_split</span>
+            <select id="branch-select" class="w-full bg-transparent text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC] font-mono outline-none cursor-pointer truncate" aria-label="Select Branch">
+              <option value="" disabled selected>-- Select Branch --</option>
+            </select>
+          </div>
+
+          <span class="hidden md:inline text-[#94A3B8] font-bold">/</span>
+
           <!-- Snapshot Selector -->
-          <div id="snapshot-select-wrap" class="hidden md:flex relative items-center bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] px-2.5 h-9 rounded-lg text-xs text-[#475569] dark:text-[#94A3B8] w-44 shadow-2xs transition-colors opacity-50 cursor-not-allowed">
+          <div id="snapshot-select-wrap" class="hidden md:flex relative items-center bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] px-2.5 h-9 rounded-lg text-xs text-[#475569] dark:text-[#94A3B8] w-40 sm:w-44 shadow-2xs transition-colors opacity-50 cursor-not-allowed">
             <span class="material-symbols-outlined text-[#64748B] text-[16px] mr-1.5 shrink-0">history</span>
             <select id="snapshot-select" disabled aria-disabled="true" class="w-full bg-transparent text-xs text-[#475569] dark:text-[#94A3B8] font-mono outline-none cursor-not-allowed truncate" aria-label="Select Snapshot">
               <option value="" disabled selected>-- Select Snapshot --</option>
@@ -868,7 +906,7 @@
           </div>
         </section>
 
-                <!-- ============================================================== -->
+        <!-- ============================================================== -->
         <!-- VIEW 1: REPOSITORY OVERVIEW & LIVING SOFTWARE MODEL            -->
         <!-- ============================================================== -->
         <section id="view-overview" class="content-view-panel space-y-8" style="display:none;" aria-label="Project Overview &amp; Health Dashboard">
@@ -1456,6 +1494,7 @@
                     <span class="material-symbols-outlined text-[16px]">tune</span>
                     <span class="truncate">Configuration &amp; Env</span>
                   </div>
+                  <span id="docs-count-config" class="text-[10px] text-[#94A3B8] font-mono">0</span>
                 </button>
               </div>
             </div>
@@ -1783,6 +1822,16 @@
                   </div>
                 </div>
                 <p id="stats-timerange-label" class="text-[11px] text-[#64748B] dark:text-[#94A3B8] italic">Analyzing commit timestamps...</p>
+                <!-- Playful Evidence-Based Activity Persona & Rhythm Tags -->
+                <div class="space-y-1.5 pt-1">
+                  <div class="text-[10px] font-bold uppercase tracking-wider text-[#64748B] dark:text-[#94A3B8] flex items-center gap-1.5">
+                    <span class="material-symbols-outlined text-[14px] text-[#7C3AED]">psychology</span>
+                    <span>Activity Persona &amp; Rhythm Tags</span>
+                  </div>
+                  <div id="stats-activity-tags" class="flex flex-wrap gap-2 pt-0.5">
+                    <!-- Populated dynamically by twin.js -->
+                  </div>
+                </div>
                 <!-- Day of Week Distribution -->
                 <div class="space-y-2">
                   <div class="text-[10px] font-bold uppercase tracking-wider text-[#64748B] dark:text-[#94A3B8]">Commits by Day of Week</div>
@@ -2746,7 +2795,7 @@
                   </select>
                 </div>
                 <div class="lg:col-span-2 flex items-center gap-2">
-                  <button id="btn-run-entity-impact" class="w-full px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#005bb5] text-white text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 min-h-[38px] transition-all cursor-pointer" type="button">
+                  <button id="btn-run-entity-impact" disabled class="w-full px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#005bb5] text-white text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 min-h-[38px] transition-all opacity-50 cursor-not-allowed" type="button">
                     <span class="material-symbols-outlined text-[16px]">bolt</span>
                     <span>Trace Blast Radius</span>
                   </button>
@@ -2760,6 +2809,7 @@
                   <span class="text-[11px] text-[#94A3B8] italic">Loading repository hubs...</span>
                 </div>
               </div>
+              <div id="impact-component-state" class="text-xs pt-0.5"></div>
             </div>
 
             <!-- PANEL 2: DUAL-COMMIT DIFF MODE (Hidden by default) -->
@@ -2811,6 +2861,64 @@
               </div>
               <div id="impact-lifecycle-actions" class="flex items-center gap-2"></div>
             </div>
+
+            <!-- Analysis Preconditions Diagnostic Panel (Rule K) -->
+            <div id="impact-preconditions-panel" class="p-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] space-y-3" style="display:none;">
+              <div class="flex items-center justify-between flex-wrap gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-[18px] text-[#0071e3]">verified_user</span>
+                  <span class="text-xs font-bold text-[#0F172A] uppercase tracking-wider">Analysis Preconditions Checklist</span>
+                </div>
+                <span id="preconditions-summary-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]">
+                  2 ANALYZED SNAPSHOTS REQUIRED
+                </span>
+              </div>
+              <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-1 text-xs">
+                <div class="p-2.5 bg-white rounded-lg border border-[#E2E8F0] space-y-1">
+                  <div class="text-[10px] uppercase font-bold text-[#64748B]">1. Baseline Ready</div>
+                  <div id="precond-baseline-status" class="flex items-center gap-1.5 font-semibold text-[#64748B]">
+                    <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                    <span>Checking...</span>
+                  </div>
+                </div>
+                <div class="p-2.5 bg-white rounded-lg border border-[#E2E8F0] space-y-1">
+                  <div class="text-[10px] uppercase font-bold text-[#64748B]">2. Target Ready</div>
+                  <div id="precond-target-status" class="flex items-center gap-1.5 font-semibold text-[#64748B]">
+                    <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                    <span>Checking...</span>
+                  </div>
+                </div>
+                <div class="p-2.5 bg-white rounded-lg border border-[#E2E8F0] space-y-1">
+                  <div class="text-[10px] uppercase font-bold text-[#64748B]">3. Same Repo</div>
+                  <div id="precond-same-repo" class="flex items-center gap-1.5 font-semibold text-[#10B981]">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span>Verified</span>
+                  </div>
+                </div>
+                <div class="p-2.5 bg-white rounded-lg border border-[#E2E8F0] space-y-1">
+                  <div class="text-[10px] uppercase font-bold text-[#64748B]">4. Commits Diff</div>
+                  <div id="precond-commits-diff" class="flex items-center gap-1.5 font-semibold text-[#64748B]">
+                    <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                    <span>Checking...</span>
+                  </div>
+                </div>
+                <div class="p-2.5 bg-white rounded-lg border border-[#E2E8F0] space-y-1">
+                  <div class="text-[10px] uppercase font-bold text-[#64748B]">5. Graph Available</div>
+                  <div id="precond-graph-avail" class="flex items-center gap-1.5 font-semibold text-[#64748B]">
+                    <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                    <span>Checking...</span>
+                  </div>
+                </div>
+                <div class="p-2.5 bg-white rounded-lg border border-[#E2E8F0] space-y-1">
+                  <div class="text-[10px] uppercase font-bold text-[#64748B]">6. Ready to Run</div>
+                  <div id="precond-ready-run" class="flex items-center gap-1.5 font-semibold text-[#EF4444]">
+                    <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+                    <span>Blocked</span>
+                  </div>
+                </div>
+              </div>
+              <div id="preconditions-message-area" class="text-xs text-[#475569] leading-relaxed pt-1"></div>
+            </div>
           </div>
 
           <!-- Single Snapshot / Notice Banner -->
@@ -2828,39 +2936,154 @@
           <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
             <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
               <span class="text-[10px] text-[#64748B] uppercase font-bold">Changed</span>
-              <div id="metric-impact-changed" class="text-xl font-bold text-[#F59E0B] mt-0.5">0</div>
+              <div id="metric-impact-changed" class="text-xl font-bold text-[#F59E0B] mt-0.5">—</div>
             </div>
             <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
               <span class="text-[10px] text-[#64748B] uppercase font-bold">Unique Affected</span>
-              <div id="metric-impact-direct" class="text-xl font-bold text-[#EF4444] mt-0.5">0</div>
+              <div id="metric-impact-direct" class="text-xl font-bold text-[#EF4444] mt-0.5">—</div>
             </div>
             <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
               <span class="text-[10px] text-[#64748B] uppercase font-bold">Multi-Hop</span>
-              <div id="metric-impact-indirect" class="text-xl font-bold text-[#EC4899] mt-0.5">0</div>
+              <div id="metric-impact-indirect" class="text-xl font-bold text-[#EC4899] mt-0.5">—</div>
             </div>
             <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
               <span class="text-[10px] text-[#64748B] uppercase font-bold">Components</span>
-              <div id="metric-impact-components" class="text-xl font-bold text-[#3B82F6] mt-0.5">0</div>
+              <div id="metric-impact-components" class="text-xl font-bold text-[#3B82F6] mt-0.5">—</div>
             </div>
             <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
               <span class="text-[10px] text-[#64748B] uppercase font-bold">APIs</span>
-              <div id="metric-impact-apis" class="text-xl font-bold text-[#8B5CF6] mt-0.5">0</div>
+              <div id="metric-impact-apis" class="text-xl font-bold text-[#8B5CF6] mt-0.5">—</div>
             </div>
             <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
               <span class="text-[10px] text-[#64748B] uppercase font-bold">Processes</span>
-              <div id="metric-impact-processes" class="text-xl font-bold text-[#06B6D4] mt-0.5">0</div>
+              <div id="metric-impact-processes" class="text-xl font-bold text-[#06B6D4] mt-0.5">—</div>
             </div>
             <div class="p-3 bg-white rounded-xl border border-[#E2E8F0] text-center shadow-2xs">
               <span class="text-[10px] text-[#64748B] uppercase font-bold">Tests</span>
-              <div id="metric-impact-tests" class="text-xl font-bold text-[#10B981] mt-0.5">0</div>
+              <div id="metric-impact-tests" class="text-xl font-bold text-[#10B981] mt-0.5">—</div>
             </div>
           </div>
 
           <div id="impact-analysis-container" class="space-y-4">
-            <div class="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs space-y-3">
-              <h3 class="text-xs font-bold text-[#0F172A] uppercase tracking-wider">Causal Propagation Tree</h3>
-              <div id="impact-paths-tree" class="space-y-2 text-xs font-mono">
-                <!-- Injected by twin.js -->
+            <!-- Blast Radius Verdict & Executive Action Banner -->
+            <div id="impact-verdict-card" class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div class="space-y-1.5">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span id="impact-verdict-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-[#F1F5F9] text-[#64748B] border border-[#CBD5E1] uppercase tracking-wide">
+                    NOT RUN
+                  </span>
+                  <span id="impact-confidence-badge" class="px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">
+                    Evidence Confidence: —
+                  </span>
+                  <span id="impact-duration-badge" class="px-2.5 py-0.5 rounded-md text-[11px] font-mono text-[#64748B] bg-[#F8FAFC] border border-[#E2E8F0]">
+                    —
+                  </span>
+                </div>
+                <div id="impact-scope-info" class="text-xs text-[#334155] leading-relaxed">
+                  Select an architectural component or two analyzed snapshots to execute impact analysis.
+                </div>
+              </div>
+
+              <!-- Export & Report Actions -->
+              <div class="flex items-center gap-2 shrink-0">
+                <button id="btn-export-impact-report" onclick="window.TwinApp.exportBlastRadiusReport()" class="px-3.5 py-2 rounded-xl border border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] text-[#0F172A] text-xs font-semibold shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer" type="button" title="Export Evidence-Backed Markdown Report">
+                  <span class="material-symbols-outlined text-[16px] text-[#0071e3]">download</span>
+                  <span>Export Report (Markdown)</span>
+                </button>
+                <button onclick="window.print()" class="px-3 py-2 rounded-xl border border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] text-[#64748B] hover:text-[#0F172A] text-xs font-medium shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer" type="button" title="Print or save as PDF">
+                  <span class="material-symbols-outlined text-[16px]">print</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Blast Radius Sub-Tab Navigation (Matching Repowise) -->
+            <div class="bg-white border border-[#E2E8F0] rounded-2xl shadow-xs overflow-hidden">
+              <div class="flex items-center border-b border-[#E2E8F0] px-4 bg-[#F8FAFC] overflow-x-auto gap-2">
+                <button id="tab-impact-paths" type="button" class="tab-impact-nav px-4 py-3 text-xs font-bold text-[#0071e3] border-b-2 border-[#0071e3] flex items-center gap-2 cursor-pointer transition-all">
+                  <span class="material-symbols-outlined text-[16px]">route</span>
+                  <span>Causal Propagation Tree</span>
+                  <span id="impact-paths-count" class="px-2 py-0.2 rounded-full text-[10px] font-mono bg-blue-50 text-[#0071e3] border border-blue-200">0</span>
+                </button>
+
+                <button id="tab-impact-findings" type="button" class="tab-impact-nav px-4 py-3 text-xs font-medium text-[#64748B] hover:text-[#0F172A] border-b-2 border-transparent flex items-center gap-2 cursor-pointer transition-all">
+                  <span class="material-symbols-outlined text-[16px]">table_rows</span>
+                  <span>Affected Entities &amp; Blast Table</span>
+                  <span id="impact-findings-count" class="px-2 py-0.2 rounded-full text-[10px] font-mono bg-[#F1F5F9] text-[#64748B] border border-[#E2E8F0]">0</span>
+                </button>
+
+                <button id="tab-impact-categories" type="button" class="tab-impact-nav px-4 py-3 text-xs font-medium text-[#64748B] hover:text-[#0F172A] border-b-2 border-transparent flex items-center gap-2 cursor-pointer transition-all">
+                  <span class="material-symbols-outlined text-[16px]">category</span>
+                  <span>Category Breakdown &amp; Blast Map</span>
+                  <span id="impact-categories-count" class="px-2 py-0.2 rounded-full text-[10px] font-mono bg-[#F1F5F9] text-[#64748B] border border-[#E2E8F0]">6</span>
+                </button>
+
+                <button id="tab-impact-graph" type="button" class="tab-impact-nav px-4 py-3 text-xs font-medium text-[#64748B] hover:text-[#0F172A] border-b-2 border-transparent flex items-center gap-2 cursor-pointer transition-all">
+                  <span class="material-symbols-outlined text-[16px]">hub</span>
+                  <span>Interactive Blast Graph</span>
+                  <span class="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">2D Map</span>
+                </button>
+              </div>
+
+              <!-- PANE 1: CAUSAL PROPAGATION TREE -->
+              <div id="impact-pane-paths" class="p-5 space-y-3">
+                <div id="impact-paths-tree" class="space-y-2 text-xs font-mono">
+                  <!-- Injected by twin.js -->
+                </div>
+              </div>
+
+              <!-- PANE 2: AFFECTED ENTITIES & FINDINGS TABLE -->
+              <div id="impact-pane-findings" class="p-5 space-y-4" style="display:none;">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[#F1F5F9]">
+                  <div class="relative flex-1 max-w-sm">
+                    <span class="material-symbols-outlined text-[16px] text-[#94A3B8] absolute left-3 top-2.5">search</span>
+                    <input id="impact-findings-search" type="text" placeholder="Filter affected entities..." class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#0071e3]" oninput="window.TwinApp.filterImpactFindings(this.value)">
+                  </div>
+                  <span class="text-[11px] text-[#64748B]">Click any entity row to inspect in Architecture Knowledge Graph</span>
+                </div>
+
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left text-xs border-collapse">
+                    <thead class="bg-[#F8FAFC] text-[#64748B] font-semibold uppercase tracking-wider border-b border-[#E2E8F0]">
+                      <tr>
+                        <th class="p-3">Level</th>
+                        <th class="p-3">Source Artifact</th>
+                        <th class="p-3">Relationship</th>
+                        <th class="p-3">Impacted Entity</th>
+                        <th class="p-3">Category</th>
+                        <th class="p-3">Confidence</th>
+                        <th class="p-3">Evidence &amp; Detection Rule</th>
+                      </tr>
+                    </thead>
+                    <tbody id="impact-findings-body" class="divide-y divide-[#F1F5F9] text-[#0F172A]">
+                      <tr><td colspan="7" class="p-6 text-center text-[#64748B]">Zero impact findings generated.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- PANE 3: CATEGORY BREAKDOWN & BLAST MAP -->
+              <div id="impact-pane-categories" class="p-5 space-y-4" style="display:none;">
+                <p class="text-xs text-[#64748B]">Categorized distribution of impacted artifacts across components, APIs, services, and tests.</p>
+                <div id="impact-categories-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <!-- Injected by twin.js -->
+                </div>
+              </div>
+
+              <!-- PANE 4: INTERACTIVE BLAST GRAPH -->
+              <div id="impact-pane-graph" class="p-5 space-y-3" style="display:none;">
+                <div class="flex items-center justify-between pb-2">
+                  <div class="flex items-center gap-3 text-xs">
+                    <span class="font-bold text-[#0F172A]">Legend:</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#F59E0B]"></span> Root (Changed)</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#EF4444]"></span> Direct Callers (Depth 1)</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#EC4899]"></span> Transitive (Depth 2+)</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-[#10B981]"></span> Automated Tests</span>
+                  </div>
+                  <span class="text-[11px] text-[#64748B]">Click any node to inspect details</span>
+                </div>
+                <div id="impact-graph-container" class="w-full min-h-[380px] bg-[#0F172A] rounded-xl p-4 overflow-auto border border-[#1E293B] relative select-none">
+                  <svg id="impact-graph-svg" class="w-full h-[380px]" style="min-width: 600px;"></svg>
+                </div>
               </div>
             </div>
 
@@ -4357,6 +4580,464 @@
           </div>
         </section>
 
+<!-- ============================================================== -->
+        <!-- VIEW: PROFESSIONAL WORKSPACE & REPOSITORY SETTINGS            -->
+        <!-- (Inspired by Repowise Information Architecture & Density)     -->
+        <!-- ============================================================== -->
+        <section id="view-settings" class="content-view-panel space-y-6" style="display:none;" aria-label="Repository and Workspace Settings">
+          <!-- Settings Page Header -->
+          <div class="twin-card p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-[#E2E8F0]">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="w-8 h-8 rounded-xl bg-[#EFF6FF] text-[#0071e3] flex items-center justify-center shrink-0">
+                  <span class="material-symbols-outlined text-[20px]">settings</span>
+                </span>
+                <h1 class="text-xl font-bold text-[#0F172A] tracking-tight">Settings</h1>
+                <span id="settings-repo-pill" class="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">-</span>
+              </div>
+              <p class="text-xs text-[#64748B] mt-1.5 leading-relaxed">
+                Indexing, explanations, blast-radius preferences, and integrations for <span id="settings-repo-name-header" class="font-semibold text-[#0F172A]">this repository</span>. Account, analysis, and editor configurations are preserved across sessions.
+              </p>
+            </div>
+
+            <!-- Sticky Save / Cancel Toolbar -->
+            <div class="flex items-center gap-2.5 shrink-0">
+              <span id="settings-dirty-badge" class="px-2.5 py-1 rounded-md text-[11px] font-mono font-bold bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]" style="display:none;">
+                ● Unsaved Changes
+              </span>
+              <button id="settings-btn-reset" onclick="window.TwinApp.resetSettings()" class="px-3.5 py-2 rounded-xl border border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] text-[#475569] text-xs font-semibold shadow-2xs transition-colors cursor-pointer" type="button">
+                Reset
+              </button>
+              <button id="settings-btn-save" onclick="window.TwinApp.saveSettings()" class="px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#005bb5] text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer" type="button">
+                <span class="material-symbols-outlined text-[16px]">save</span>
+                <span id="settings-btn-save-text">Save Changes</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Split Layout: Vertical Tab Navigation (3 cols) + Settings Panels (9 cols) -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+            <!-- LEFT NAVIGATION MENU (3 cols) -->
+            <div class="lg:col-span-3 twin-card p-3 space-y-1 border border-[#E2E8F0]">
+              <button onclick="window.TwinApp.switchSettingsTab('general')" class="settings-nav-btn active w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold bg-[#EFF6FF] text-[#0071e3] transition-all text-left" data-tab="general" type="button">
+                <div class="flex items-center gap-2.5">
+                  <span class="material-symbols-outlined text-[17px]">tune</span>
+                  <span>General &amp; Repository</span>
+                </div>
+              </button>
+
+              <button onclick="window.TwinApp.switchSettingsTab('analysis')" class="settings-nav-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all text-left" data-tab="analysis" type="button">
+                <div class="flex items-center gap-2.5">
+                  <span class="material-symbols-outlined text-[17px]">radar</span>
+                  <span>Analysis &amp; Blast Radius</span>
+                </div>
+              </button>
+
+              <button onclick="window.TwinApp.switchSettingsTab('profile')" class="settings-nav-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all text-left" data-tab="profile" type="button">
+                <div class="flex items-center gap-2.5">
+                  <span class="material-symbols-outlined text-[17px]">account_circle</span>
+                  <span>Profile &amp; Account</span>
+                </div>
+              </button>
+
+              <button onclick="window.TwinApp.switchSettingsTab('notifications')" class="settings-nav-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all text-left" data-tab="notifications" type="button">
+                <div class="flex items-center gap-2.5">
+                  <span class="material-symbols-outlined text-[17px]">notifications</span>
+                  <span>Notifications</span>
+                </div>
+              </button>
+
+              <button onclick="window.TwinApp.switchSettingsTab('appearance')" class="settings-nav-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all text-left" data-tab="appearance" type="button">
+                <div class="flex items-center gap-2.5">
+                  <span class="material-symbols-outlined text-[17px]">palette</span>
+                  <span>Appearance &amp; Accessibility</span>
+                </div>
+              </button>
+
+              <button onclick="window.TwinApp.switchSettingsTab('security')" class="settings-nav-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all text-left" data-tab="security" type="button">
+                <div class="flex items-center gap-2.5">
+                  <span class="material-symbols-outlined text-[17px]">security</span>
+                  <span>Privacy &amp; Integrations</span>
+                </div>
+              </button>
+
+              <button onclick="window.TwinApp.switchSettingsTab('status')" class="settings-nav-btn w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] transition-all text-left" data-tab="status" type="button">
+                <div class="flex items-center gap-2.5">
+                  <span class="material-symbols-outlined text-[17px]">monitoring</span>
+                  <span>Usage &amp; System Health</span>
+                </div>
+              </button>
+            </div>
+
+            <!-- RIGHT SETTINGS PANELS (9 cols) -->
+            <div class="lg:col-span-9 space-y-6">
+
+              <!-- PANEL 1: GENERAL & REPOSITORY (Matching Repowise Reference) -->
+              <div id="settings-panel-general" class="settings-content-panel space-y-6">
+                <div class="twin-card p-6 border border-[#E2E8F0] space-y-5">
+                  <div>
+                    <h3 class="text-sm font-bold text-[#0F172A]">General Repository Settings</h3>
+                    <p class="text-xs text-[#64748B] mt-0.5">Name, default branch, and gitignore-style exclusions. Changes apply to the next index, which you can run anytime.</p>
+                  </div>
+
+                  <div class="space-y-4 text-xs">
+                    <div>
+                      <label class="block font-semibold text-[#334155] mb-1">Repository name</label>
+                      <input id="settings-input-repo-name" type="text" placeholder="e.g. lab-record-system" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] font-medium focus:outline-none focus:border-[#0071e3]" oninput="window.TwinApp.markSettingsDirty()">
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label class="block font-semibold text-[#334155] mb-1">Default branch</label>
+                        <input id="settings-input-branch" type="text" placeholder="main" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]" oninput="window.TwinApp.markSettingsDirty()">
+                        <span class="text-[10px] text-[#64748B] mt-1 block">The primary git ref used for baseline comparisons</span>
+                      </div>
+
+                      <div>
+                        <label class="block font-semibold text-[#334155] mb-1">Remote URL</label>
+                        <input id="settings-input-remote-url" type="text" placeholder="github.com/organization/repo" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]" oninput="window.TwinApp.markSettingsDirty()">
+                        <span class="text-[10px] text-[#64748B] mt-1 block">Remote VCS origin address</span>
+                      </div>
+                    </div>
+
+                    <!-- Excluded Paths (Matching Repowise Reference) -->
+                    <div class="pt-2 border-t border-[#F1F5F9] space-y-2">
+                      <label class="block font-semibold text-[#334155]">Excluded paths</label>
+                      <p class="text-[11px] text-[#64748B]">Gitignore-style patterns, relative to repository root, that indexing and AST generation skip. Standard ignore rules always apply.</p>
+
+                      <div class="flex gap-2">
+                        <input id="settings-input-exclude-path" type="text" placeholder="e.g. vendor/, src/generated/**, **/fixtures/**" class="flex-1 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]" onkeydown="if(event.key==='Enter'){event.preventDefault();window.TwinApp.addExcludedPath();}">
+                        <button id="settings-btn-add-exclude" onclick="window.TwinApp.addExcludedPath()" class="px-4 py-2 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white text-xs font-semibold transition-colors cursor-pointer" type="button">
+                          Add
+                        </button>
+                      </div>
+
+                      <!-- Interactive Excluded Path Tag Pills -->
+                      <div id="settings-excluded-paths-container" class="flex flex-wrap gap-1.5 pt-1">
+                        <!-- Populated by twin.js -->
+                      </div>
+                    </div>
+
+                    <!-- Documentation Style Selector (Matching Repowise Reference) -->
+                    <div class="pt-3 border-t border-[#F1F5F9] space-y-2">
+                      <label class="block font-semibold text-[#334155]">Documentation style</label>
+                      <p class="text-[11px] text-[#64748B]">The voice and density of generated architectural pages, technical notes, and summaries.</p>
+
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1" id="settings-doc-style-grid">
+                        <button type="button" class="settings-doc-card active p-3 rounded-xl border border-[#0071e3] bg-[#EFF6FF] text-left transition-all cursor-pointer" data-style="comprehensive" onclick="window.TwinApp.selectDocStyle('comprehensive')">
+                          <div class="flex items-center justify-between font-bold text-xs text-[#0071e3]">
+                            <span>Comprehensive</span>
+                            <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                          </div>
+                          <p class="text-[11px] text-[#475569] mt-1 leading-snug">Full, narrative documentation for humans and AI (default).</p>
+                        </button>
+
+                        <button type="button" class="settings-doc-card p-3 rounded-xl border border-[#CBD5E1] bg-white hover:border-[#94A3B8] text-left transition-all cursor-pointer" data-style="caveman" onclick="window.TwinApp.selectDocStyle('caveman')">
+                          <div class="flex items-center justify-between font-bold text-xs text-[#0F172A]">
+                            <span>Caveman</span>
+                            <span class="material-symbols-outlined text-[16px] text-transparent">check_circle</span>
+                          </div>
+                          <p class="text-[11px] text-[#64748B] mt-1 leading-snug">Token-condensed, AI-first pages — terse fragments, ~70% smaller.</p>
+                        </button>
+
+                        <button type="button" class="settings-doc-card p-3 rounded-xl border border-[#CBD5E1] bg-white hover:border-[#94A3B8] text-left transition-all cursor-pointer" data-style="reference" onclick="window.TwinApp.selectDocStyle('reference')">
+                          <div class="flex items-center justify-between font-bold text-xs text-[#0F172A]">
+                            <span>Reference</span>
+                            <span class="material-symbols-outlined text-[16px] text-transparent">check_circle</span>
+                          </div>
+                          <p class="text-[11px] text-[#64748B] mt-1 leading-snug">API-manual style — signature-dense, exhaustive, minimal narrative.</p>
+                        </button>
+
+                        <button type="button" class="settings-doc-card p-3 rounded-xl border border-[#CBD5E1] bg-white hover:border-[#94A3B8] text-left transition-all cursor-pointer" data-style="tutorial" onclick="window.TwinApp.selectDocStyle('tutorial')">
+                          <div class="flex items-center justify-between font-bold text-xs text-[#0F172A]">
+                            <span>Tutorial</span>
+                            <span class="material-symbols-outlined text-[16px] text-transparent">check_circle</span>
+                          </div>
+                          <p class="text-[11px] text-[#64748B] mt-1 leading-snug">Guided, beginner-friendly walkthroughs that teach the codebase.</p>
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+
+              <!-- PANEL 2: ANALYSIS & BLAST RADIUS PREFERENCES -->
+              <div id="settings-panel-analysis" class="settings-content-panel space-y-6" style="display:none;">
+                <div class="twin-card p-6 border border-[#E2E8F0] space-y-5">
+                  <div>
+                    <h3 class="text-sm font-bold text-[#0F172A]">Analysis &amp; Blast Radius Preferences</h3>
+                    <p class="text-xs text-[#64748B] mt-0.5">Control default traversal depth, risk thresholds, and test-impact automation for the deterministic twin engine.</p>
+                  </div>
+
+                  <div class="space-y-4 text-xs">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label class="block font-semibold text-[#334155] mb-1">Default blast-radius depth</label>
+                        <select id="settings-select-depth" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-medium focus:outline-none focus:border-[#0071e3]" onchange="window.TwinApp.markSettingsDirty()">
+                          <option value="1">1 Hop (Direct Callers Only)</option>
+                          <option value="3">3 Hops (Near Cluster)</option>
+                          <option value="5" selected>5 Hops (Standard Propagation)</option>
+                          <option value="10">10 Hops (Exhaustive Enterprise)</option>
+                        </select>
+                        <span class="text-[10px] text-[#64748B] mt-1 block">Maximum depth followed through call, import, and test edges</span>
+                      </div>
+
+                      <div>
+                        <label class="block font-semibold text-[#334155] mb-1">High blast radius alert threshold</label>
+                        <select id="settings-select-risk-threshold" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-medium focus:outline-none focus:border-[#0071e3]" onchange="window.TwinApp.markSettingsDirty()">
+                          <option value="50">Score ≥ 50/100 (Sensitive)</option>
+                          <option value="60" selected>Score ≥ 60/100 (Balanced Default)</option>
+                          <option value="75">Score ≥ 75/100 (Conservative)</option>
+                          <option value="90">Score ≥ 90/100 (Critical Only)</option>
+                        </select>
+                        <span class="text-[10px] text-[#64748B] mt-1 block">Triggers high-severity risk badges and notifications</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label class="block font-semibold text-[#334155] mb-1">Default commit comparison strategy</label>
+                      <select id="settings-select-baseline-mode" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-medium focus:outline-none focus:border-[#0071e3]" onchange="window.TwinApp.markSettingsDirty()">
+                        <option value="HEAD_PREV" selected>Compare with HEAD~1 (Previous Commit)</option>
+                        <option value="DEFAULT_BRANCH">Compare with default branch (main/master)</option>
+                        <option value="WORKING_TREE">Inspect uncommitted working tree diff live</option>
+                      </select>
+                    </div>
+
+                    <div class="pt-3 border-t border-[#F1F5F9] space-y-3">
+                      <div class="flex items-center justify-between p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                        <div>
+                          <div class="font-semibold text-[#0F172A]">Auto-run test impact analysis</div>
+                          <p class="text-[11px] text-[#64748B]">Automatically identifies test suites affected whenever blast radius is traced.</p>
+                        </div>
+                        <input id="settings-toggle-auto-tests" type="checkbox" checked class="w-4 h-4 accent-[#0071e3] cursor-pointer" onchange="window.TwinApp.markSettingsDirty()">
+                      </div>
+
+                      <div class="flex items-center justify-between p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                        <div>
+                          <div class="font-semibold text-[#0F172A]">Trace public API surface exposures</div>
+                          <p class="text-[11px] text-[#64748B]">Flags external HTTP routes and RPC handlers when downstream symbols are modified.</p>
+                        </div>
+                        <input id="settings-toggle-trace-apis" type="checkbox" checked class="w-4 h-4 accent-[#0071e3] cursor-pointer" onchange="window.TwinApp.markSettingsDirty()">
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+
+              <!-- PANEL 3: PROFILE & ACCOUNT -->
+              <div id="settings-panel-profile" class="settings-content-panel space-y-6" style="display:none;">
+                <div class="twin-card p-6 border border-[#E2E8F0] space-y-5">
+                  <div>
+                    <h3 class="text-sm font-bold text-[#0F172A]">User Profile &amp; Session Account</h3>
+                    <p class="text-xs text-[#64748B] mt-0.5">Manage authenticated session details, user role, and developer identity.</p>
+                  </div>
+
+                  <div class="space-y-4 text-xs">
+                    <div class="flex items-center gap-4 p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                      <div id="settings-avatar" class="w-12 h-12 rounded-full bg-[#0071e3] text-white flex items-center justify-center font-bold text-base shadow-xs">
+                        US
+                      </div>
+                      <div class="space-y-0.5">
+                        <div id="settings-display-username" class="font-bold text-sm text-[#0F172A]">Developer Engineer</div>
+                        <div id="settings-display-email" class="text-xs text-[#64748B]">engineer@twincore.local</div>
+                        <span id="settings-display-role" class="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#E0F2FE] text-[#0369A1] uppercase">ENGINEER</span>
+                      </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label class="block font-semibold text-[#334155] mb-1">Display Name</label>
+                        <input id="settings-input-display-name" type="text" placeholder="Your Name" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]" oninput="window.TwinApp.markSettingsDirty()">
+                      </div>
+                      <div>
+                        <label class="block font-semibold text-[#334155] mb-1">Work Email</label>
+                        <input id="settings-input-email" type="email" placeholder="alex@company.com" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]" oninput="window.TwinApp.markSettingsDirty()">
+                      </div>
+                    </div>
+
+                    <div class="p-3 rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] flex items-center justify-between">
+                      <div class="flex items-center gap-2 text-xs text-[#166534]">
+                        <span class="material-symbols-outlined text-[16px] text-[#16A34A]">verified_user</span>
+                        <span>Active Session JWT Authenticated</span>
+                      </div>
+                      <button onclick="window.TwinApp.openAuthModal()" class="text-xs font-semibold text-[#0071e3] hover:underline cursor-pointer" type="button">
+                        Switch Account →
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- PANEL 4: NOTIFICATIONS -->
+              <div id="settings-panel-notifications" class="settings-content-panel space-y-6" style="display:none;">
+                <div class="twin-card p-6 border border-[#E2E8F0] space-y-5">
+                  <div>
+                    <h3 class="text-sm font-bold text-[#0F172A]">Notification &amp; Alert Preferences</h3>
+                    <p class="text-xs text-[#64748B] mt-0.5">Configure in-app feedback, analysis completion announcements, and critical risk banners.</p>
+                  </div>
+
+                  <div class="space-y-3 text-xs">
+                    <div class="flex items-center justify-between p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                      <div>
+                        <div class="font-semibold text-[#0F172A]">Analysis Completion Toasts</div>
+                        <p class="text-[11px] text-[#64748B]">Show instant feedback toasts when blast radius, snapshot diff, or simulation completes.</p>
+                      </div>
+                      <input id="settings-notify-toasts" type="checkbox" checked class="w-4 h-4 accent-[#0071e3] cursor-pointer" onchange="window.TwinApp.markSettingsDirty()">
+                    </div>
+
+                    <div class="flex items-center justify-between p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                      <div>
+                        <div class="font-semibold text-[#0F172A]">High-Risk Blast Radius Banner</div>
+                        <p class="text-[11px] text-[#64748B]">Display warning banners when downstream blast radius impacts critical core services.</p>
+                      </div>
+                      <input id="settings-notify-risk-banner" type="checkbox" checked class="w-4 h-4 accent-[#0071e3] cursor-pointer" onchange="window.TwinApp.markSettingsDirty()">
+                    </div>
+
+                    <div class="flex items-center justify-between p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                      <div>
+                        <div class="font-semibold text-[#0F172A]">Untested Change Warning</div>
+                        <p class="text-[11px] text-[#64748B]">Alert when a modified symbol has 0 linked automated tests in the twin knowledge graph.</p>
+                      </div>
+                      <input id="settings-notify-coverage-gap" type="checkbox" checked class="w-4 h-4 accent-[#0071e3] cursor-pointer" onchange="window.TwinApp.markSettingsDirty()">
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- PANEL 5: APPEARANCE & ACCESSIBILITY -->
+              <div id="settings-panel-appearance" class="settings-content-panel space-y-6" style="display:none;">
+                <div class="twin-card p-6 border border-[#E2E8F0] space-y-5">
+                  <div>
+                    <h3 class="text-sm font-bold text-[#0F172A]">Appearance &amp; Accessibility</h3>
+                    <p class="text-xs text-[#64748B] mt-0.5">Customize interface theme, layout density, and reduced-motion preferences.</p>
+                  </div>
+
+                  <div class="space-y-4 text-xs">
+                    <div>
+                      <label class="block font-semibold text-[#334155] mb-2">Theme Mode</label>
+                      <div class="grid grid-cols-3 gap-2">
+                        <button id="settings-theme-light" onclick="window.TwinApp.setThemeMode('light')" class="p-2.5 rounded-xl border border-[#0071e3] bg-[#EFF6FF] text-[#0071e3] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer" type="button">
+                          <span class="material-symbols-outlined text-[16px]">light_mode</span>
+                          <span>Light</span>
+                        </button>
+                        <button id="settings-theme-dark" onclick="window.TwinApp.setThemeMode('dark')" class="p-2.5 rounded-xl border border-[#CBD5E1] bg-white text-[#475569] font-medium text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer" type="button">
+                          <span class="material-symbols-outlined text-[16px]">dark_mode</span>
+                          <span>Dark</span>
+                        </button>
+                        <button id="settings-theme-system" onclick="window.TwinApp.setThemeMode('system')" class="p-2.5 rounded-xl border border-[#CBD5E1] bg-white text-[#475569] font-medium text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer" type="button">
+                          <span class="material-symbols-outlined text-[16px]">desktop_windows</span>
+                          <span>System</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="pt-3 border-t border-[#F1F5F9] space-y-3">
+                      <div class="flex items-center justify-between p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                        <div>
+                          <div class="font-semibold text-[#0F172A]">Compact Table Density</div>
+                          <p class="text-[11px] text-[#64748B]">Reduces row padding in diff tables and findings grids for high-density monitors.</p>
+                        </div>
+                        <input id="settings-toggle-compact-density" type="checkbox" class="w-4 h-4 accent-[#0071e3] cursor-pointer" onchange="window.TwinApp.markSettingsDirty()">
+                      </div>
+
+                      <div class="flex items-center justify-between p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                        <div>
+                          <div class="font-semibold text-[#0F172A]">Reduce Animation Motion</div>
+                          <p class="text-[11px] text-[#64748B]">Disables pulse and spin animations in 2D graphs and status steppers.</p>
+                        </div>
+                        <input id="settings-toggle-reduced-motion" type="checkbox" class="w-4 h-4 accent-[#0071e3] cursor-pointer" onchange="window.TwinApp.markSettingsDirty()">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- PANEL 6: PRIVACY & INTEGRATIONS -->
+              <div id="settings-panel-security" class="settings-content-panel space-y-6" style="display:none;">
+                <div class="twin-card p-6 border border-[#E2E8F0] space-y-5">
+                  <div>
+                    <h3 class="text-sm font-bold text-[#0F172A]">Privacy &amp; VCS Integrations</h3>
+                    <p class="text-xs text-[#64748B] mt-0.5">Credentials isolation, AST parsing sandbox verification, and data handling boundaries.</p>
+                  </div>
+
+                  <div class="space-y-3 text-xs">
+                    <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
+                      <div class="flex items-center justify-between font-semibold text-[#0F172A]">
+                        <span class="flex items-center gap-1.5">
+                          <span class="material-symbols-outlined text-[16px] text-[#10B981]">security</span>
+                          <span>In-Flight GitHub Token Isolation</span>
+                        </span>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#ECFDF5] text-[#059669]">ZERO DISK STORAGE</span>
+                      </div>
+                      <p class="text-[#64748B]">Personal Access Tokens provided in repository connection dialogs are held strictly in process memory during discovery and are never stored in databases or log files.</p>
+                    </div>
+
+                    <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
+                      <div class="flex items-center justify-between font-semibold text-[#0F172A]">
+                        <span class="flex items-center gap-1.5">
+                          <span class="material-symbols-outlined text-[16px] text-[#0071e3]">verified</span>
+                          <span>Read-Only AST Parsing Guarantee</span>
+                        </span>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#EFF6FF] text-[#0284C7]">SANDBOXED</span>
+                      </div>
+                      <p class="text-[#64748B]">TwinCore parses code purely via Tree-Sitter AST grammar walkers. Build scripts, compilers, package managers, and untrusted binaries are never executed.</p>
+                    </div>
+
+                    <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
+                      <div class="font-semibold text-[#0F172A]">Local Workspace Storage Path</div>
+                      <div id="settings-storage-path" class="font-mono text-[11px] text-[#475569] bg-white p-2 rounded-lg border border-[#E2E8F0] truncate">
+                        /Users/sanjay/DIGITAL TWIN
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- PANEL 7: USAGE & SYSTEM HEALTH -->
+              <div id="settings-panel-status" class="settings-content-panel space-y-6" style="display:none;">
+                <div class="twin-card p-6 border border-[#E2E8F0] space-y-5">
+                  <div>
+                    <h3 class="text-sm font-bold text-[#0F172A]">Usage Metrics &amp; System Health</h3>
+                    <p class="text-xs text-[#64748B] mt-0.5">Live operational telemetry, indexed entity counters, and backend service readiness.</p>
+                  </div>
+
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div class="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl space-y-1">
+                      <span class="text-[10px] font-bold text-[#64748B] uppercase">Indexed Files</span>
+                      <div id="settings-stat-files" class="text-lg font-bold font-mono text-[#0F172A]">0</div>
+                    </div>
+                    <div class="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl space-y-1">
+                      <span class="text-[10px] font-bold text-[#64748B] uppercase">Extracted Symbols</span>
+                      <div id="settings-stat-symbols" class="text-lg font-bold font-mono text-[#0F172A]">0</div>
+                    </div>
+                    <div class="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl space-y-1">
+                      <span class="text-[10px] font-bold text-[#64748B] uppercase">Graph Relationships</span>
+                      <div id="settings-stat-rels" class="text-lg font-bold font-mono text-[#0F172A]">0</div>
+                    </div>
+                    <div class="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl space-y-1">
+                      <span class="text-[10px] font-bold text-[#64748B] uppercase">Historical Snapshots</span>
+                      <div id="settings-stat-snaps" class="text-lg font-bold font-mono text-[#0F172A]">0</div>
+                    </div>
+                  </div>
+
+                  <div class="p-3.5 bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl flex items-center justify-between text-xs">
+                    <div class="flex items-center gap-2">
+                      <span class="w-2.5 h-2.5 rounded-full bg-[#10B981] animate-pulse"></span>
+                      <span class="font-semibold text-[#166534]">TwinCore Engine Operational</span>
+                      <span class="text-[#15803D]">· FastAPI, Tree-Sitter &amp; SQLite active</span>
+                    </div>
+                    <span class="font-mono text-[11px] text-[#166534]">v0.1.0</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
       </div>
     </main>
   </div>
@@ -5165,19 +5846,9 @@
     </div>
   </div>
 
-  <!-- Three.js 3D WebGL Visualization Engine & Spatial Controls -->
-  <script src="/static/vendor/three.min.js"></script>
-  <script>
-    if (typeof THREE === 'undefined') {
-      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
-    }
-  </script>
-  <script src="/static/vendor/OrbitControls.js"></script>
-  <script>
-    if (typeof THREE !== 'undefined' && typeof THREE.OrbitControls === 'undefined') {
-      document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"><\/script>');
-    }
-  </script>
-  <script src="/static/twin.js"></script>
+  <!-- Three.js 3D WebGL Visualization Engine & Spatial Controls (Deferred for Instant First Paint) -->
+  <script src="/static/vendor/three.min.js" defer></script>
+  <script src="/static/vendor/OrbitControls.js" defer></script>
+  <script src="/static/twin.js" defer></script>
 </body>
 </html>

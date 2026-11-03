@@ -269,6 +269,11 @@ class ImpactPropagator:
                         classification = ImpactClassification.DIRECT if depth == 1 else ImpactClassification.PROVEN_TRANSITIVE
                         ev_id = f"ev_prop_{depth}_{curr_id[:6]}_{affected_id[:6]}"
 
+                        src_file = affected_art.location if affected_art else None
+                        l_start = affected_art.line_start if affected_art else None
+                        l_end = affected_art.line_end if affected_art else None
+                        ev_complete = "COMPLETE" if (src_file and l_start is not None) else ("PARTIAL" if src_file else "MISSING")
+
                         findings_map[key] = ImpactFinding(
                             source_node_id=root_id,
                             source_qual_name=root_qual,
@@ -287,6 +292,11 @@ class ImpactPropagator:
                             snapshot_id=change_set.target_snapshot_id,
                             provenance="DERIVED",
                             traversal_depth=depth,
+                            source_file=src_file,
+                            line_start=l_start,
+                            line_end=l_end,
+                            evidence_completeness=ev_complete,
+                            relationship_used=rel_type,
                         )
 
                     # Enqueue next hop

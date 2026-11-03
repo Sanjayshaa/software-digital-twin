@@ -123,6 +123,30 @@ class Repository(Base):
         super().__init__(**kwargs)
 
 
+class SnapshotStatus:
+    NOT_CREATED = "NOT_CREATED"
+    QUEUED = "QUEUED"
+    SCANNING = "SCANNING"
+    PARSING = "PARSING"
+    PERSISTING = "PERSISTING"
+    READY = "READY"
+    FAILED = "FAILED"
+    INCOMPLETE_DATA = "INCOMPLETE_DATA"
+    NEEDS_REINDEX = "NEEDS_REINDEX"
+
+    ALL = {
+        NOT_CREATED,
+        QUEUED,
+        SCANNING,
+        PARSING,
+        PERSISTING,
+        READY,
+        FAILED,
+        INCOMPLETE_DATA,
+        NEEDS_REINDEX,
+    }
+
+
 class RepositorySnapshot(Base):
     __tablename__ = "repository_snapshots"
 
@@ -149,15 +173,172 @@ class RepositorySnapshot(Base):
         if "branch_name" not in kwargs or not kwargs["branch_name"]:
             kwargs["branch_name"] = "main"
         cm = kwargs.pop("commit_message", None)
-        if cm:
-            meta = kwargs.setdefault("snapshot_metadata", {})
-            if isinstance(meta, dict):
+        stat = kwargs.pop("status", None)
+        meta = kwargs.setdefault("snapshot_metadata", {})
+        if isinstance(meta, dict):
+            if cm:
                 meta["commit_message"] = cm
+            if stat:
+                meta["status"] = stat
         super().__init__(**kwargs)
         if cm:
             self._commit_message = cm
         if self.id and self.repository_id:
             RepositorySnapshot._snapshot_repo_cache[self.id] = self.repository_id
+
+    @property
+    def status(self) -> str:
+        if isinstance(self.snapshot_metadata, dict) and "status" in self.snapshot_metadata:
+            return self.snapshot_metadata["status"]
+        return self._classify_legacy_snapshot()
+
+    def _classify_legacy_snapshot(self) -> str:
+        """
+        Classifies legacy snapshots without an explicit status in snapshot_metadata.
+        Never marks a snapshot READY using total_symbols alone.
+        Requires proven database evidence:
+        - structural artifacts are present
+        - relationship records are present (or truthfully empty)
+        - file/symbol persistence completed
+        - no known partial persistence or errors
+        """
+        meta = self.snapshot_metadata if isinstance(self.snapshot_metadata, dict) else {}
+
+        # 1. Known partial persistence or errors
+        if meta.get("partial") or meta.get("is_partial") or meta.get("error") or meta.get("failed_at"):
+            return SnapshotStatus.INCOMPLETE_DATA
+        if meta.get("stage") in ["SCANNING", "PARSING", "PERSISTING", "QUEUED"]:
+            return SnapshotStatus.INCOMPLETE_DATA
+        if meta.get("persistence_completed") is False:
+            return SnapshotStatus.INCOMPLETE_DATA
+
+        # 2. Inspect database or in-memory artifacts and relationships
+        art_count = 0
+        rel_count = 0
+
+        from sqlalchemy.orm import object_session
+        sess = object_session(self)
+
+        if sess is not None and self.id:
+            try:
+                art_count = sess.query(StructuralArtifact).filter_by(snapshot_id=self.id).count()
+                rel_count = sess.query(ArtifactRelationship).filter_by(snapshot_id=self.id).count()
+            except Exception:
+                art_count = 0
+                rel_count = 0
+
+        # Check in-memory relationships if not in session or count was 0
+        if art_count == 0 and "structural_artifacts" in self.__dict__ and self.structural_artifacts is not None:
+            art_count = len(self.structural_artifacts)
+        if rel_count == 0 and "artifact_relationships" in self.__dict__ and self.artifact_relationships is not None:
+            rel_count = len(self.artifact_relationships)
+
+        # Fallback to metadata counts if present
+        if art_count == 0:
+            art_count = meta.get("artifacts_count") or meta.get("total_artifacts") or 0
+        if rel_count == 0:
+            rel_count = meta.get("relationships_count") or meta.get("total_relationships") or 0
+
+        # 3. Evaluate evidence
+        total_syms = self.total_symbols or 0
+        total_files = self.total_files or 0
+
+        # If zero artifacts exist in the database/model
+        if art_count == 0:
+            return SnapshotStatus.NEEDS_REINDEX
+
+        # If artifacts exist, relationships must be present unless truthfully empty
+        truthfully_empty_graph = meta.get("truthfully_empty_graph") is True or (art_count <= 1 and meta.get("no_relationships_detected") is True)
+        if rel_count == 0 and not truthfully_empty_graph:
+            return SnapshotStatus.INCOMPLETE_DATA
+
+        # File and symbol persistence must have completed
+        if total_files == 0 and total_syms == 0 and art_count == 0:
+            return SnapshotStatus.NEEDS_REINDEX
+
+        return SnapshotStatus.READY
+
+    @status.setter
+    def status(self, val: str):
+        if not isinstance(self.snapshot_metadata, dict):
+            self.snapshot_metadata = {}
+        self.snapshot_metadata["status"] = val
+
+    @property
+    def is_ready(self) -> bool:
+        return self.status == SnapshotStatus.READY
+
+    @property
+    def error_message(self) -> Optional[str]:
+        if isinstance(self.snapshot_metadata, dict):
+            return self.snapshot_metadata.get("error")
+        return None
+
+    @error_message.setter
+    def error_message(self, val: str):
+        if not isinstance(self.snapshot_metadata, dict):
+            self.snapshot_metadata = {}
+        self.snapshot_metadata["error"] = val
+
+    @property
+    def failed_at(self) -> Optional[str]:
+        if isinstance(self.snapshot_metadata, dict):
+            return self.snapshot_metadata.get("failed_at")
+        return None
+
+    @failed_at.setter
+    def failed_at(self, val: str):
+        if not isinstance(self.snapshot_metadata, dict):
+            self.snapshot_metadata = {}
+        self.snapshot_metadata["failed_at"] = val
+
+    @property
+    def completed_at(self) -> Optional[str]:
+        if isinstance(self.snapshot_metadata, dict):
+            return self.snapshot_metadata.get("completed_at")
+        return None
+
+    @completed_at.setter
+    def completed_at(self, val: str):
+        if not isinstance(self.snapshot_metadata, dict):
+            self.snapshot_metadata = {}
+        self.snapshot_metadata["completed_at"] = val
+
+    @property
+    def source_tree_identity(self) -> Optional[str]:
+        if isinstance(self.snapshot_metadata, dict):
+            return self.snapshot_metadata.get("source_tree_identity", self.commit_hash)
+        return self.commit_hash
+
+    @source_tree_identity.setter
+    def source_tree_identity(self, val: str):
+        if not isinstance(self.snapshot_metadata, dict):
+            self.snapshot_metadata = {}
+        self.snapshot_metadata["source_tree_identity"] = val
+
+    @property
+    def analysis_version(self) -> str:
+        if isinstance(self.snapshot_metadata, dict):
+            return self.snapshot_metadata.get("analysis_version", "2.0.0")
+        return "2.0.0"
+
+    @analysis_version.setter
+    def analysis_version(self, val: str):
+        if not isinstance(self.snapshot_metadata, dict):
+            self.snapshot_metadata = {}
+        self.snapshot_metadata["analysis_version"] = val
+
+    @property
+    def error_message(self) -> Optional[str]:
+        if isinstance(self.snapshot_metadata, dict):
+            return self.snapshot_metadata.get("error_message")
+        return None
+
+    @error_message.setter
+    def error_message(self, val: str):
+        if not isinstance(self.snapshot_metadata, dict):
+            self.snapshot_metadata = {}
+        self.snapshot_metadata["error_message"] = val
 
     @property
     def commit_message(self):

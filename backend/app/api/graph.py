@@ -1458,6 +1458,7 @@ def get_repository_report(
 def get_repository_docs(
     repository_id: str,
     snapshot_id: Optional[str] = Query(None),
+    branch: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
@@ -1476,17 +1477,20 @@ def get_repository_docs(
     snapshot = None
     if snapshot_id:
         snapshot = db.query(RepositorySnapshot).filter_by(id=snapshot_id, repository_id=repo.id).first()
+    if not snapshot and branch:
+        snapshot = db.query(RepositorySnapshot).filter_by(repository_id=repo.id, branch_name=branch).order_by(RepositorySnapshot.created_at.desc()).first()
     if not snapshot:
         snapshot = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).order_by(RepositorySnapshot.created_at.desc()).first()
 
     from app.services.discovery.page_services import build_docs_page_data
-    return build_docs_page_data(repo, snapshot, db)
+    return build_docs_page_data(repo, snapshot, db, branch=branch)
 
 
 @router.get("/{repository_id}/stats", response_model=Dict[str, Any])
 def get_repository_stats(
     repository_id: str,
     snapshot_id: Optional[str] = Query(None),
+    branch: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
 ):
@@ -1506,11 +1510,13 @@ def get_repository_stats(
     snapshot = None
     if snapshot_id:
         snapshot = db.query(RepositorySnapshot).filter_by(id=snapshot_id, repository_id=repo.id).first()
+    if not snapshot and branch:
+        snapshot = db.query(RepositorySnapshot).filter_by(repository_id=repo.id, branch_name=branch).order_by(RepositorySnapshot.created_at.desc()).first()
     if not snapshot:
         snapshot = db.query(RepositorySnapshot).filter_by(repository_id=repo.id).order_by(RepositorySnapshot.created_at.desc()).first()
 
     from app.services.discovery.page_services import build_stats_page_data
-    return build_stats_page_data(repo, snapshot, db)
+    return build_stats_page_data(repo, snapshot, db, branch=branch)
 
 
 @router.get("/{repository_id}/security", response_model=Dict[str, Any])
@@ -1684,6 +1690,7 @@ def get_repository_components(
 
     return {
         "snapshot_id": active_snap.id,
+        "snapshot_status": getattr(active_snap, "status", "READY"),
         "total": len(artifacts),
         "components": [
             {

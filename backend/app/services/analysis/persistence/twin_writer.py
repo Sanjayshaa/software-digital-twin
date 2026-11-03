@@ -39,6 +39,7 @@ class TwinPersistenceWriter:
         if not repo:
             raise ValueError(f"Repository '{repository_id}' does not exist.")
 
+        from app.models.entities import SnapshotStatus
         # 1. Upsert RepositorySnapshot
         snapshot = db.query(RepositorySnapshot).filter_by(id=snapshot_id).first()
         if not snapshot:
@@ -52,6 +53,7 @@ class TwinPersistenceWriter:
                 snapshot_metadata={
                     "total_lines": inventory.total_lines,
                     "analyzers": result.analyzer_names,
+                    "status": SnapshotStatus.PERSISTING,
                 },
             )
             db.add(snapshot)
@@ -59,6 +61,8 @@ class TwinPersistenceWriter:
         else:
             snapshot.total_files = inventory.total_files
             snapshot.total_symbols = len(result.artifacts)
+            snapshot.status = SnapshotStatus.PERSISTING
+            db.flush()
 
         # 2. Upsert Source Files
         existing_files = {
@@ -298,6 +302,15 @@ class TwinPersistenceWriter:
             ))
 
 
+
+        # Mark snapshot as completely indexed and READY
+        from app.models.entities import SnapshotStatus
+        from datetime import datetime, timezone
+        now_iso = datetime.now(timezone.utc).isoformat()
+        snapshot.status = SnapshotStatus.READY
+        snapshot.completed_at = now_iso
+        snapshot.source_tree_identity = commit_hash
+        snapshot.analysis_version = "2.0.0"
 
         db.commit()
         return analysis_run

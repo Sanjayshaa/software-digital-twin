@@ -736,3 +736,49 @@ def extract_commit_source_tree(
     except Exception as exc:
         return False, f"Exception during tree extraction: {str(exc)}"
 
+
+def check_git_ancestry(
+    workspace_path: Optional[str],
+    base_sha: str,
+    target_sha: str,
+) -> tuple[bool, Optional[str]]:
+    """
+    Checks if base_sha is an ancestor of target_sha using git merge-base --is-ancestor.
+    Enforces Phase 1 P0 validation rules:
+    - Rejects missing commit SHAs
+    - Enforces same-commit contract: if base_sha == target_sha, returns False with explicit NO_CHANGE message
+    - Checks ancestry via git merge-base if workspace git repo is present
+    """
+    if not base_sha or not target_sha:
+        return False, "Both baseline and target commit SHAs must be provided."
+
+    if base_sha.strip().lower() == target_sha.strip().lower():
+        return False, "Baseline and target refer to the same commit; no change can be computed."
+
+    if not workspace_path or not os.path.exists(workspace_path):
+        return True, None
+
+    git_dir = os.path.join(workspace_path, ".git")
+    if not os.path.exists(git_dir):
+        return True, None
+
+    clean_env = _get_sanitized_git_env()
+    try:
+        proc = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", base_sha, target_sha],
+            cwd=workspace_path,
+            env=clean_env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if proc.returncode == 0:
+            return True, None
+        elif proc.returncode == 1:
+            return False, f"Baseline commit '{base_sha}' is not an ancestor of target commit '{target_sha}'."
+        else:
+            stderr = proc.stderr.strip() if proc.stderr else "git merge-base failed"
+            return False, f"Git ancestry check failed: {stderr}"
+    except Exception as exc:
+        return False, f"Git ancestry verification error: {str(exc)}"
+
