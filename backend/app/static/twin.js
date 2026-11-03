@@ -226,23 +226,34 @@
 
   // --- Initializer ---
   function bootApplication() {
-    try {
-      ThemeManager.init();
-      initCanvas();
-      initNavigation();
-      initModal();
-      initAuth();
-      initCommandPalette();
-      initAskSoftware();
-      initEventListeners();
-      initPhase5Handlers();
-      initSimulationHandlers();
-      initFloatingAskTwin();
-      initSettingsTabs();
-    } catch (err) {
-      console.error('Error during component initialization:', err);
+    const initSteps = [
+      ['ThemeManager', () => ThemeManager.init()],
+      ['Canvas', () => initCanvas()],
+      ['Navigation', () => initNavigation()],
+      ['Modal', () => initModal()],
+      ['Auth', () => initAuth()],
+      ['CommandPalette', () => initCommandPalette()],
+      ['AskSoftware', () => initAskSoftware()],
+      ['EventListeners', () => initEventListeners()],
+      ['Phase5Handlers', () => initPhase5Handlers()],
+      ['SimulationHandlers', () => initSimulationHandlers()],
+      ['FloatingAskTwin', () => initFloatingAskTwin()],
+      ['SettingsTabs', () => initSettingsTabs()],
+    ];
+
+    for (const [name, fn] of initSteps) {
+      try {
+        fn();
+      } catch (err) {
+        console.error(`Error during ${name} initialization:`, err);
+      }
     }
-    startApplicationStateMachine();
+
+    try {
+      startApplicationStateMachine();
+    } catch (err) {
+      console.error('Error starting application state machine:', err);
+    }
   }
 
   // --- Floating Ask Twin Assistant Subsystem (Draggable across all views) ---
@@ -569,12 +580,6 @@
       finishBoot();
     }
   }, 350);
-
-  if (document.readyState === 'loading') {
-    window.addEventListener('DOMContentLoaded', bootApplication);
-  } else {
-    bootApplication();
-  }
 
   function initCanvas() {
     state.canvas = document.getElementById('twin-canvas');
@@ -2797,6 +2802,35 @@
         el.style.color = '#94A3B8';
       }
     });
+  }
+
+  function switchImpactMode(mode) {
+    const btnEntity = document.getElementById('btn-impact-mode-entity');
+    const btnDiff = document.getElementById('btn-impact-mode-diff');
+    const panelEntity = document.getElementById('panel-impact-entity');
+    const panelDiff = document.getElementById('panel-impact-diff');
+    const hint = document.getElementById('impact-mode-hint');
+    const precondPanel = document.getElementById('impact-preconditions-panel');
+
+    const activeClass = 'px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white text-[#0071e3] shadow-xs flex items-center gap-1.5 transition-all';
+    const inactiveClass = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] flex items-center gap-1.5 transition-all';
+
+    if (mode === 'diff') {
+      if (btnEntity) btnEntity.className = inactiveClass;
+      if (btnDiff) btnDiff.className = activeClass;
+      if (panelEntity) panelEntity.style.display = 'none';
+      if (panelDiff) panelDiff.style.display = 'block';
+      if (precondPanel) precondPanel.style.display = 'block';
+      if (hint) hint.textContent = 'Compare blast radius and architectural deltas between two revisions';
+      validateBaselineAndTargetSelection();
+    } else {
+      if (btnEntity) btnEntity.className = activeClass;
+      if (btnDiff) btnDiff.className = inactiveClass;
+      if (panelEntity) panelEntity.style.display = 'block';
+      if (panelDiff) panelDiff.style.display = 'none';
+      if (precondPanel) precondPanel.style.display = 'none';
+      if (hint) hint.textContent = 'Inspect causal blast radius of any architectural component';
+    }
   }
 
   async function populateImpactEntityDropdown(isRetry = false) {
@@ -12743,7 +12777,13 @@
     if (!canvas) return;
 
     // Initialize 3D Spatial Canvas Listeners (Dimension toggle, HUD, Simulation playback)
-    Twin3D.setupHUDListeners();
+    if (typeof Twin3D !== 'undefined' && Twin3D && typeof Twin3D.setupHUDListeners === 'function') {
+      try {
+        Twin3D.setupHUDListeners();
+      } catch (err) {
+        console.warn('Could not setup Twin3D HUD listeners:', err);
+      }
+    }
 
     // MiroFish Floating Toolbar Controls
     document.getElementById('zoom-in-btn')?.addEventListener('click', () => zoomBy(1.25));
@@ -16665,7 +16705,7 @@
     startApplicationStateMachine,
     apiFetch,
     loadDependenciesView,
-    selectDependencyComponent,
+    selectDependencyComponent: selectDependencyCluster,
     loadSimulationView,
     runSimulationAction: executeOrchestratedSimulation,
     selectSimulationCandidate,
@@ -18419,6 +18459,13 @@ pytest tests/test_payment_service.py tests/test_order_service.py -v
       toggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
       toggleBtn.setAttribute('aria-label', isCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar');
     }
+  }
+
+  // --- Boot Trigger (Guaranteed to run after all declarations and window.TwinApp exports) ---
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', bootApplication);
+  } else {
+    bootApplication();
   }
 
 })();
