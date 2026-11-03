@@ -175,6 +175,7 @@ def reconstruct_snapshot(
     if existing:
         return {
             "status": "ALREADY_EXISTS",
+            "snapshot_status": getattr(existing, "status", "READY"),
             "snapshot_id": existing.id,
             "commit_hash": existing.commit_hash,
             "branch_name": existing.branch_name,
@@ -186,9 +187,30 @@ def reconstruct_snapshot(
     # Extract historical source tree into isolated temp directory
     import tempfile
     import shutil
+    from datetime import datetime, timezone
+    from app.models.entities import SnapshotStatus
+
     temp_dir = tempfile.mkdtemp(prefix=f"recon_{repo.id[:8]}_{target_sha[:7]}_")
 
+    # Explicit lifecycle state: QUEUED
+    recon_snap = RepositorySnapshot(
+        repository_id=repo.id,
+        commit_hash=target_sha,
+        branch_name=target_branch,
+        snapshot_metadata={
+            "status": SnapshotStatus.QUEUED,
+            "reconstructed": True,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    db.add(recon_snap)
+    db.commit()
+    db.refresh(recon_snap)
+
     try:
+        recon_snap.status = SnapshotStatus.SCANNING
+        db.commit()
+
         ok, err = extract_commit_source_tree(
             workspace_path=repo.local_path,
             commit_sha=target_sha,
@@ -196,10 +218,16 @@ def reconstruct_snapshot(
             default_branch=target_branch,
         )
         if not ok:
+            recon_snap.status = SnapshotStatus.FAILED
+            recon_snap.error_message = err or f"Failed to extract historical commit '{target_sha[:7]}'."
+            db.commit()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Failed to extract historical commit '{target_sha[:7]}': {err}",
             )
+
+        recon_snap.status = SnapshotStatus.PARSING
+        db.commit()
 
         # Build Digital Twin on historical tree
         snapshot_id, result = structural_twin_engine.build_structural_twin(
@@ -210,8 +238,21 @@ def reconstruct_snapshot(
             source_path=temp_dir,
         )
 
+        # Remove the tracking placeholder as build_structural_twin inserts the persisted snapshot
+        db.delete(recon_snap)
+        db.commit()
+
+        final_snap = db.query(RepositorySnapshot).filter_by(id=snapshot_id).first()
+        if final_snap:
+            final_snap.status = SnapshotStatus.READY
+            final_snap.completed_at = datetime.now(timezone.utc).isoformat()
+            final_snap.source_tree_identity = target_sha
+            final_snap.analysis_version = "2.0.0"
+            db.commit()
+
         return {
             "status": "COMPLETED",
+            "snapshot_status": "READY",
             "snapshot_id": snapshot_id,
             "commit_hash": target_sha,
             "branch_name": target_branch,
@@ -221,6 +262,20 @@ def reconstruct_snapshot(
             "evidence_count": len(result.evidence_items),
             "message": f"Historical snapshot successfully reconstructed and indexed for commit {target_sha[:7]}.",
         }
+    except Exception as exc:
+        if db.is_active:
+            try:
+                recon_snap.status = SnapshotStatus.FAILED
+                recon_snap.error_message = str(exc)
+                db.commit()
+            except Exception:
+                db.rollback()
+        if isinstance(exc, HTTPException):
+            raise exc
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Reconstruction failed: {str(exc)}",
+        )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 

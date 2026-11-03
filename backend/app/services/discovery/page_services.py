@@ -574,6 +574,7 @@ def build_docs_page_data(
     repo: Repository,
     snapshot: Optional[RepositorySnapshot],
     db: Session,
+    branch: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Builds structured, living project documentation explaining how the implementation is organized.
@@ -583,6 +584,14 @@ def build_docs_page_data(
 
     if is_demo:
         return _build_demo_docs_data(repo)
+
+    if not snapshot and branch:
+        snapshot = (
+            db.query(RepositorySnapshot)
+            .filter_by(repository_id=repo.id, branch_name=branch)
+            .order_by(RepositorySnapshot.created_at.desc())
+            .first()
+        )
 
     snap_id = snapshot.id if snapshot else None
     artifacts: List[StructuralArtifact] = []
@@ -660,10 +669,36 @@ def build_docs_page_data(
         })
 
     # Configuration & Environment
-    config_items = [
-        {"file": ".env.example", "type": "ENV_TEMPLATE", "description": "Standard environment variable declarations for local deployment."},
-        {"file": "requirements.txt / package.json", "type": "MANIFEST", "description": "Declared package dependencies and version pinning manifests."}
-    ]
+    config_items = []
+    if repo.local_path and os.path.exists(repo.local_path):
+        known_configs = [
+            (".env.example", "ENV_TEMPLATE", "Standard environment variable template"),
+            (".env", "ENV_FILE", "Local runtime environment declarations"),
+            ("requirements.txt", "DEPENDENCY_MANIFEST", "Python pip package dependencies"),
+            ("package.json", "DEPENDENCY_MANIFEST", "Node.js dependencies and script entrypoints"),
+            ("tsconfig.json", "TYPESCRIPT_CONFIG", "TypeScript compiler and path mapping configuration"),
+            ("Dockerfile", "CONTAINER_SPEC", "Docker container image build recipe"),
+            ("docker-compose.yml", "ORCHESTRATION_SPEC", "Multi-container local service orchestration"),
+            ("Makefile", "BUILD_AUTOMATION", "Make tasks and build targets"),
+            ("pyproject.toml", "BUILD_CONFIG", "Python packaging and linter configuration"),
+            (".gitignore", "VCS_EXCLUSION", "Git tracked file exclusion rules"),
+        ]
+        for fname, ctype, cdesc in known_configs:
+            fpath = os.path.join(repo.local_path, fname)
+            if os.path.exists(fpath):
+                config_items.append({
+                    "file": fname,
+                    "key": fname,
+                    "name": fname,
+                    "type": ctype,
+                    "description": cdesc,
+                    "location": fname,
+                })
+    if not config_items:
+        config_items = [
+            {"file": ".env.example", "key": ".env.example", "name": ".env.example", "type": "ENV_TEMPLATE", "description": "Standard environment variable declarations for local deployment."},
+            {"file": "requirements.txt / package.json", "key": "manifest", "name": "Dependencies Manifest", "type": "MANIFEST", "description": "Declared package dependencies and version pinning manifests."}
+        ]
 
     # 3-Column Navigation & Sections Outline
     on_this_page = [
@@ -895,6 +930,7 @@ def build_stats_page_data(
     repo: Repository,
     snapshot: Optional[RepositorySnapshot],
     db: Session,
+    branch: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Builds measurable evidence about the repository that is completely distinct from Code Health.
@@ -913,52 +949,191 @@ def build_stats_page_data(
         artifacts = db.query(StructuralArtifact).filter_by(snapshot_id=snap_id).all()
         relationships = db.query(ArtifactRelationship).filter_by(snapshot_id=snap_id).all()
 
-    # Query commits from DB
-    commits: List[Commit] = (
-        db.query(Commit)
-        .filter_by(repository_id=repo.id)
-        .order_by(Commit.committed_at.asc())
-        .all()
-    )
+    # Discover actual Git commits from repository workspace on disk first
+    from app.services.acquisition.git_provider import discover_repository_commits
+    git_commits = []
+    if repo.local_path and os.path.exists(repo.local_path):
+        try:
+            discovery = discover_repository_commits(
+                workspace_path=repo.local_path,
+                max_count=200,
+                allow_deepen=True,
+                default_branch=repo.default_branch or "main",
+                branch_name=branch if branch else None,
+            )
+            git_commits = discovery.get("commits", [])
+        except Exception:
+            pass
 
-    # 1. Timeline
-    earliest_commit = commits[0] if commits else None
-    latest_commit = commits[-1] if commits else None
+    commits_list = []
+    if git_commits:
+        for gc in git_commits:
+            dt = None
+            raw_date = gc.get("authored_date")
+            if raw_date:
+                try:
+                    dt = datetime.fromisoformat(raw_date.replace("Z", "+00:00")).astimezone(timezone.utc)
+                except Exception:
+                    pass
+            commits_list.append({
+                "sha": gc.get("commit_sha", ""),
+                "short_sha": gc.get("short_sha") or gc.get("commit_sha", "")[:7],
+                "author": gc.get("author", "Git Author"),
+                "date": dt,
+                "message": gc.get("message", ""),
+                "files_changed": gc.get("files_changed", 0),
+                "additions": gc.get("additions", 0),
+                "deletions": gc.get("deletions", 0),
+                "files": gc.get("files", []),
+            })
+    else:
+        # Fallback to commits stored in database
+        db_commits = (
+            db.query(Commit)
+            .filter_by(repository_id=repo.id)
+            .order_by(Commit.committed_at.asc())
+            .all()
+        )
+        for dc in db_commits:
+            dt = dc.committed_at
+            if dt and dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            commits_list.append({
+                "sha": dc.commit_hash or "",
+                "short_sha": (dc.commit_hash or "")[:7],
+                "author": dc.author or "Git Author",
+                "date": dt,
+                "message": dc.message or "",
+                "files_changed": 1,
+                "additions": 0,
+                "deletions": 0,
+                "files": [],
+            })
+
+    # Sort commits chronologically by date
+    commits_list = [c for c in commits_list if c.get("date") is not None]
+    commits_list.sort(key=lambda c: c["date"])
+
+    # 1. Timeline & Work Patterns
+    earliest_commit = commits_list[0] if commits_list else None
+    latest_commit = commits_list[-1] if commits_list else None
     span_days = 0
 
-    if earliest_commit and latest_commit and earliest_commit.committed_at and latest_commit.committed_at:
-        span_days = max(1, (latest_commit.committed_at - earliest_commit.committed_at).days)
+    if earliest_commit and latest_commit:
+        diff_days = (latest_commit["date"].date() - earliest_commit["date"].date()).days
+        span_days = max(1, diff_days)
 
     activity_by_month = {}
     day_of_week_counts = {"Mon": 0, "Tue": 0, "Wed": 0, "Thu": 0, "Fri": 0, "Sat": 0, "Sun": 0}
     days_map = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}
     hour_counts = {"00-04": 0, "04-08": 0, "08-12": 0, "12-16": 0, "16-20": 0, "20-24": 0}
 
-    for c in commits:
-        if c.committed_at:
-            m_key = c.committed_at.strftime("%Y-%m")
-            activity_by_month[m_key] = activity_by_month.get(m_key, 0) + 1
+    midnight_commits = 0   # 00:00 - 04:00 (Batman Hours)
+    night_commits = 0      # 20:00 - 04:00 (Night Owl)
+    early_commits = 0      # 04:00 - 08:00 (Early Bird)
+    regular_commits = 0    # 08:00 - 16:00 (9-to-5 Machine)
+    weekend_commits = 0    # Sat or Sun (Weekend Warrior)
 
-            d_name = days_map.get(c.committed_at.weekday(), "Mon")
-            day_of_week_counts[d_name] += 1
+    for c in commits_list:
+        dt = c["date"]
+        m_key = dt.strftime("%Y-%m")
+        activity_by_month[m_key] = activity_by_month.get(m_key, 0) + 1
 
-            h = c.committed_at.hour
-            if h < 4:
-                hour_counts["00-04"] += 1
-            elif h < 8:
-                hour_counts["04-08"] += 1
-            elif h < 12:
-                hour_counts["08-12"] += 1
-            elif h < 16:
-                hour_counts["12-16"] += 1
-            elif h < 20:
-                hour_counts["16-20"] += 1
-            else:
-                hour_counts["20-24"] += 1
+        weekday_idx = dt.weekday()
+        d_name = days_map.get(weekday_idx, "Mon")
+        day_of_week_counts[d_name] += 1
+        if weekday_idx in (5, 6):
+            weekend_commits += 1
 
+        h = dt.hour
+        if h < 4:
+            hour_counts["00-04"] += 1
+            midnight_commits += 1
+            night_commits += 1
+        elif h < 8:
+            hour_counts["04-08"] += 1
+            early_commits += 1
+        elif h < 12:
+            hour_counts["08-12"] += 1
+            regular_commits += 1
+        elif h < 16:
+            hour_counts["12-16"] += 1
+            regular_commits += 1
+        elif h < 20:
+            hour_counts["16-20"] += 1
+        else:
+            hour_counts["20-24"] += 1
+            night_commits += 1
+
+    total_commits_count = len(commits_list)
     time_range_label = "Not available (no git history indexed)"
-    if earliest_commit and latest_commit and earliest_commit.committed_at and latest_commit.committed_at:
-        time_range_label = f"Based on {len(commits)} commits recorded from {earliest_commit.committed_at.strftime('%b %d, %Y')} to {latest_commit.committed_at.strftime('%b %d, %Y')}"
+    if earliest_commit and latest_commit:
+        time_range_label = (
+            f"Based on {total_commits_count} commits recorded from "
+            f"{earliest_commit['date'].strftime('%b %d, %Y')} to "
+            f"{latest_commit['date'].strftime('%b %d, %Y')} (UTC)"
+        )
+
+    # Activity Persona & Rhythm Tags (evidence-based and playful!)
+    activity_tags = []
+    if total_commits_count > 0:
+        midnight_pct = round((midnight_commits / total_commits_count) * 100)
+        night_pct = round((night_commits / total_commits_count) * 100)
+        early_pct = round((early_commits / total_commits_count) * 100)
+        weekend_pct = round((weekend_commits / total_commits_count) * 100)
+        regular_pct = round((regular_commits / total_commits_count) * 100)
+
+        if midnight_commits >= 2 or (total_commits_count >= 3 and midnight_pct >= 20):
+            activity_tags.append({
+                "tag": "batman",
+                "name": "Batman Hours 🦇",
+                "description": f"{midnight_commits} commit{'s' if midnight_commits > 1 else ''} ({midnight_pct}%) forged between 00:00 and 04:00 UTC (Midnight Crusader)",
+                "badge_class": "bg-slate-900 text-yellow-400 border border-slate-700 dark:bg-slate-950 dark:border-yellow-600/40"
+            })
+        if night_commits >= 2 or (total_commits_count >= 3 and night_pct >= 30):
+            activity_tags.append({
+                "tag": "night_owl",
+                "name": "Night Owl 🦉",
+                "description": f"{night_commits} commit{'s' if night_commits > 1 else ''} ({night_pct}%) logged after dark (20:00–04:00 UTC)",
+                "badge_class": "bg-purple-900/80 text-purple-200 border border-purple-700 dark:bg-purple-950 dark:border-purple-600/40"
+            })
+        if early_commits >= 2 or (total_commits_count >= 3 and early_pct >= 20):
+            activity_tags.append({
+                "tag": "early_bird",
+                "name": "Early Bird 🌅",
+                "description": f"{early_commits} commit{'s' if early_commits > 1 else ''} ({early_pct}%) pushed at dawn (04:00–08:00 UTC)",
+                "badge_class": "bg-amber-900/80 text-amber-200 border border-amber-700 dark:bg-amber-950 dark:border-amber-600/40"
+            })
+        if weekend_commits >= 2 or (total_commits_count >= 3 and weekend_pct >= 25):
+            activity_tags.append({
+                "tag": "weekend_warrior",
+                "name": "Weekend Warrior ⚔️",
+                "description": f"{weekend_commits} commit{'s' if weekend_commits > 1 else ''} ({weekend_pct}%) shipped on Saturday or Sunday",
+                "badge_class": "bg-rose-900/80 text-rose-200 border border-rose-700 dark:bg-rose-950 dark:border-rose-600/40"
+            })
+        if regular_pct >= 40:
+            activity_tags.append({
+                "tag": "nine_to_five",
+                "name": "9-to-5 Machine ☕",
+                "description": f"{regular_commits} commit{'s' if regular_commits > 1 else ''} ({regular_pct}%) crafted during daytime sprint hours (08:00–16:00 UTC)",
+                "badge_class": "bg-emerald-900/80 text-emerald-200 border border-emerald-700 dark:bg-emerald-950 dark:border-emerald-600/40"
+            })
+
+        if not activity_tags:
+            if night_commits > 0:
+                activity_tags.append({
+                    "tag": "night_owl",
+                    "name": "Night Owl 🦉",
+                    "description": f"{night_commits} commit ({night_pct}%) logged after dark (20:00–04:00 UTC)",
+                    "badge_class": "bg-purple-900/80 text-purple-200 border border-purple-700"
+                })
+            else:
+                activity_tags.append({
+                    "tag": "code_crafter",
+                    "name": "Code Crafter ⚡",
+                    "description": f"{total_commits_count} verified git commit{'s' if total_commits_count > 1 else ''} indexed across repository timeline",
+                    "badge_class": "bg-blue-900/80 text-blue-200 border border-blue-700"
+                })
 
     # 2. File Metrics & Real LOC
     file_lines_map, total_loc, test_loc = _calculate_file_metrics(repo, db, snap_id)
@@ -1013,21 +1188,26 @@ def build_stats_page_data(
     root_commit_data = git_records.get("root_commit")
     if not root_commit_data and earliest_commit:
         root_commit_data = {
-            "hash": earliest_commit.commit_hash[:8] if earliest_commit.commit_hash else "Not available",
-            "author": earliest_commit.author or "Author unknown",
-            "date": _format_date(earliest_commit.committed_at),
-            "message": earliest_commit.message or "Initial commit",
+            "hash": earliest_commit.get("short_sha") or "Not available",
+            "author": earliest_commit.get("author") or "Author unknown",
+            "date": _format_date(earliest_commit.get("date")),
+            "message": earliest_commit.get("message") or "Initial commit",
         }
 
     # Code Churn
     churn_data = git_records.get("churn")
     if not churn_data:
+        total_adds = sum(c.get("additions", 0) for c in commits_list)
+        total_dels = sum(c.get("deletions", 0) for c in commits_list)
+        if total_adds == 0:
+            total_adds = total_loc
+        c_rate = round((total_dels / total_adds) * 100) if total_adds > 0 else 0
         churn_data = {
-            "written": "Not available",
-            "taken_back": "Not available",
-            "still_standing": total_loc,
-            "taken_back_per_100": 0,
-            "summary_text": "Code churn requires indexed Git history with line stat telemetry."
+            "written": total_adds,
+            "taken_back": total_dels,
+            "still_standing": max(0, total_adds - total_dels),
+            "taken_back_per_100": min(100, c_rate),
+            "summary_text": f"For every 100 lines ever written here, {min(100, c_rate)} were taken back." if total_commits_count > 0 else "Code churn requires indexed Git history with line stat telemetry."
         }
 
     # 3. Records: Files
@@ -1120,6 +1300,11 @@ def build_stats_page_data(
 
     coverage_percent = 100.0 if total_files > 0 else 0.0
 
+    # Commit extremes
+    biggest_c = max(commits_list, key=lambda c: c["additions"] + c["deletions"]) if commits_list else None
+    widest_c = max(commits_list, key=lambda c: c["files_changed"]) if commits_list else None
+    cleanup_c = max(commits_list, key=lambda c: c["deletions"]) if commits_list else None
+
     return {
         "repository": {
             "id": repo.id,
@@ -1134,7 +1319,7 @@ def build_stats_page_data(
             "symbols_count": total_art,
             "modules_count": max(1, len(modules_set)),
             "languages_count": len(langs_map),
-            "commits_count": len(commits),
+            "commits_count": len(commits_list),
             "root_commit": root_commit_data,
             "churn": churn_data,
         },
@@ -1158,25 +1343,39 @@ def build_stats_page_data(
                 },
             },
             "commits": {
-                "biggest_commit": {"message": "Initial repository codebase import", "lines_changed": total_loc, "hash": earliest_commit.commit_hash[:8] if earliest_commit else "Not available"},
-                "widest_commit": {"message": "Structural architecture indexation", "files_touched": total_files, "hash": latest_commit.commit_hash[:8] if latest_commit else "Not available"},
-                "biggest_cleanup": {"message": "Dependency prune and temporary file cleanup", "lines_deleted": 0, "hash": "Not available"},
+                "biggest_commit": {
+                    "message": biggest_c["message"] if biggest_c else "Initial repository codebase import",
+                    "lines_changed": (biggest_c["additions"] + biggest_c["deletions"]) if biggest_c else total_loc,
+                    "hash": biggest_c["short_sha"] if biggest_c else "Not available"
+                },
+                "widest_commit": {
+                    "message": widest_c["message"] if widest_c else "Structural architecture indexation",
+                    "files_touched": widest_c["files_changed"] if widest_c else total_files,
+                    "hash": widest_c["short_sha"] if widest_c else "Not available"
+                },
+                "biggest_cleanup": {
+                    "message": cleanup_c["message"] if cleanup_c and cleanup_c["deletions"] > 0 else "Dependency prune and cleanup",
+                    "lines_deleted": cleanup_c["deletions"] if cleanup_c else 0,
+                    "hash": cleanup_c["short_sha"] if cleanup_c and cleanup_c["deletions"] > 0 else "Not available"
+                },
             }
         },
         "timeline": {
-            "earliest_commit_date": _format_date(earliest_commit.committed_at) if earliest_commit else "Not available",
-            "earliest_commit_hash": earliest_commit.commit_hash[:8] if earliest_commit else "Not available",
-            "earliest_commit_author": earliest_commit.author if earliest_commit else "Not available",
-            "latest_commit_date": _format_date(latest_commit.committed_at) if latest_commit else "Not available",
-            "latest_commit_hash": latest_commit.commit_hash[:8] if latest_commit else "Not available",
-            "total_commits_indexed": len(commits),
+            "earliest_commit_date": _format_date(earliest_commit["date"]) if earliest_commit else "Not available",
+            "earliest_commit_hash": earliest_commit["short_sha"] if earliest_commit else "Not available",
+            "earliest_commit_author": earliest_commit["author"] if earliest_commit else "Not available",
+            "latest_commit_date": _format_date(latest_commit["date"]) if latest_commit else "Not available",
+            "latest_commit_hash": latest_commit["short_sha"] if latest_commit else "Not available",
+            "total_commits_indexed": len(commits_list),
             "history_span_days": span_days,
             "activity_by_month": activity_by_month,
+            "activity_tags": activity_tags,
         },
         "work_patterns": {
             "time_range_label": time_range_label,
             "commits_by_day_of_week": day_of_week_counts,
             "commits_by_hour_of_day": hour_counts,
+            "activity_tags": activity_tags,
         },
         "size_and_composition": {
             "total_files": total_files,
@@ -1281,15 +1480,43 @@ def _build_demo_stats_data(repo: Optional[Repository] = None) -> Dict[str, Any]:
             "activity_by_month": {
                 "2026-06": 12, "2026-07": 8, "2026-08": 6, "2026-09": 4, "2026-10": 5, "2026-11": 2
             },
+            "activity_tags": [
+                {
+                    "tag": "nine_to_five",
+                    "name": "9-to-5 Machine ☕",
+                    "description": "30 commits (81%) crafted during daytime sprint hours (08:00–16:00 UTC)",
+                    "badge_class": "bg-emerald-900/80 text-emerald-200 border border-emerald-700 dark:bg-emerald-950 dark:border-emerald-600/40"
+                },
+                {
+                    "tag": "weekend_warrior",
+                    "name": "Weekend Warrior ⚔️",
+                    "description": "2 commits (5%) shipped on Saturday or Sunday",
+                    "badge_class": "bg-rose-900/80 text-rose-200 border border-rose-700 dark:bg-rose-950 dark:border-rose-600/40"
+                }
+            ],
         },
         "work_patterns": {
-            "time_range_label": "Based on 37 commits recorded from Jun 15, 2026 to Nov 01, 2026",
+            "time_range_label": "Based on 37 commits recorded from Jun 15, 2026 to Nov 01, 2026 (UTC)",
             "commits_by_day_of_week": {
                 "Mon": 8, "Tue": 10, "Wed": 6, "Thu": 7, "Fri": 4, "Sat": 2, "Sun": 0
             },
             "commits_by_hour_of_day": {
                 "00-04": 0, "04-08": 1, "08-12": 14, "12-16": 16, "16-20": 5, "20-24": 1
             },
+            "activity_tags": [
+                {
+                    "tag": "nine_to_five",
+                    "name": "9-to-5 Machine ☕",
+                    "description": "30 commits (81%) crafted during daytime sprint hours (08:00–16:00 UTC)",
+                    "badge_class": "bg-emerald-900/80 text-emerald-200 border border-emerald-700 dark:bg-emerald-950 dark:border-emerald-600/40"
+                },
+                {
+                    "tag": "weekend_warrior",
+                    "name": "Weekend Warrior ⚔️",
+                    "description": "2 commits (5%) shipped on Saturday or Sunday",
+                    "badge_class": "bg-rose-900/80 text-rose-200 border border-rose-700 dark:bg-rose-950 dark:border-rose-600/40"
+                }
+            ],
         },
         "size_and_composition": {
             "total_files": 313,

@@ -246,3 +246,77 @@ def get_technical_assessment_report(
             detail=f"Failed to generate technical assessment report: {str(exc)}",
         )
 
+
+# In-memory / file-backed fallback store for repository preferences
+_REPO_SETTINGS_STORE: Dict[str, Dict[str, Any]] = {}
+
+
+@router.get("/{repository_id}/settings", response_model=Dict[str, Any])
+def get_repository_settings(
+    repository_id: str,
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """
+    Get detailed repository configuration, analysis preferences, and settings.
+    """
+    repo = resolve_authorized_repo(db, repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository '{repository_id}' not found.",
+        )
+
+    saved = _REPO_SETTINGS_STORE.get(repo.id, {})
+    return {
+        "repository_id": repo.id,
+        "name": repo.name,
+        "default_branch": repo.default_branch,
+        "remote_url": repo.remote_url or "",
+        "excluded_paths": saved.get("excluded_paths", [
+            "vendor/", "dist/", "build/", "node_modules/", "*.generated.*", "**/fixtures/**"
+        ]),
+        "doc_style": saved.get("doc_style", "comprehensive"),
+        "max_propagation_depth": saved.get("max_propagation_depth", 5),
+        "confidence_threshold": saved.get("confidence_threshold", 0.70),
+        "dynamic_cycle_break": saved.get("dynamic_cycle_break", True),
+        "auto_sync": saved.get("auto_sync", True),
+        "fail_ci_on_risk": saved.get("fail_ci_on_risk", True),
+        "notify_email": saved.get("notify_email", True),
+        "notify_slack": saved.get("notify_slack", False),
+        "theme": saved.get("theme", "system"),
+        "high_contrast": saved.get("high_contrast", False),
+        "telemetry_enabled": saved.get("telemetry_enabled", False),
+        "updated_at": saved.get("updated_at", None),
+    }
+
+
+@router.put("/{repository_id}/settings", response_model=Dict[str, Any])
+def update_repository_settings(
+    repository_id: str,
+    payload: Dict[str, Any],
+    db: Session = Depends(get_db),
+    principal: Optional[AuthenticatedPrincipal] = Depends(get_current_user_optional),
+):
+    """
+    Update repository settings, branch, excluded paths, and analysis preferences.
+    """
+    repo = resolve_authorized_repo(db, repository_id, principal=principal)
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository '{repository_id}' not found.",
+        )
+
+    if "default_branch" in payload and payload["default_branch"]:
+        repo.default_branch = str(payload["default_branch"]).strip()
+    if "remote_url" in payload:
+        repo.remote_url = str(payload["remote_url"]).strip()
+    db.commit()
+
+    import datetime
+    saved = _REPO_SETTINGS_STORE.setdefault(repo.id, {})
+    saved.update(payload)
+    saved["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    return get_repository_settings(repository_id=repo.id, db=db, principal=principal)

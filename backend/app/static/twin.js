@@ -15,15 +15,46 @@
     if (token && !headers['Authorization']) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    // Safety timeout: default 6000ms so network hangs never freeze the workspace
-    const timeoutMs = options.timeout || 6000;
+
+    // Dynamic timeout: 120s for clone, AST discovery, repository synthesis & simulation; 15s for standard metadata queries
+    const isHeavyEndpoint = Boolean(
+      url.includes('/connect') ||
+      url.includes('/onboard') ||
+      url.includes('/upload-archive') ||
+      url.includes('/analyze') ||
+      url.includes('/impact-analysis') ||
+      url.includes('/reconstruct') ||
+      url.includes('/scenarios/orchestrate')
+    );
+    const timeoutMs = options.timeout || (isHeavyEndpoint ? 120000 : 15000);
     const controller = new AbortController();
+    const startTime = performance.now();
     let timeoutId = null;
+    let didTimeout = false;
+
+    // Use caller signal if provided; otherwise attach controller with timeout
     let signal = options.signal;
     if (!signal) {
-      timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      timeoutId = setTimeout(() => {
+        didTimeout = true;
+        const elapsed = Math.round(performance.now() - startTime);
+        const err = new Error(`Operation '${options.operation || url}' timed out after ${(elapsed / 1000).toFixed(1)}s.`);
+        err.name = 'TimeoutError';
+        err.code = 'ETIMEDOUT';
+        err.state = 'TIMEOUT';
+        err.operation = options.operation || url;
+        err.elapsedMs = elapsed;
+        err.stillProcessing = isHeavyEndpoint;
+        err.safeErrorCode = 'ERR_TWIN_TIMEOUT';
+        try {
+          controller.abort(err);
+        } catch (_) {
+          controller.abort();
+        }
+      }, timeoutMs);
       signal = controller.signal;
     }
+
     const opts = { ...options, headers, signal };
     try {
       const res = await nativeFetch(url, opts);
@@ -40,6 +71,36 @@
       return res;
     } catch (err) {
       if (timeoutId) clearTimeout(timeoutId);
+      const elapsed = Math.round(performance.now() - startTime);
+
+      // Check if aborted due to timeout
+      if (didTimeout || err.name === 'TimeoutError' || err.code === 'ETIMEDOUT' || (signal && signal.aborted && didTimeout)) {
+        const timeoutErr = new Error(`Operation '${options.operation || url}' timed out after ${(elapsed / 1000).toFixed(1)}s.`);
+        timeoutErr.name = 'TimeoutError';
+        timeoutErr.code = 'ETIMEDOUT';
+        timeoutErr.state = 'TIMEOUT';
+        timeoutErr.operation = options.operation || url;
+        timeoutErr.elapsedMs = elapsed;
+        timeoutErr.stillProcessing = isHeavyEndpoint;
+        timeoutErr.safeErrorCode = 'ERR_TWIN_TIMEOUT';
+        throw timeoutErr;
+      }
+
+      // Check if cancelled by caller
+      if (err.name === 'AbortError' || (signal && signal.aborted)) {
+        const cancelErr = new Error(`Operation '${options.operation || url}' was cancelled.`);
+        cancelErr.name = 'AbortError';
+        cancelErr.code = 'ECANCELLED';
+        cancelErr.state = 'CANCELLED';
+        cancelErr.operation = options.operation || url;
+        cancelErr.elapsedMs = elapsed;
+        cancelErr.stillProcessing = false;
+        cancelErr.safeErrorCode = 'ERR_USER_CANCELLED';
+        throw cancelErr;
+      }
+
+      err.elapsedMs = elapsed;
+      if (!err.operation) err.operation = options.operation || url;
       throw err;
     }
   }
@@ -503,16 +564,17 @@
   // --- Professional Profile & Settings Tabs Subsystem ---
   function initSettingsTabs() {
     const tabs = ['profile', 'prefs', 'integrations', 'usage'];
+    const panelIdFor = tab => tab === 'profile' ? 'profile-modal-panel-profile' : `settings-panel-${tab}`;
 
     tabs.forEach(tab => {
       const btn = document.getElementById(`settings-tab-btn-${tab}`);
-      const panel = document.getElementById(`settings-panel-${tab}`);
+      const panel = document.getElementById(panelIdFor(tab));
 
       if (btn) {
         btn.onclick = () => {
           tabs.forEach(t => {
             const b = document.getElementById(`settings-tab-btn-${t}`);
-            const p = document.getElementById(`settings-panel-${t}`);
+            const p = document.getElementById(panelIdFor(t));
             if (b) {
               b.className = 'settings-tab-btn pb-2 text-xs font-semibold text-[#64748B] hover:text-[#0F172A] border-b-2 border-transparent transition-colors';
             }
@@ -1157,6 +1219,12 @@
   }
 
   function closeConnectModal() {
+    if (activeOnboardController) {
+      try {
+        activeOnboardController.abort();
+      } catch (_) { }
+      activeOnboardController = null;
+    }
     closeModal('modal-onboard');
     hideOnboardError();
     selectedGithubRepo = null;
@@ -1507,11 +1575,69 @@
     }
   }
 
-  function showOnboardError(msg) {
+  let activeOnboardController = null;
+
+  function showOnboardError(errorInput, retryCallback = null) {
     const errBox = document.getElementById('onboard-error-box');
-    if (errBox) {
-      errBox.style.display = 'block';
-      errBox.textContent = msg;
+    if (!errBox) return;
+
+    const norm = (typeof errorInput === 'object' && errorInput && errorInput.message)
+      ? errorInput
+      : normalizeApiError(errorInput, 'Repository Onboarding');
+
+    errBox.style.display = 'block';
+
+    let badgeClass = 'bg-[#FEE2E2] text-[#B91C1C] border-[#FECACA]';
+    if (norm.state === 'TIMEOUT') {
+      badgeClass = 'bg-[#FEF3C7] text-[#B45309] border-[#FDE68A]';
+    } else if (norm.state === 'CANCELLED') {
+      badgeClass = 'bg-[#F1F5F9] text-[#475569] border-[#CBD5E1]';
+    }
+
+    let stillProcessingNote = '';
+    if (norm.stillProcessing) {
+      stillProcessingNote = `
+        <div class="mt-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-start gap-2">
+          <span class="material-symbols-outlined text-[16px] text-amber-600 shrink-0 mt-0.5">hourglass_top</span>
+          <div class="leading-relaxed">
+            <strong>Repository may still be processing in the background:</strong> Large git clones and deep Tree-sitter AST parsing tasks run asynchronously on the server. You can check the repository list in a moment or retry now.
+          </div>
+        </div>`;
+    }
+
+    errBox.innerHTML = `
+      <div class="space-y-2.5 text-xs">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-1.5">
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold border uppercase ${badgeClass}">${escapeHtml(norm.state || 'FAILED')}</span>
+            <span class="font-bold text-[#0F172A]">${escapeHtml(norm.operation || 'Operation Failed')}</span>
+          </div>
+          <div class="flex items-center gap-2 text-[10.5px] font-mono text-[#64748B]">
+            ${norm.elapsedStr ? `<span>Elapsed: <strong>${escapeHtml(norm.elapsedStr)}</strong></span>` : ''}
+            <span class="px-1.5 py-0.5 rounded bg-white border border-[#CBD5E1]">${escapeHtml(norm.safeErrorCode || 'ERR_FAILED')}</span>
+          </div>
+        </div>
+        <div class="text-[#334155] leading-relaxed text-[11.5px]">${escapeHtml(norm.message)}</div>
+        ${stillProcessingNote}
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#FECDD3]">
+          <button id="btn-onboard-retry-action" type="button" class="px-3 py-1.5 rounded-lg bg-[#0071e3] hover:bg-[#005bb5] text-white text-xs font-semibold shadow-xs flex items-center gap-1 cursor-pointer">
+            <span class="material-symbols-outlined text-[14px]">refresh</span>
+            <span>${escapeHtml(norm.retryAction || 'Retry')}</span>
+          </button>
+        </div>
+      </div>
+    `;
+
+    const retryBtn = document.getElementById('btn-onboard-retry-action');
+    if (retryBtn) {
+      retryBtn.onclick = () => {
+        hideOnboardError();
+        if (typeof retryCallback === 'function') {
+          retryCallback();
+        } else {
+          document.getElementById('modal-submit-btn')?.click();
+        }
+      };
     }
   }
 
@@ -1672,35 +1798,97 @@
   }
 
   function updateIngestionStepper(stage) {
-    // stage: 1 (Acquiring), 2 (Parsing), 3 (Graph), 4 (Ready)
     const badge = document.getElementById('onboard-stage-badge');
     const spinner = document.getElementById('onboard-spinner-icon');
+    const title = document.getElementById('onboard-prog-title');
     const stages = [1, 2, 3, 4];
+
+    let numStage = 1;
+    let label = 'CONNECTING';
+
+    if (stage === 'CONNECTING' || stage === 1) {
+      numStage = 1;
+      label = 'CONNECTING';
+      if (title) title.textContent = 'Connecting to repository...';
+    } else if (stage === 'DISCOVERING' || stage === 2) {
+      numStage = 2;
+      label = 'DISCOVERING';
+      if (title) title.textContent = 'Cloning source & discovering files...';
+    } else if (stage === 'SYNTHESIZING' || stage === 3) {
+      numStage = 3;
+      label = 'SYNTHESIZING';
+      if (title) title.textContent = 'Parsing AST & synthesizing Digital Twin...';
+    } else if (stage === 'READY' || stage === 4) {
+      numStage = 4;
+      label = 'READY';
+      if (title) title.textContent = 'Living Digital Twin Ready!';
+    } else if (stage === 'TIMEOUT') {
+      numStage = 2;
+      label = 'TIMEOUT';
+      if (title) title.textContent = 'Operation Timed Out';
+    } else if (stage === 'CANCELLED') {
+      numStage = 1;
+      label = 'CANCELLED';
+      if (title) title.textContent = 'Operation Cancelled';
+    } else if (stage === 'FAILED') {
+      numStage = 1;
+      label = 'FAILED';
+      if (title) title.textContent = 'Synthesis Failed';
+    }
 
     stages.forEach(s => {
       const el = document.getElementById(`step-stage-${s}`);
       const sub = document.getElementById(`sub-stage-${s}`);
       if (!el) return;
 
-      if (s < stage) {
-        el.className = 'p-2 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 space-y-1';
-        if (sub) sub.textContent = 'Completed ✓';
-      } else if (s === stage) {
-        el.className = 'p-2 rounded-lg bg-sky-950/80 border border-sky-400 text-sky-200 animate-pulse space-y-1';
-        if (sub) sub.textContent = 'In progress...';
+      if (['TIMEOUT', 'CANCELLED', 'FAILED'].includes(label)) {
+        if (s === numStage) {
+          el.className = 'p-2 rounded-lg bg-rose-950/80 border border-rose-400 text-rose-200 space-y-1';
+          if (sub) sub.textContent = label;
+        } else if (s < numStage) {
+          el.className = 'p-2 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 space-y-1';
+          if (sub) sub.textContent = 'Completed ✓';
+        } else {
+          el.className = 'p-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 space-y-1';
+          if (sub) sub.textContent = 'Skipped';
+        }
       } else {
-        el.className = 'p-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 space-y-1';
-        if (sub) sub.textContent = 'Pending';
+        if (s < numStage) {
+          el.className = 'p-2 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 space-y-1';
+          if (sub) sub.textContent = 'Completed ✓';
+        } else if (s === numStage) {
+          el.className = 'p-2 rounded-lg bg-sky-950/80 border border-sky-400 text-sky-200 animate-pulse space-y-1';
+          if (sub) sub.textContent = 'In progress...';
+        } else {
+          el.className = 'p-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 space-y-1';
+          if (sub) sub.textContent = 'Pending';
+        }
       }
     });
 
     if (badge) {
-      const labels = { 1: 'ACQUIRING', 2: 'AST PARSING', 3: 'GRAPH BUILD', 4: 'READY' };
-      badge.textContent = labels[stage] || 'PROCESSING';
+      badge.textContent = label;
+      if (label === 'TIMEOUT') {
+        badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-950 text-amber-300 border border-amber-800';
+      } else if (label === 'FAILED') {
+        badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-950 text-rose-300 border border-rose-800';
+      } else if (label === 'READY') {
+        badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800';
+      } else {
+        badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-950 text-sky-300 border border-sky-800';
+      }
     }
-    if (stage === 4 && spinner) {
-      spinner.className = 'material-symbols-outlined text-[18px] text-emerald-400';
-      spinner.textContent = 'check_circle';
+    if (spinner) {
+      if (label === 'READY') {
+        spinner.className = 'material-symbols-outlined text-[18px] text-emerald-400';
+        spinner.textContent = 'check_circle';
+      } else if (['TIMEOUT', 'FAILED', 'CANCELLED'].includes(label)) {
+        spinner.className = 'material-symbols-outlined text-[18px] text-rose-400';
+        spinner.textContent = 'error';
+      } else {
+        spinner.className = 'material-symbols-outlined text-[18px] text-sky-400 animate-spin';
+        spinner.textContent = 'sync';
+      }
     }
   }
 
@@ -1711,21 +1899,25 @@
     if (progBox) progBox.style.display = 'block';
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Synthesizing Digital Twin...';
+      submitBtn.textContent = 'Connecting & Synthesizing...';
     }
 
-    // Step 1: Acquisition
-    updateIngestionStepper(1);
+    // Step 1: Connecting
+    updateIngestionStepper('CONNECTING');
+
+    activeOnboardController = new AbortController();
 
     try {
-      // Simulate real step handoffs as backend clone progresses
-      const cloneTimer = setTimeout(() => updateIngestionStepper(2), 1200);
-      const parseTimer = setTimeout(() => updateIngestionStepper(3), 2400);
+      const cloneTimer = setTimeout(() => updateIngestionStepper('DISCOVERING'), 1200);
+      const parseTimer = setTimeout(() => updateIngestionStepper('SYNTHESIZING'), 2400);
 
       const res = await apiFetch('/repositories/connect-github', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: activeOnboardController.signal,
+        timeout: 120000,
+        operation: 'GitHub Repository Clone & Synthesis',
       });
 
       clearTimeout(cloneTimer);
@@ -1740,11 +1932,11 @@
           errData = { detail: rawText || `Server returned HTTP ${res.status}` };
         }
         const norm = normalizeApiError(errData, 'GitHub Connection');
-        throw new Error(norm.message);
+        throw norm;
       }
 
-      // Step 4: Digital Twin Ready
-      updateIngestionStepper(4);
+      // Step 4: Ready
+      updateIngestionStepper('READY');
 
       const result = await res.json();
       if (result.session_token) {
@@ -1760,14 +1952,16 @@
         switchPrimaryView('overview');
       }, 700);
     } catch (err) {
-      console.error('GitHub onboarding error', err);
-      if (progBox) progBox.style.display = 'none';
-      const norm = normalizeApiError(err, 'GitHub Connection');
-      showOnboardError(norm.message || 'Failed to connect GitHub repository.');
+      console.error('GitHub onboarding error:', err);
+      const norm = normalizeApiError(err, 'GitHub Repository Connect');
+      updateIngestionStepper(norm.state);
+      showOnboardError(norm, () => triggerGithubOnboarding(payload));
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Connect & Synthesize Twin';
       }
+    } finally {
+      activeOnboardController = null;
     }
   }
 
@@ -1785,7 +1979,12 @@
       submitBtn.textContent = 'Analyzing Directory...';
     }
 
+    updateIngestionStepper('CONNECTING');
+    activeOnboardController = new AbortController();
+
     try {
+      const parseTimer = setTimeout(() => updateIngestionStepper('SYNTHESIZING'), 1500);
+
       const res = await apiFetch('/repositories/onboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1793,7 +1992,12 @@
           local_path: localPath,
           name: repoName || undefined,
         }),
+        signal: activeOnboardController.signal,
+        timeout: 120000,
+        operation: 'Local Directory Ingestion & AST Synthesis',
       });
+
+      clearTimeout(parseTimer);
 
       if (!res.ok) {
         const rawText = await res.text().catch(() => '');
@@ -1804,8 +2008,10 @@
           errData = { detail: rawText || `Server returned HTTP ${res.status}` };
         }
         const norm = normalizeApiError(errData, 'Local Ingestion');
-        throw new Error(norm.message);
+        throw norm;
       }
+
+      updateIngestionStepper('READY');
 
       const result = await res.json();
       if (result.session_token) {
@@ -1821,14 +2027,16 @@
         switchPrimaryView('overview');
       }, 700);
     } catch (err) {
-      console.error('Local onboarding error', err);
-      if (progBox) progBox.style.display = 'none';
-      const norm = normalizeApiError(err, 'Local Ingestion');
-      showOnboardError(norm.message || 'Failed to analyze repository. Check filesystem path.');
+      console.error('Local onboarding error:', err);
+      const norm = normalizeApiError(err, 'Local Directory Ingestion');
+      updateIngestionStepper(norm.state);
+      showOnboardError(norm, () => triggerLocalOnboarding(localPath, repoName));
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Connect & Synthesize Twin';
       }
+    } finally {
+      activeOnboardController = null;
     }
   }
 
@@ -1842,15 +2050,25 @@
       submitBtn.textContent = 'Extracting & Scanning...';
     }
 
+    updateIngestionStepper('CONNECTING');
+    activeOnboardController = new AbortController();
+
     try {
       const formData = new FormData();
       formData.append('file', file);
       if (repoName) formData.append('name', repoName);
 
+      const parseTimer = setTimeout(() => updateIngestionStepper('SYNTHESIZING'), 1500);
+
       const res = await apiFetch('/repositories/upload-archive', {
         method: 'POST',
         body: formData,
+        signal: activeOnboardController.signal,
+        timeout: 120000,
+        operation: 'Archive Upload & AST Synthesis',
       });
+
+      clearTimeout(parseTimer);
 
       if (!res.ok) {
         const rawText = await res.text().catch(() => '');
@@ -1861,8 +2079,10 @@
           errData = { detail: rawText || `Server returned HTTP ${res.status}` };
         }
         const norm = normalizeApiError(errData, 'Archive Upload');
-        throw new Error(norm.message);
+        throw norm;
       }
+
+      updateIngestionStepper('READY');
 
       const result = await res.json();
       if (result.session_token) {
@@ -1878,14 +2098,16 @@
         switchPrimaryView('overview');
       }, 700);
     } catch (err) {
-      console.error('Archive onboarding error', err);
-      if (progBox) progBox.style.display = 'none';
-      const norm = normalizeApiError(err, 'Archive Upload');
-      showOnboardError(norm.message || 'Failed to upload or analyze archive.');
+      console.error('Archive onboarding error:', err);
+      const norm = normalizeApiError(err, 'Archive Upload & Extraction');
+      updateIngestionStepper(norm.state);
+      showOnboardError(norm, () => triggerArchiveOnboarding(file, repoName));
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Connect & Synthesize Twin';
       }
+    } finally {
+      activeOnboardController = null;
     }
   }
 
@@ -2183,8 +2405,120 @@
 
   // --- 4. Deterministic Application State Machine ---
   function normalizeApiError(err, stage = 'Operation') {
-    if (!err) return { code: 'UNKNOWN_ERROR', message: 'An unexpected error occurred.', stage, retryable: true };
-    if (typeof err === 'string') return { code: 'API_ERROR', message: err, stage, retryable: true };
+    if (!err) {
+      return {
+        state: 'FAILED',
+        code: 'UNKNOWN_ERROR',
+        safeErrorCode: 'ERR_UNKNOWN',
+        message: 'An unexpected error occurred.',
+        stage,
+        operation: stage,
+        elapsedMs: 0,
+        elapsedStr: '',
+        stillProcessing: false,
+        retryable: true,
+        retryAction: 'Retry Operation',
+      };
+    }
+    if (typeof err === 'string') {
+      let isAbort = err.includes('aborted') || err.includes('signal is aborted without reason');
+      let isTimeout = err.toLowerCase().includes('timed out');
+      if (isTimeout) {
+        return {
+          state: 'TIMEOUT',
+          code: 'TIMEOUT',
+          safeErrorCode: 'ERR_TWIN_TIMEOUT',
+          message: `Operation '${stage}' timed out while waiting for backend synthesis.`,
+          stage,
+          operation: stage,
+          elapsedMs: 0,
+          elapsedStr: '',
+          stillProcessing: true,
+          retryable: true,
+          retryAction: 'Retry Connection',
+        };
+      }
+      if (isAbort) {
+        return {
+          state: 'CANCELLED',
+          code: 'CANCELLED',
+          safeErrorCode: 'ERR_USER_CANCELLED',
+          message: `Operation '${stage}' was cancelled before completion.`,
+          stage,
+          operation: stage,
+          elapsedMs: 0,
+          elapsedStr: '',
+          stillProcessing: false,
+          retryable: true,
+          retryAction: 'Restart Connection',
+        };
+      }
+      return {
+        state: 'FAILED',
+        code: 'API_ERROR',
+        safeErrorCode: 'ERR_API',
+        message: err,
+        stage,
+        operation: stage,
+        elapsedMs: 0,
+        elapsedStr: '',
+        stillProcessing: false,
+        retryable: true,
+        retryAction: 'Retry Operation',
+      };
+    }
+
+    const elapsedMs = err.elapsedMs || 0;
+    const elapsedStr = elapsedMs > 0 ? `${(elapsedMs / 1000).toFixed(1)}s` : '';
+    const operation = err.operation || stage;
+
+    // Check for TIMEOUT state
+    if (
+      err.state === 'TIMEOUT' ||
+      err.name === 'TimeoutError' ||
+      err.code === 'ETIMEDOUT' ||
+      (err.message && err.message.toLowerCase().includes('timed out'))
+    ) {
+      return {
+        state: 'TIMEOUT',
+        code: 'TIMEOUT',
+        safeErrorCode: err.safeErrorCode || 'ERR_TWIN_TIMEOUT',
+        operation,
+        stage,
+        elapsedMs,
+        elapsedStr,
+        stillProcessing: err.stillProcessing !== false,
+        message: `Operation '${operation}' timed out${elapsedStr ? ` after ${elapsedStr}` : ''}.`,
+        advice: 'The repository synthesis or clone may still be processing in the background on the server.',
+        retryable: true,
+        retryAction: 'Retry Connection',
+      };
+    }
+
+    // Check for CANCELLED state
+    if (
+      err.state === 'CANCELLED' ||
+      err.name === 'AbortError' ||
+      err.code === 'ECANCELLED' ||
+      (err.message && (err.message.includes('aborted') || err.message.includes('cancelled')))
+    ) {
+      return {
+        state: 'CANCELLED',
+        code: 'CANCELLED',
+        safeErrorCode: err.safeErrorCode || 'ERR_USER_CANCELLED',
+        operation,
+        stage,
+        elapsedMs,
+        elapsedStr,
+        stillProcessing: false,
+        message: `Operation '${operation}' was cancelled.`,
+        advice: 'The request was cancelled before completion.',
+        retryable: true,
+        retryAction: 'Restart Connection',
+      };
+    }
+
+    // Standard API error parsing
     const code = err.code || (err.status ? `HTTP_${err.status}` : 'API_ERROR');
     let message = err.message || err.detail || err.error;
     if (Array.isArray(message)) {
@@ -2200,14 +2534,22 @@
         message = 'The service encountered an issue processing the request.';
       }
     }
-    if (!message || message === '[object Object]') {
-      message = 'The service encountered an issue processing the request.';
+    if (!message || message === '[object Object]' || message.includes('signal is aborted without reason')) {
+      message = `Operation '${operation}' failed to receive response from backend.`;
     }
+
     return {
+      state: 'FAILED',
       code,
-      message,
+      safeErrorCode: err.safeErrorCode || (err.status ? `HTTP_${err.status}` : 'ERR_API_FAILED'),
+      operation,
       stage,
+      elapsedMs,
+      elapsedStr,
+      stillProcessing: false,
+      message,
       retryable: err.retryable !== false,
+      retryAction: 'Retry Connection',
     };
   }
 
@@ -2807,29 +3149,216 @@
   function switchImpactMode(mode) {
     const btnEntity = document.getElementById('btn-impact-mode-entity');
     const btnDiff = document.getElementById('btn-impact-mode-diff');
+    const btnPr = document.getElementById('btn-impact-mode-pr');
     const panelEntity = document.getElementById('panel-impact-entity');
     const panelDiff = document.getElementById('panel-impact-diff');
+    const panelPr = document.getElementById('panel-impact-pr');
     const hint = document.getElementById('impact-mode-hint');
     const precondPanel = document.getElementById('impact-preconditions-panel');
 
     const activeClass = 'px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white text-[#0071e3] shadow-xs flex items-center gap-1.5 transition-all';
     const inactiveClass = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] flex items-center gap-1.5 transition-all';
 
+    if (btnEntity) btnEntity.className = (mode === 'entity') ? activeClass : inactiveClass;
+    if (btnDiff) btnDiff.className = (mode === 'diff') ? activeClass : inactiveClass;
+    if (btnPr) btnPr.className = (mode === 'pr') ? activeClass : inactiveClass;
+
+    if (panelEntity) panelEntity.style.display = (mode === 'entity') ? 'block' : 'none';
+    if (panelDiff) panelDiff.style.display = (mode === 'diff') ? 'block' : 'none';
+    if (panelPr) panelPr.style.display = (mode === 'pr') ? 'block' : 'none';
+
     if (mode === 'diff') {
-      if (btnEntity) btnEntity.className = inactiveClass;
-      if (btnDiff) btnDiff.className = activeClass;
-      if (panelEntity) panelEntity.style.display = 'none';
-      if (panelDiff) panelDiff.style.display = 'block';
       if (precondPanel) precondPanel.style.display = 'block';
       if (hint) hint.textContent = 'Compare blast radius and architectural deltas between two revisions';
       validateBaselineAndTargetSelection();
+    } else if (mode === 'pr') {
+      if (precondPanel) precondPanel.style.display = 'none';
+      if (hint) hint.textContent = 'Automated Pull Request change impact, blast radius & CI risk governance';
+      loadPullRequestsForCurrentRepo();
     } else {
-      if (btnEntity) btnEntity.className = activeClass;
-      if (btnDiff) btnDiff.className = inactiveClass;
-      if (panelEntity) panelEntity.style.display = 'block';
-      if (panelDiff) panelDiff.style.display = 'none';
       if (precondPanel) precondPanel.style.display = 'none';
       if (hint) hint.textContent = 'Inspect causal blast radius of any architectural component';
+    }
+  }
+
+  async function loadPullRequestsForCurrentRepo() {
+    const select = document.getElementById('impact-pr-select');
+    if (!select) return;
+
+    if (!state.currentRepoId) {
+      select.innerHTML = '<option value="">-- Connect or select a repository first --</option>';
+      select.disabled = true;
+      return;
+    }
+
+    select.disabled = false;
+    select.innerHTML = '<option value="">-- Loading recorded pull requests... --</option>';
+
+    try {
+      const res = await apiFetch(`/repositories/${state.currentRepoId}/pull-requests`);
+      if (!res.ok) {
+        throw new Error(`Failed to load pull requests (HTTP ${res.status})`);
+      }
+      const data = await res.json();
+      const prs = Array.isArray(data) ? data : (data.pull_requests || []);
+      state.pullRequests = prs;
+
+      if (prs.length === 0) {
+        select.innerHTML = '<option value="">-- No Pull Requests recorded yet --</option>';
+        updatePRCardEmpty();
+        return;
+      }
+
+      select.innerHTML = prs.map(pr => {
+        const title = pr.title || `PR #${pr.pull_request_number}`;
+        const branch = pr.head_branch || 'feature';
+        const status = pr.status || 'UNKNOWN';
+        const rec = pr.ci_recommendation ? ` [CI: ${pr.ci_recommendation}]` : '';
+        return `<option value="${pr.pull_request_number}">PR #${pr.pull_request_number}: ${escapeHtml(title)} (${escapeHtml(branch)}) [${status}]${rec}</option>`;
+      }).join('');
+
+      handlePRSelectionChange(prs[0].pull_request_number);
+    } catch (err) {
+      console.error('Failed to load PRs:', err);
+      select.innerHTML = `<option value="">⚠️ Error loading pull requests: ${escapeHtml(err.message)}</option>`;
+      updatePRCardEmpty(err.message);
+    }
+  }
+
+  function handlePRSelectionChange(prNumber) {
+    if (!state.pullRequests) return;
+    const pr = state.pullRequests.find(p => String(p.pull_request_number) === String(prNumber));
+    if (!pr) {
+      updatePRCardEmpty();
+      return;
+    }
+
+    const badge = document.getElementById('pr-card-badge');
+    const title = document.getElementById('pr-card-title');
+    const branch = document.getElementById('pr-card-branch');
+    const statusPill = document.getElementById('pr-card-status-pill');
+    const ciPill = document.getElementById('pr-card-ci-pill');
+    const baseSha = document.getElementById('pr-card-base-sha');
+    const headSha = document.getElementById('pr-card-head-sha');
+    const snapState = document.getElementById('pr-card-snapshots-state');
+    const changedCount = document.getElementById('pr-card-changed-count');
+    const affectedCount = document.getElementById('pr-card-affected-count');
+    const testsCount = document.getElementById('pr-card-tests-count');
+    const testsExecuted = document.getElementById('pr-card-tests-executed');
+    const actionText = document.getElementById('pr-card-action-text');
+    const mdContainer = document.getElementById('pr-markdown-container');
+
+    if (badge) badge.textContent = `PR #${pr.pull_request_number}`;
+    if (title) title.textContent = pr.title || `Pull Request #${pr.pull_request_number}`;
+    if (branch) branch.textContent = `${pr.base_branch || 'main'} ← ${pr.head_branch || 'feature'}`;
+
+    if (statusPill) {
+      statusPill.textContent = pr.status || 'UNKNOWN';
+      if (pr.status === 'COMPLETE' || pr.status === 'NO_CHANGE') {
+        statusPill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#ECFDF5] text-[#059669] border border-emerald-200 uppercase';
+      } else if (pr.status === 'FAILED') {
+        statusPill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF2F2] text-[#DC2626] border border-red-200 uppercase';
+      } else if (pr.status === 'ANALYZING' || pr.status === 'SNAPSHOTS_PENDING') {
+        statusPill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#EFF6FF] text-[#1D4ED8] border border-blue-200 uppercase';
+      } else {
+        statusPill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#D97706] border border-amber-200 uppercase';
+      }
+    }
+
+    if (ciPill) {
+      const rec = pr.ci_recommendation || 'PENDING';
+      ciPill.textContent = `CI: ${rec}`;
+      if (rec === 'PASS') {
+        ciPill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#ECFDF5] text-[#059669] border border-emerald-200 uppercase';
+      } else if (rec === 'BLOCKED') {
+        ciPill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF2F2] text-[#DC2626] border border-red-200 uppercase';
+      } else {
+        ciPill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#D97706] border border-amber-200 uppercase';
+      }
+    }
+
+    if (baseSha) baseSha.textContent = (pr.base_commit_sha || '').slice(0, 7) || '—';
+    if (headSha) headSha.textContent = (pr.head_commit_sha || '').slice(0, 7) || '—';
+
+    if (snapState) {
+      if (pr.base_snapshot_id && pr.target_snapshot_id) {
+        snapState.innerHTML = '<span class="text-emerald-700 font-semibold">READY (2/2)</span>';
+      } else if (pr.status === 'FAILED') {
+        snapState.innerHTML = '<span class="text-rose-700 font-semibold">RECON_FAILED</span>';
+      } else {
+        snapState.innerHTML = '<span class="text-amber-700 font-semibold">PENDING</span>';
+      }
+    }
+
+    if (changedCount) changedCount.textContent = String(pr.changed_count ?? (pr.summary?.changed_files_count ?? 0));
+    if (affectedCount) affectedCount.textContent = String(pr.affected_count ?? (pr.summary?.affected_symbols_count ?? 0));
+    if (testsCount) testsCount.textContent = String(pr.impacted_tests_count ?? (pr.summary?.impacted_tests_count ?? 0));
+
+    if (testsExecuted) {
+      const execCount = pr.tests_executed_count ?? 0;
+      if (execCount > 0) {
+        const pass = pr.tests_passed_count ?? 0;
+        const fail = pr.tests_failed_count ?? 0;
+        testsExecuted.innerHTML = `<span class="font-bold text-[#059669]">${pass} pass</span>, <span class="font-bold text-[#DC2626]">${fail} fail</span>`;
+      } else {
+        testsExecuted.innerHTML = '<span class="text-[#64748B] italic">Unexecuted</span>';
+      }
+    }
+
+    if (actionText) {
+      if (pr.error_message) {
+        actionText.textContent = pr.error_message;
+      } else if (pr.status === 'NO_CHANGE') {
+        actionText.textContent = 'Base and head refer to identical commits. No blast radius or regression risk detected.';
+      } else if (pr.ci_recommendation === 'PASS') {
+        actionText.textContent = 'Safe to merge. Change impact verified with complete structural evidence.';
+      } else if (pr.ci_recommendation === 'BLOCKED') {
+        actionText.textContent = 'Merge blocked by policy. Impact exceeds thresholds, snapshots missing, or tests failed.';
+      } else if (pr.ci_recommendation === 'REVIEW_REQUIRED') {
+        actionText.textContent = 'Architectural review required. Changes affect shared or high-risk components.';
+      } else {
+        actionText.textContent = 'Awaiting automated pipeline execution.';
+      }
+    }
+
+    if (mdContainer) {
+      mdContainer.textContent = pr.report_markdown || 'No markdown report generated yet.';
+    }
+  }
+
+  function updatePRCardEmpty(errMsg = null) {
+    const badge = document.getElementById('pr-card-badge');
+    const title = document.getElementById('pr-card-title');
+    const statusPill = document.getElementById('pr-card-status-pill');
+    const ciPill = document.getElementById('pr-card-ci-pill');
+    const actionText = document.getElementById('pr-card-action-text');
+
+    if (badge) badge.textContent = 'PR #—';
+    if (title) title.textContent = errMsg ? `Error: ${errMsg}` : 'No recorded pull requests found for this repository';
+    if (statusPill) {
+      statusPill.textContent = errMsg ? 'ERROR' : 'EMPTY';
+      statusPill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#F1F5F9] text-[#64748B] uppercase';
+    }
+    if (ciPill) {
+      ciPill.textContent = 'CI: —';
+      ciPill.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#F1F5F9] text-[#64748B] uppercase';
+    }
+    if (actionText) {
+      actionText.textContent = errMsg || 'Deliver a webhook payload to POST /webhooks/github or trigger manual analysis via API.';
+    }
+  }
+
+  function togglePRMarkdownReport() {
+    const container = document.getElementById('pr-markdown-container');
+    const label = document.getElementById('pr-markdown-toggle-label');
+    if (!container) return;
+    const isHidden = container.classList.contains('hidden');
+    if (isHidden) {
+      container.classList.remove('hidden');
+      if (label) label.textContent = 'Hide Markdown CI Report';
+    } else {
+      container.classList.add('hidden');
+      if (label) label.textContent = 'View Markdown CI Report';
     }
   }
 
@@ -2882,7 +3411,7 @@
 
     try {
       const snapParam = state.currentSnapshotId ? `?snapshot_id=${state.currentSnapshotId}` : '';
-      const res = await fetch(`/repositories/${state.currentRepoId}/components${snapParam}`);
+      const res = await apiFetch(`/repositories/${state.currentRepoId}/components${snapParam}`);
       if (!res.ok) {
         throw new Error(`Failed to load components (HTTP ${res.status})`);
       }
@@ -7922,6 +8451,22 @@
     if (modeDiffBtn) {
       modeDiffBtn.onclick = () => switchImpactMode('diff');
     }
+    const modePrBtn = document.getElementById('btn-impact-mode-pr');
+    if (modePrBtn) {
+      modePrBtn.onclick = () => switchImpactMode('pr');
+    }
+    const refreshPrsBtn = document.getElementById('btn-refresh-prs');
+    if (refreshPrsBtn) {
+      refreshPrsBtn.onclick = () => loadPullRequestsForCurrentRepo();
+    }
+    const impactPrSelect = document.getElementById('impact-pr-select');
+    if (impactPrSelect) {
+      impactPrSelect.onchange = () => handlePRSelectionChange(impactPrSelect.value);
+    }
+    const togglePrMdBtn = document.getElementById('btn-toggle-pr-markdown');
+    if (togglePrMdBtn) {
+      togglePrMdBtn.onclick = () => togglePRMarkdownReport();
+    }
     const runEntityImpactBtn = document.getElementById('btn-run-entity-impact');
     if (runEntityImpactBtn) {
       runEntityImpactBtn.onclick = () => {
@@ -8777,7 +9322,7 @@
         }
       }
 
-      const res = await fetch(`/repositories/${state.currentRepoId}/impact-analysis`, {
+      const res = await apiFetch(`/repositories/${state.currentRepoId}/impact-analysis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -8986,7 +9531,7 @@
     }
 
     try {
-      const res = await fetch(`/repositories/${state.currentRepoId}/blast-radius`, {
+      const res = await apiFetch(`/repositories/${state.currentRepoId}/blast-radius`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -16672,6 +17217,9 @@
     executeChangeImpactAnalysis,
     executeEntityBlastRadius,
     switchImpactMode,
+    loadPullRequestsForCurrentRepo,
+    handlePRSelectionChange,
+    togglePRMarkdownReport,
     populateImpactEntityDropdown,
     quickSelectImpactComponent,
     reconstructSnapshotFromImpact,
@@ -16687,6 +17235,9 @@
     investigateOverview,
     openConnectModal,
     closeConnectModal,
+    normalizeApiError,
+    updateIngestionStepper,
+    showOnboardError,
     openIngestModal,
     closeIngestModal,
     openCreateIncidentModal,
@@ -16976,6 +17527,7 @@
     graph: null,
     scenarios: null,
     testImpact: null,
+    report: Object.create(null),
     extensionPoints: null
   };
 
@@ -17992,17 +18544,158 @@
   // STAGE 8: FINAL ENGINEERING REVIEW
   // ====================================================================
   async function renderStage8FinalReport(canvas) {
-    const report = await fetchDemoData('report', 'overview') || {
-      summary: "HIGH RISK — Service Outage on Payment Service causes cascading checkout failures.",
-      target: "Payment Service",
-      scenario: demoSelectedWhatIfScenario,
-      impacted_services: ["Payment Service", "Order Service", "API Gateway"],
-      impacted_apis: ["POST /api/v1/orders/checkout", "POST /api/v1/payments/charge"],
-      recommended_tests: ["tests/test_payment_service.py", "tests/test_order_service.py"],
-      cli_command: "pytest tests/test_payment_service.py tests/test_order_service.py -v",
-      risk_score: 0.78
-    };
+    renderStage8LoadingState(canvas);
 
+    try {
+      const report = await fetchDemoReport(demoSelectedWhatIfScenario);
+      if (!report || !report.hasContent) {
+        renderStage8EmptyState(canvas);
+        return;
+      }
+      renderStage8SuccessState(canvas, report);
+    } catch (error) {
+      console.error('Unable to render the Stage 8 engineering report:', error);
+      renderStage8ErrorState(canvas, error);
+    }
+  }
+
+  function normalizeDemoArray(value) {
+    if (Array.isArray(value)) return value.filter(item => item !== null && item !== undefined);
+    if (value === null || value === undefined || value === '') return [];
+    if (typeof value === 'object') return Object.values(value).filter(item => item !== null && item !== undefined);
+    return [value];
+  }
+
+  function normalizeDemoReportResponse(payload) {
+    const raw = payload?.report || payload?.data?.report || payload?.data || payload;
+    if (!raw || typeof raw !== 'object') return null;
+
+    const impact = raw.impact_summary && typeof raw.impact_summary === 'object' ? raw.impact_summary : {};
+    const risk = raw.risk_evaluation && typeof raw.risk_evaluation === 'object' ? raw.risk_evaluation : {};
+    const tests = raw.test_verification && typeof raw.test_verification === 'object' ? raw.test_verification : {};
+    const findings = normalizeDemoArray(raw.findings || impact.findings);
+    const paths = normalizeDemoArray(raw.paths || raw.impact_paths || impact.paths);
+    const categories = normalizeDemoArray(raw.categories || raw.evidence_categories || raw.evidence?.categories);
+    const impactedServices = normalizeDemoArray(raw.impacted_services || impact.impacted_services);
+    const impactedApis = normalizeDemoArray(raw.impacted_apis || impact.affected_apis);
+    const recommendations = normalizeDemoArray(raw.actionable_next_steps || raw.recommended_tests || tests.recommended_tests);
+    const limitations = normalizeDemoArray(raw.technical_limitations || raw.limitations);
+    const numericRisk = Number(raw.risk_score ?? risk.overall_score ?? 0);
+    const normalizedRiskScore = Number.isFinite(numericRisk) ? (numericRisk > 1 ? numericRisk / 100 : numericRisk) : 0;
+    const cliCommand = String(
+      raw.cli_command ||
+      recommendations.find(item => typeof item === 'string' && item.trim().startsWith('pytest ')) ||
+      ''
+    );
+    const totalAffected = Number(impact.total_affected ?? raw.affected_count ?? impactedServices.length ?? 0);
+    const target = String(raw.target_entity || raw.target || '');
+
+    return {
+      reportId: String(raw.report_id || ''),
+      summary: String(raw.summary || raw.scenario_title || ''),
+      target,
+      scenario: String(raw.scenario_title || raw.scenario || demoSelectedWhatIfScenario),
+      findings,
+      paths,
+      categories,
+      impactedServices,
+      impactedApis,
+      recommendations,
+      limitations,
+      cliCommand,
+      riskScore: normalizedRiskScore,
+      riskLevel: String(risk.risk_level || raw.risk_level || (normalizedRiskScore >= 0.7 ? 'HIGH' : normalizedRiskScore >= 0.4 ? 'MEDIUM' : 'LOW')),
+      verificationStatus: String(raw.verification_status || payload?.status || 'UNKNOWN'),
+      totalAffected: Number.isFinite(totalAffected) ? totalAffected : impactedServices.length,
+      hasContent: Boolean(
+        target || raw.scenario_title || findings.length || paths.length || categories.length ||
+        impactedServices.length || impactedApis.length || recommendations.length || limitations.length || totalAffected
+      )
+    };
+  }
+
+  async function fetchDemoReport(scenarioId, force = false) {
+    const cacheKey = scenarioId || 'SCENARIO_SERVICE_OUTAGE';
+    if (!force && demoDataCache.report[cacheKey]) return demoDataCache.report[cacheKey];
+
+    const response = await fetch(`/api/v1/demo/report?scenario_id=${encodeURIComponent(cacheKey)}`);
+    if (!response.ok) {
+      throw new Error(`Report request failed with HTTP ${response.status}.`);
+    }
+
+    const payload = await response.json();
+    const normalized = normalizeDemoReportResponse(payload);
+    if (!normalized) return null;
+    demoDataCache.report[cacheKey] = normalized;
+    return normalized;
+  }
+
+  function renderStage8LoadingState(canvas) {
+    canvas.dataset.stage8State = 'loading';
+    canvas.innerHTML = `
+      <div class="min-h-[280px] flex items-center justify-center" data-demo-report-state="loading" aria-live="polite">
+        <div class="text-center space-y-2">
+          <span class="material-symbols-outlined text-[24px] text-[#0071e3] animate-spin" aria-hidden="true">sync</span>
+          <p class="text-sm font-semibold text-[#0F172A]">Building the final engineering report…</p>
+          <p class="text-xs text-[#64748B]">Normalizing impact, test, risk, and evidence results.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderStage8EmptyState(canvas) {
+    canvas.dataset.stage8State = 'empty';
+    canvas.innerHTML = `
+      <div class="min-h-[280px] flex items-center justify-center" data-demo-report-state="empty" aria-live="polite">
+        <div class="max-w-sm text-center space-y-3">
+          <span class="material-symbols-outlined text-[24px] text-[#64748B]" aria-hidden="true">description</span>
+          <h4 class="text-sm font-bold text-[#0F172A]">No report data is available</h4>
+          <p class="text-xs text-[#64748B]">Run a demo scenario, then retry the final engineering review.</p>
+          <button type="button" onclick="window.TwinApp.renderDemoStage(7)" class="text-xs font-semibold text-[#0071e3] hover:underline">Retry Report</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderStage8ErrorState(canvas, error) {
+    canvas.dataset.stage8State = 'error';
+    canvas.innerHTML = `
+      <div class="min-h-[280px] flex items-center justify-center" data-demo-report-state="error" role="alert">
+        <div class="max-w-md rounded-xl border border-[#FECACA] bg-[#FEF2F2] p-4 text-center space-y-3">
+          <span class="material-symbols-outlined text-[24px] text-[#DC2626]" aria-hidden="true">error</span>
+          <h4 class="text-sm font-bold text-[#0F172A]">The final report could not be loaded</h4>
+          <p class="text-xs text-[#64748B]">${escapeHtml(error?.message || 'The report endpoint returned an unexpected response.')}</p>
+          <button type="button" onclick="window.TwinApp.renderDemoStage(7)" class="text-xs font-semibold text-[#B91C1C] hover:underline">Retry Report</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderStage8SuccessState(canvas, report) {
+    const riskScore = report.riskScore.toFixed(2);
+    const riskIsHigh = report.riskLevel === 'HIGH' || report.riskScore >= 0.7;
+    const decision = riskIsHigh ? 'PULL REQUEST BLOCKED' : 'REVIEW REQUIRED';
+    const impactedServiceCount = report.impactedServices.length || report.totalAffected;
+    const commandMarkup = report.cliCommand
+      ? `
+          <div class="p-3 rounded-xl bg-[#0F172A] text-white space-y-1.5">
+            <div class="flex items-center justify-between gap-3 text-[11px] text-[#94A3B8]">
+              <span>Run Targeted Pytest Verification in Terminal:</span>
+              <button onclick="window.TwinApp.copyDemoReportCommand(this.dataset.command)" data-command="${escapeHtml(report.cliCommand)}" class="text-xs text-[#38BDF8] hover:underline flex items-center gap-1 cursor-pointer shrink-0" type="button">
+                <span class="material-symbols-outlined text-[14px]" aria-hidden="true">content_copy</span>
+                <span>Copy Command</span>
+              </button>
+            </div>
+            <code class="block font-mono text-xs text-[#E2E8F0] overflow-x-auto custom-scrollbar p-1">${escapeHtml(report.cliCommand)}</code>
+          </div>
+        `
+      : `
+          <div class="p-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] text-xs text-[#64748B]">
+            No targeted CLI command was included in this report.
+          </div>
+        `;
+
+    canvas.dataset.stage8State = 'success';
     canvas.innerHTML = `
       <div class="space-y-4">
         <!-- Executive Review Card -->
@@ -18011,43 +18704,32 @@
             <div class="flex items-center gap-2">
               <span class="material-symbols-outlined text-[22px] text-rose-600">gavel</span>
               <div>
-                <h4 class="text-sm font-bold text-[#0F172A]">Final Engineering Decision: PULL REQUEST BLOCKED</h4>
-                <p class="text-[11px] text-[#64748B]">Verifiable Digital Twin Audit Summary</p>
+                <h4 class="text-sm font-bold text-[#0F172A]">Final Engineering Decision: ${decision}</h4>
+                <p class="text-[11px] text-[#64748B]">${escapeHtml(report.summary || 'Verifiable Digital Twin Audit Summary')}</p>
               </div>
             </div>
             <span class="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-rose-100 text-rose-800">
-              RISK: 0.78 / 1.00
+              RISK: ${riskScore} / 1.00
             </span>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
             <div class="p-2.5 rounded-lg bg-[#F8FAFC] border border-[#CBD5E1]">
               <div class="text-[10px] text-[#64748B]">Target Entity</div>
-              <div class="font-bold text-[#0F172A] mt-0.5">${escapeHtml(report.target)}</div>
+              <div class="font-bold text-[#0F172A] mt-0.5">${escapeHtml(report.target || 'Not specified')}</div>
             </div>
             <div class="p-2.5 rounded-lg bg-[#F8FAFC] border border-[#CBD5E1]">
               <div class="text-[10px] text-[#64748B]">Impacted Services</div>
-              <div class="font-bold text-rose-700 mt-0.5">${report.impacted_services.length} Services Reachable</div>
+              <div class="font-bold text-rose-700 mt-0.5">${impactedServiceCount} Services Reachable</div>
             </div>
             <div class="p-2.5 rounded-lg bg-[#F8FAFC] border border-[#CBD5E1]">
               <div class="text-[10px] text-[#64748B]">Impacted APIs</div>
-              <div class="font-bold text-[#0F172A] mt-0.5">${report.impacted_apis.length} Contracts Broken</div>
+              <div class="font-bold text-[#0F172A] mt-0.5">${report.impactedApis.length} Contracts Affected</div>
             </div>
           </div>
 
           <!-- Copyable Pytest Verification Command -->
-          <div class="p-3 rounded-xl bg-[#0F172A] text-white space-y-1.5">
-            <div class="flex items-center justify-between text-[11px] text-[#94A3B8]">
-              <span>Run Targeted Pytest Verification in Terminal:</span>
-              <button onclick="window.TwinApp.copyDemoReportCommand('${escapeHtml(report.cli_command)}')" class="text-xs text-[#38BDF8] hover:underline flex items-center gap-1 cursor-pointer" type="button">
-                <span class="material-symbols-outlined text-[14px]">content_copy</span>
-                <span>Copy Command</span>
-              </button>
-            </div>
-            <code class="block font-mono text-xs text-[#E2E8F0] overflow-x-auto custom-scrollbar p-1">
-              ${escapeHtml(report.cli_command)}
-            </code>
-          </div>
+          ${commandMarkup}
         </div>
 
         <!-- Action Buttons -->
@@ -18064,7 +18746,7 @@
             <span class="material-symbols-outlined text-[16px]">extension</span>
             <span>Extension Points</span>
           </button>
-          <button onclick="window.TwinApp.resetDemoWalkthrough()" class="p-2.5 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer" type="button">
+          <button onclick="window.TwinApp.resetDemoWalkthrough()" class="p-2.5 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white shadow-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer" type="button">
             <span class="material-symbols-outlined text-[16px]">restart_alt</span>
             <span>Restart Walkthrough</span>
           </button>

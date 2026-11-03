@@ -167,7 +167,7 @@ body.no-repo main {
   border: 1px solid #e2e8f0;
   border-radius: 0.875rem;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .twin-card:hover {
   box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.06);
@@ -189,7 +189,7 @@ body.theme-dark .twin-card:hover {
 .stat-card-entity {
   border-radius: 0.875rem;
   padding: 1.25rem;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -352,7 +352,7 @@ body.theme-dark .stat-card-verification .stat-sub {
   border-radius: 0.875rem;
   padding: 1.5rem;
   text-align: left;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -526,7 +526,7 @@ body.theme-dark .simulator-card .sim-inner-box {
   padding: 5px 12px;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .view-tab:hover {
@@ -568,7 +568,7 @@ body.theme-dark .simulator-card .sim-inner-box {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .action-btn:hover {
@@ -640,7 +640,7 @@ body.theme-dark .simulator-card .sim-inner-box {
   font-weight: 600;
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .sb-tab:hover {
@@ -958,7 +958,7 @@ body.theme-dark .simulator-card .sim-inner-box {
   font-size: 14px;
   font-weight: 700;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .control-btn:hover {
@@ -1350,7 +1350,7 @@ body.theme-dark .simulator-card .sim-inner-box {
   border: 1px solid var(--border-color);
   border-radius: 10px;
   padding: 20px;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .active-provider {
@@ -1696,7 +1696,7 @@ body.theme-dark .simulator-card .sim-inner-box {
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .sub-tab:hover {
@@ -2210,7 +2210,7 @@ body.theme-dark .simulator-card .sim-inner-box {
   border-radius: 6px;
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .proc-tab-btn:hover {
@@ -2231,7 +2231,7 @@ body.theme-dark .simulator-card .sim-inner-box {
 
 /* Dependency Explorer Quick Chips */
 .dep-pick-chip {
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .dep-pick-chip:hover {
@@ -2277,7 +2277,7 @@ body.theme-dark .simulator-card .sim-inner-box {
   padding: 4px 10px;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .level-btn:hover {
@@ -2509,17 +2509,20 @@ body.theme-dark .simulator-card .sim-inner-box {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  transition: opacity 0.25s ease-out, visibility 0.25s ease-out;
+  transition: opacity 0.2s ease-out, visibility 0.2s ease-out;
 }
 
 body.booting #app-shell {
-  visibility: hidden !important;
+  /* Keep shell rendered in layout for instant zero-jank display */
+  visibility: visible !important;
 }
 
+#boot-screen.boot-dismissed,
 body:not(.booting) #boot-screen {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
+  display: none !important;
 }
 
 /* 3. State 1: Signed-Out Guest (Zero Workspace) */
@@ -2587,6 +2590,38 @@ body.state-workspace-active #top-btn-create-incident {
 
 body.state-workspace-active #header-sync-pill {
   display: inline-flex !important;
+}
+
+/* Keep the signed-out header inside narrow phone viewports without clipping Sign In. */
+@media (max-width: 639px) {
+  header {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+    gap: 0.5rem !important;
+  }
+
+  header > div:first-child,
+  header > div:last-child {
+    gap: 0.5rem !important;
+  }
+
+  body.state-signed-out #top-btn-connect-repo {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    padding-left: 0;
+    padding-right: 0;
+    justify-content: center;
+  }
+
+  body.state-signed-out #top-btn-connect-repo > span:last-child {
+    display: none;
+  }
+
+  body.state-signed-out #top-btn-login {
+    min-width: 5rem;
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
 }
 
 /* 3D Spatial Canvas and HUD Styling */
@@ -2675,7 +2710,7 @@ body.theme-dark .skeleton-shimmer {
   border-radius: 9999px;
   font-size: 11px;
   font-weight: 700;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .workflow-step-badge.pending {
@@ -2769,7 +2804,7 @@ body.theme-dark .taste-kpi-value {
   border-radius: 8px;
   font-weight: 500;
   color: #475569;
-  transition: all 0.12s ease-in-out;
+  transition: color 0.12s ease-in-out, background-color 0.12s ease-in-out, border-color 0.12s ease-in-out;
 }
 
 .view-tab.taste-nav-item:hover {
@@ -2824,7 +2859,7 @@ body.theme-dark .taste-kpi-value {
   font-weight: 600;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: color 0.12s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.12s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.12s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.12s cubic-bezier(0.16, 1, 0.3, 1), transform 0.12s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .taste-action-btn.primary {
@@ -3218,7 +3253,7 @@ html.dark .modal-overlay > div, body.theme-dark .modal-overlay > div {
   border-radius: 1rem;
   padding: 1rem;
   color: #F8FAFC;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   cursor: pointer;
   position: relative;

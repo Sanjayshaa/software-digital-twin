@@ -47,8 +47,15 @@ class TwinGraphProjection:
                 "commit_hash": s.commit_hash,
                 "branch_name": s.branch_name,
                 "created_at": s.created_at.isoformat() if s.created_at else None,
+                "completed_at": s.completed_at,
                 "artifacts_count": art_count,
                 "relationships_count": rel_count,
+                "total_files": s.total_files,
+                "total_symbols": s.total_symbols,
+                "status": s.status,
+                "is_ready": s.is_ready,
+                "source_tree_identity": s.source_tree_identity,
+                "analysis_version": s.analysis_version,
             })
         return result
 

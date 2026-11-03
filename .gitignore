@@ -80,3 +80,6 @@ scratch/
 run_p0_tests.sh
 real_validation_repo/
 data/cloned_repos/
+
+# Playwright CLI session artifacts
+.playwright-cli/

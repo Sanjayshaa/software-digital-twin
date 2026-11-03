@@ -360,7 +360,7 @@
         </button>
 
         <!-- Logo (always visible in header) -->
-        <div id="header-brand" class="flex items-center gap-2 cursor-pointer" onclick="window.TwinApp.switchPrimaryView('overview');">
+        <button id="header-brand" class="flex items-center gap-2 cursor-pointer bg-transparent border-0 p-0 text-left" type="button" aria-label="Go to project overview" onclick="window.TwinApp.switchPrimaryView('overview');">
           <div class="w-8 h-8 rounded-lg bg-[#0071e3] flex items-center justify-center text-white shadow-xs shrink-0">
             <span class="material-symbols-outlined text-[20px]">hub</span>
           </div>
@@ -368,7 +368,7 @@
             <span class="text-sm font-bold text-[#0F172A] dark:text-[#F8FAFC] tracking-tight leading-tight">TwinCore</span>
             <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8] tracking-tight">Developer Intelligence</span>
           </div>
-        </div>
+        </button>
 
         <div id="header-workspace-separator" class="hidden sm:block h-5 w-[1px] bg-[#E2E8F0] dark:bg-[#334155] mx-1"></div>
 
@@ -420,7 +420,7 @@
         </div>
 
         <!-- Connect Repo -->
-        <button id="top-btn-connect-repo" class="px-3.5 h-9 rounded-lg bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0" type="button">
+        <button id="top-btn-connect-repo" class="px-3.5 h-9 rounded-lg bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0" type="button" aria-label="Connect repository">
           <span class="material-symbols-outlined text-[16px]">add</span>
           <span>Connect Repo</span>
         </button>
@@ -2757,7 +2757,7 @@
           <!-- Full-Width Comparison Toolbar -->
           <div class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-xs space-y-4">
             
-            <!-- Mode Switcher: Component Blast Radius vs Commit Diff -->
+            <!-- Mode Switcher: Component Blast Radius vs Commit Diff vs PR Risk -->
             <div class="flex items-center justify-between flex-wrap gap-2 border-b border-[#F1F5F9] pb-3">
               <div class="flex items-center gap-1.5 p-1 bg-[#F1F5F9] rounded-xl border border-[#E2E8F0]">
                 <button id="btn-impact-mode-entity" type="button" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white text-[#0071e3] shadow-xs flex items-center gap-1.5 transition-all">
@@ -2767,6 +2767,10 @@
                 <button id="btn-impact-mode-diff" type="button" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] flex items-center gap-1.5 transition-all">
                   <span class="material-symbols-outlined text-[15px]">compare_arrows</span>
                   <span>Commit Diff Mode</span>
+                </button>
+                <button id="btn-impact-mode-pr" type="button" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-[#64748B] hover:text-[#0F172A] flex items-center gap-1.5 transition-all">
+                  <span class="material-symbols-outlined text-[15px]">call_merge</span>
+                  <span>Pull Request Risk</span>
                 </button>
               </div>
               <span class="text-[11px] text-[#64748B] font-medium" id="impact-mode-hint">Inspect causal blast radius of any architectural component</span>
@@ -2848,6 +2852,98 @@
                     <span>3D</span>
                   </button>
                 </div>
+              </div>
+            </div>
+
+            <!-- PANEL 3: PULL REQUEST RISK MODE (Hidden by default) -->
+            <div id="panel-impact-pr" class="space-y-4" style="display:none;">
+              <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
+                <div class="lg:col-span-8 space-y-1.5">
+                  <label for="impact-pr-select" class="block text-xs font-semibold text-[#475569]">
+                    Select Pull Request
+                  </label>
+                  <select id="impact-pr-select" class="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:ring-2 focus:ring-[#0071e3] transition-all min-h-[38px]">
+                    <option value="">-- No Pull Requests Loaded --</option>
+                  </select>
+                </div>
+                <div class="lg:col-span-2 space-y-1.5">
+                  <label class="block text-xs font-semibold text-[#475569]">CI Policy</label>
+                  <div class="px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-xs font-medium text-[#475569] min-h-[38px] flex items-center">
+                    Strict Governance
+                  </div>
+                </div>
+                <div class="lg:col-span-2 flex items-center gap-2">
+                  <button id="btn-refresh-prs" class="w-full px-3 py-2 rounded-xl bg-white border border-[#CBD5E1] hover:bg-[#F8FAFC] text-[#0F172A] text-xs font-semibold shadow-2xs flex items-center justify-center gap-1.5 min-h-[38px] transition-all" type="button">
+                    <span class="material-symbols-outlined text-[16px]">refresh</span>
+                    <span>Refresh PRs</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Compact PR Risk Card -->
+              <div id="pr-impact-card" class="bg-white border border-[#E2E8F0] rounded-xl p-4 shadow-2xs space-y-3">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#F1F5F9]">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span id="pr-card-badge" class="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-[#EFF6FF] text-[#1D4ED8]">PR #—</span>
+                    <span id="pr-card-title" class="text-xs font-bold text-[#0F172A]">Select a Pull Request to view CI risk summary</span>
+                    <span id="pr-card-branch" class="text-[11px] font-mono text-[#64748B]"></span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span id="pr-card-status-pill" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#F1F5F9] text-[#64748B] uppercase">NO SELECTION</span>
+                    <span id="pr-card-ci-pill" class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#F1F5F9] text-[#64748B] uppercase">CI: —</span>
+                  </div>
+                </div>
+
+                <!-- Snapshot, Change & Test Evidence Grid -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-xs">
+                  <div class="p-2 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+                    <div class="text-[10px] uppercase font-bold text-[#64748B]">Baseline Commit</div>
+                    <div id="pr-card-base-sha" class="font-mono text-[11px] font-semibold text-[#0F172A] truncate mt-0.5">—</div>
+                  </div>
+                  <div class="p-2 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+                    <div class="text-[10px] uppercase font-bold text-[#64748B]">Target Commit</div>
+                    <div id="pr-card-head-sha" class="font-mono text-[11px] font-semibold text-[#0F172A] truncate mt-0.5">—</div>
+                  </div>
+                  <div class="p-2 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+                    <div class="text-[10px] uppercase font-bold text-[#64748B]">Snapshots</div>
+                    <div id="pr-card-snapshots-state" class="text-[11px] font-semibold text-[#0F172A] mt-0.5">—</div>
+                  </div>
+                  <div class="p-2 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+                    <div class="text-[10px] uppercase font-bold text-[#64748B]">Changed Symbols</div>
+                    <div id="pr-card-changed-count" class="font-mono text-[11px] font-bold text-[#0F172A] mt-0.5">0</div>
+                  </div>
+                  <div class="p-2 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+                    <div class="text-[10px] uppercase font-bold text-[#64748B]">Affected Blast Radius</div>
+                    <div id="pr-card-affected-count" class="font-mono text-[11px] font-bold text-[#0F172A] mt-0.5">0</div>
+                  </div>
+                  <div class="p-2 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+                    <div class="text-[10px] uppercase font-bold text-[#64748B]">Impacted Tests</div>
+                    <div id="pr-card-tests-count" class="font-mono text-[11px] font-bold text-[#0F172A] mt-0.5">0</div>
+                  </div>
+                  <div class="p-2 bg-[#F8FAFC] rounded-lg border border-[#E2E8F0]">
+                    <div class="text-[10px] uppercase font-bold text-[#64748B]">Test Execution</div>
+                    <div id="pr-card-tests-executed" class="text-[11px] font-semibold text-[#64748B] mt-0.5">Unexecuted</div>
+                  </div>
+                </div>
+
+                <!-- Next Action / Reason -->
+                <div id="pr-card-action-box" class="p-2.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-[#475569] flex items-start gap-2">
+                  <span class="material-symbols-outlined text-[16px] text-[#0071e3] shrink-0 mt-0.5">flag</span>
+                  <div class="flex-1 space-y-0.5">
+                    <div class="text-[10px] uppercase font-bold text-[#64748B]">Next Action &amp; Reason</div>
+                    <div id="pr-card-action-text" class="text-[11px] leading-relaxed">No pull request analyzed yet. Connect webhook or select a recorded PR.</div>
+                  </div>
+                </div>
+
+                <!-- Toggle Full Markdown Report -->
+                <div class="pt-1 flex items-center justify-between">
+                  <button id="btn-toggle-pr-markdown" type="button" class="text-xs font-semibold text-[#0071e3] hover:underline flex items-center gap-1 cursor-pointer">
+                    <span class="material-symbols-outlined text-[15px]">description</span>
+                    <span id="pr-markdown-toggle-label">View Markdown CI Report</span>
+                  </button>
+                  <span id="pr-card-evidence-badge" class="text-[10px] font-mono text-[#64748B]">Evidence: Full Provenance</span>
+                </div>
+                <div id="pr-markdown-container" class="p-3 bg-[#0F172A] text-slate-200 rounded-xl font-mono text-[11px] overflow-x-auto max-h-64 hidden whitespace-pre-wrap"></div>
               </div>
             </div>
 
@@ -4310,15 +4406,15 @@
             </div>
 
             <!-- TAB 1: GITHUB INTEGRATION PANE -->
-            <div id="pane-conn-github" class="conn-pane p-5 space-y-4">
+            <form id="pane-conn-github" class="conn-pane p-5 space-y-4" onsubmit="event.preventDefault(); document.getElementById('btn-conn-github-discover')?.click();">
               <div class="max-w-2xl space-y-3">
                 <h3 class="text-sm font-bold text-[#0F172A]">Connect GitHub Repository</h3>
                 <p class="text-xs text-[#64748B]">Authenticate with your GitHub Personal Access Token (classic or fine-grained) to discover public and private repositories without typing URLs manually.</p>
                 
                 <div class="space-y-1.5 pt-1">
-                  <label class="block text-xs font-semibold text-[#0F172A]">GitHub Personal Access Token (Optional if GITHUB_TOKEN is in environment)</label>
+                  <label for="conn-github-token" class="block text-xs font-semibold text-[#0F172A]">GitHub Personal Access Token (Optional if GITHUB_TOKEN is in environment)</label>
                   <div class="flex gap-2">
-                    <input id="conn-github-token" type="password" placeholder="ghp_... or github_pat_... (Leave empty to use server environment token)" autocomplete="off" class="flex-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
+                    <input id="conn-github-token" name="github_token" type="password" placeholder="ghp_... or github_pat_... (Leave empty to use server environment token)" autocomplete="off" spellcheck="false" class="flex-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
                     <button id="btn-conn-github-discover" type="button" class="px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all">
                       <span class="material-symbols-outlined text-[16px]">search</span>
                       <span>Discover Repositories</span>
@@ -4344,7 +4440,7 @@
                   </div>
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label class="block text-[11px] font-semibold text-[#166534] mb-1">Target Branch</label>
+                      <label for="conn-github-branch-select" class="block text-[11px] font-semibold text-[#166534] mb-1">Target Branch</label>
                       <select id="conn-github-branch-select" class="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]"></select>
                     </div>
                     <div class="flex items-end">
@@ -4358,22 +4454,22 @@
 
                 <div id="conn-github-error" class="p-3 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-xs text-[#DC2626]" style="display:none;"></div>
               </div>
-            </div>
+            </form>
 
             <!-- TAB 2: GITLAB INTEGRATION PANE -->
-            <div id="pane-conn-gitlab" class="conn-pane p-5 space-y-4" style="display:none;">
+            <form id="pane-conn-gitlab" class="conn-pane p-5 space-y-4" style="display:none;" onsubmit="event.preventDefault(); document.getElementById('btn-conn-gitlab-discover')?.click();">
               <div class="max-w-2xl space-y-3">
                 <h3 class="text-sm font-bold text-[#0F172A]">Connect GitLab Project</h3>
                 <p class="text-xs text-[#64748B]">Connect to GitLab.com or your self-hosted GitLab instance using GitLab API v4. Tokens are verified in-flight and never persisted.</p>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div class="space-y-1">
-                    <label class="block text-xs font-semibold text-[#0F172A]">GitLab Instance URL</label>
+                    <label for="conn-gitlab-instance" class="block text-xs font-semibold text-[#0F172A]">GitLab Instance URL</label>
                     <input id="conn-gitlab-instance" type="text" value="https://gitlab.com" placeholder="https://gitlab.com" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
                   </div>
                   <div class="space-y-1">
-                    <label class="block text-xs font-semibold text-[#0F172A]">Personal Access Token (glpat-...)</label>
-                    <input id="conn-gitlab-token" type="password" placeholder="glpat-xxxxxxxxxxxx (Optional if in env)" autocomplete="off" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
+                    <label for="conn-gitlab-token" class="block text-xs font-semibold text-[#0F172A]">Personal Access Token (glpat-...)</label>
+                    <input id="conn-gitlab-token" name="gitlab_token" type="password" placeholder="glpat-xxxxxxxxxxxx (Optional if in env)" autocomplete="off" spellcheck="false" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
                   </div>
                 </div>
 
@@ -4402,7 +4498,7 @@
                   </div>
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label class="block text-[11px] font-semibold text-[#166534] mb-1">Target Branch</label>
+                      <label for="conn-gitlab-branch-select" class="block text-[11px] font-semibold text-[#166534] mb-1">Target Branch</label>
                       <select id="conn-gitlab-branch-select" class="w-full bg-white border border-[#CBD5E1] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]"></select>
                     </div>
                     <div class="flex items-end">
@@ -4416,7 +4512,7 @@
 
                 <div id="conn-gitlab-error" class="p-3 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-xs text-[#DC2626]" style="display:none;"></div>
               </div>
-            </div>
+            </form>
 
             <!-- TAB 3: LOCAL WORKSPACE & PRE-COMMIT SAFETY PANE -->
             <div id="pane-conn-local" class="conn-pane p-5 space-y-5" style="display:none;">
@@ -5107,16 +5203,16 @@
       </div>
 
       <!-- Tab 1: GitHub Repository (Zero-Friction Discovery & Selection) -->
-      <div id="modal-panel-github" class="modal-panel space-y-3.5">
+      <form id="modal-panel-github" class="modal-panel space-y-3.5" onsubmit="event.preventDefault();">
 
         <!-- Token Entry / Load Repositories Bar -->
         <div class="space-y-1.5">
           <div class="flex items-center justify-between">
-            <label class="block text-xs font-semibold text-[#0F172A]">GitHub Personal Access Token / App Token</label>
+            <label for="input-github-token" class="block text-xs font-semibold text-[#0F172A]">GitHub Personal Access Token / App Token</label>
             <span class="text-[10px] text-[#64748B]">In-flight only · never stored</span>
           </div>
           <div class="flex gap-2">
-            <input id="input-github-token" type="password" placeholder="ghp_xxxxxxxxxxxx or github_pat_..." autocomplete="off" class="flex-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
+            <input id="input-github-token" name="onboard_github_token" type="password" placeholder="ghp_xxxxxxxxxxxx or github_pat_..." autocomplete="off" spellcheck="false" class="flex-1 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] font-mono focus:outline-none focus:border-[#0071e3]">
             <button id="btn-discover-repos" type="button" class="taste-action-btn primary shrink-0">
               <span class="material-symbols-outlined text-[15px]">sync</span>
               <span>Discover Repos</span>
@@ -5155,13 +5251,13 @@
 
           <div class="grid grid-cols-2 gap-3 pt-1 border-t border-[#DCFCE7]">
             <div>
-              <label class="block text-[10px] font-bold uppercase text-[#166534] mb-1">Target Branch</label>
+              <label for="select-github-branch" class="block text-[10px] font-bold uppercase text-[#166534] mb-1">Target Branch</label>
               <select id="select-github-branch" class="w-full bg-white border border-[#BBF7D0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] font-medium focus:outline-none">
                 <!-- Dynamically populated with authoritative default branch -->
               </select>
             </div>
             <div>
-              <label class="block text-[10px] font-bold uppercase text-[#166534] mb-1">Display Name (Optional)</label>
+              <label for="input-github-name" class="block text-[10px] font-bold uppercase text-[#166534] mb-1">Display Name (Optional)</label>
               <input id="input-github-name" type="text" placeholder="Workspace name" class="w-full bg-white border border-[#BBF7D0] rounded-lg px-2.5 py-1.5 text-xs text-[#0F172A] focus:outline-none">
             </div>
           </div>
@@ -5172,21 +5268,21 @@
           <summary class="cursor-pointer hover:text-[#0F172A] font-medium">Or enter a public repository clone URL manually</summary>
           <div class="mt-2 space-y-2 pl-2 border-l-2 border-[#E2E8F0]">
             <div>
-              <label class="block text-[10px] font-semibold text-[#0F172A] mb-0.5">HTTPS Clone URL</label>
+              <label for="input-github-url" class="block text-[10px] font-semibold text-[#0F172A] mb-0.5">HTTPS Clone URL</label>
               <input id="input-github-url" type="url" placeholder="https://github.com/owner/repository" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-[#0071e3]">
             </div>
             <div>
-              <label class="block text-[10px] font-semibold text-[#0F172A] mb-0.5">Branch</label>
+              <label for="input-github-branch" class="block text-[10px] font-semibold text-[#0F172A] mb-0.5">Branch</label>
               <input id="input-github-branch" type="text" placeholder="main (optional)" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#0071e3]">
             </div>
           </div>
         </details>
-      </div>
+      </form>
 
       <!-- Tab 2: Local Project -->
       <div id="modal-panel-local" class="modal-panel space-y-3" style="display:none;">
         <div class="flex items-center justify-between">
-          <label class="block text-xs font-semibold text-[#0F172A]">Local Directory Path *</label>
+          <label for="input-local-path" class="block text-xs font-semibold text-[#0F172A]">Local Directory Path *</label>
           <button id="btn-choose-directory" type="button" class="text-[11px] font-semibold text-[#0071e3] hover:underline flex items-center gap-1">
             <span class="material-symbols-outlined text-[14px]">folder_open</span>
             <span>Choose Folder</span>
@@ -5197,7 +5293,7 @@
           <p class="text-[10px] text-[#64748B] mt-1">Your browser grants access only to the folder you explicitly select. Canonical containment is enforced, traversal and symlink escapes are rejected, and repository scripts are never executed.</p>
         </div>
         <div>
-          <label class="block text-xs font-semibold text-[#0F172A] mb-1">Repository Name (Optional)</label>
+          <label for="input-repo-name" class="block text-xs font-semibold text-[#0F172A] mb-1">Repository Name (Optional)</label>
           <input id="input-repo-name" type="text" placeholder="e.g. payment-platform" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
         </div>
       </div>
@@ -5205,12 +5301,12 @@
       <!-- Tab 3: Upload Archive (ZIP) -->
       <div id="modal-panel-archive" class="modal-panel space-y-3" style="display:none;">
         <div>
-          <label class="block text-xs font-semibold text-[#0F172A] mb-1">Project Archive (.zip) *</label>
+          <label for="input-archive-file" class="block text-xs font-semibold text-[#0F172A] mb-1">Project Archive (.zip) *</label>
           <input id="input-archive-file" type="file" accept=".zip,.tar.gz" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
           <p class="text-[10px] text-[#64748B] mt-1">Maximum 100MB. Archive is extracted into an isolated temporary workspace and scanned safely.</p>
         </div>
         <div>
-          <label class="block text-xs font-semibold text-[#0F172A] mb-1">Project Name (Optional)</label>
+          <label for="input-archive-name" class="block text-xs font-semibold text-[#0F172A] mb-1">Project Name (Optional)</label>
           <input id="input-archive-name" type="text" placeholder="e.g. microservice-bundle" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3.5 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]">
         </div>
       </div>
@@ -5375,7 +5471,7 @@
       </div>
 
       <!-- TAB 1: Profile & Session -->
-      <div id="settings-panel-profile" class="settings-panel space-y-3 text-xs">
+      <div id="profile-modal-panel-profile" class="settings-panel space-y-3 text-xs">
         <div class="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl flex items-center gap-3">
           <div id="profile-modal-avatar" class="w-12 h-12 rounded-full bg-[#0071e3] flex items-center justify-center text-white text-sm font-bold shadow-xs">US</div>
           <div>
@@ -5592,7 +5688,7 @@
   <!-- MODAL 5: AUTHENTICATION (SIGN IN / REGISTER) -->
   <!-- ==================================================================== -->
   <div id="modal-auth" class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display:none;">
-    <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+    <form id="auth-credentials-form" class="bg-white border border-[#E2E8F0] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4" onsubmit="event.preventDefault(); document.getElementById('auth-submit-btn')?.click();">
       <div class="flex items-center justify-between border-b border-[#F1F5F9] pb-3">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-[#0071e3] to-[#0059b5] flex items-center justify-center text-white shadow-xs">
@@ -5637,18 +5733,18 @@
 
       <div class="space-y-2.5">
         <div>
-          <label class="block text-xs font-semibold text-[#475569] mb-1">Username or Work Email</label>
-          <input id="auth-input-username" type="text" placeholder="e.g. dev_engineer or alex@company.com" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]" autocomplete="username">
+          <label for="auth-input-username" class="block text-xs font-semibold text-[#475569] mb-1">Username or Work Email</label>
+          <input id="auth-input-username" name="username" type="text" placeholder="e.g. dev_engineer or alex@company.com" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]" autocomplete="username" spellcheck="false">
         </div>
 
         <div id="auth-email-field" style="display:none;">
-          <label class="block text-xs font-semibold text-[#475569] mb-1">Work Email</label>
-          <input id="auth-input-email" type="email" placeholder="alex@company.com" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]" autocomplete="email">
+          <label for="auth-input-email" class="block text-xs font-semibold text-[#475569] mb-1">Work Email</label>
+          <input id="auth-input-email" name="email" type="email" placeholder="alex@company.com" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]" autocomplete="email" spellcheck="false">
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-[#475569] mb-1">Password</label>
-          <input id="auth-input-password" type="password" placeholder="••••••••" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]" autocomplete="current-password">
+          <label for="auth-input-password" class="block text-xs font-semibold text-[#475569] mb-1">Password</label>
+          <input id="auth-input-password" name="password" type="password" placeholder="••••••••" class="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:border-[#0071e3]" autocomplete="current-password">
         </div>
       </div>
 
@@ -5662,7 +5758,7 @@
           <button id="auth-submit-btn" class="px-4 py-1.5 rounded-full bg-[#0071e3] hover:bg-[#0059b5] text-white text-xs font-semibold shadow-xs" type="button">Sign In</button>
         </div>
       </div>
-    </div>
+    </form>
   </div>
 
   <!-- ==================================================================== -->

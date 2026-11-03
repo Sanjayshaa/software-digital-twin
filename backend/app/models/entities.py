@@ -260,9 +260,9 @@ class RepositorySnapshot(Base):
 
     @status.setter
     def status(self, val: str):
-        if not isinstance(self.snapshot_metadata, dict):
-            self.snapshot_metadata = {}
-        self.snapshot_metadata["status"] = val
+        meta = dict(self.snapshot_metadata) if isinstance(self.snapshot_metadata, dict) else {}
+        meta["status"] = val
+        self.snapshot_metadata = meta
 
     @property
     def is_ready(self) -> bool:
@@ -1260,4 +1260,56 @@ SimulationScenario = Scenario
 HistoricalChange = Change
 
 
+# ====================================================================
+# 10. PULL REQUEST INTELLIGENCE & CI INTEGRATION ENTITIES
+# ====================================================================
+
+class PullRequestStatus:
+    QUEUED = "QUEUED"
+    SNAPSHOTS_PENDING = "SNAPSHOTS_PENDING"
+    ANALYZING = "ANALYZING"
+    COMPLETE = "COMPLETE"
+    NO_CHANGE = "NO_CHANGE"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    FAILED = "FAILED"
+
+
+class CIRecommendation:
+    PASS = "PASS"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    BLOCKED = "BLOCKED"
+
+
+class PullRequestRecord(Base):
+    __tablename__ = "pull_request_records"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    delivery_id = Column(String(128), unique=True, nullable=True, index=True)
+    provider = Column(String(50), default="github", nullable=False)
+    repository_id = Column(String(36), ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    external_repository = Column(String(255), nullable=True)
+    pull_request_number = Column(Integer, nullable=False, index=True)
+    title = Column(String(500), nullable=True)
+    event_type = Column(String(50), nullable=False)  # opened, synchronize, reopened, closed
+    sender = Column(String(255), nullable=True)
+    base_branch = Column(String(255), nullable=False)
+    base_commit_sha = Column(String(64), nullable=False)
+    head_branch = Column(String(255), nullable=False)
+    head_commit_sha = Column(String(64), nullable=False)
+    base_snapshot_id = Column(String(36), ForeignKey("repository_snapshots.id", ondelete="SET NULL"), nullable=True)
+    target_snapshot_id = Column(String(36), ForeignKey("repository_snapshots.id", ondelete="SET NULL"), nullable=True)
+    analysis_run_id = Column(String(36), ForeignKey("analysis_runs.id", ondelete="SET NULL"), nullable=True)
+    status = Column(String(50), default=PullRequestStatus.QUEUED, nullable=False)
+    ci_recommendation = Column(String(50), nullable=True)
+    summary = Column(JSON, default=dict, nullable=False)
+    report_markdown = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    received_at = Column(DateTime, default=utc_now, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    repository = relationship("Repository", backref="pull_requests")
+    base_snapshot = relationship("RepositorySnapshot", foreign_keys=[base_snapshot_id])
+    target_snapshot = relationship("RepositorySnapshot", foreign_keys=[target_snapshot_id])
+    analysis_run = relationship("AnalysisRun", foreign_keys=[analysis_run_id])
 
